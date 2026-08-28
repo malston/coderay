@@ -1,9 +1,13 @@
 import json
+import subprocess
+import sys
+from importlib.metadata import version
 
-from main import (
+from workflow.__main__ import (
     MERMAID_SCRIPT,
     available_lenses,
     build_mermaid,
+    default_output_dir,
     dump_run_state,
     md_to_html,
     mermaid_label,
@@ -12,6 +16,22 @@ from main import (
     write_index_md,
 )
 from workflow.nodes import slug
+
+
+def test_version_flag_prints_installed_package_version():
+    result = subprocess.run(
+        [sys.executable, "-m", "workflow", "--version"],
+        capture_output=True, text=True, check=True,
+    )
+    assert result.stdout.strip() == f"coderay {version('coderay')}"
+
+
+def test_default_output_dir_is_keyed_on_lens():
+    beginner = default_output_dir("/some/path/myrepo", "beginner-tutorial")
+    architecture = default_output_dir("/some/path/myrepo", "architecture-review")
+    assert beginner != architecture
+    assert "myrepo" in beginner and "beginner-tutorial" in beginner
+    assert "myrepo" in architecture and "architecture-review" in architecture
 
 
 def test_md_to_html_never_emits_raw_script_tag():
