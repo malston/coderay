@@ -11,4 +11,4 @@ build:
 
 clean:
 	rm -rf output/ dist/ .pytest_cache .venv
-	find . -type d -name __pycache__ -exec rm -rf {} +
+	find . -type d -name __pycache__ -prune -exec rm -rf {} +
