@@ -85,11 +85,11 @@ The chapter writing step is sequential on purpose. Parallel batching loses the c
 
 ## Example output
 
-One real tour, generated end to end (`output/` is gitignored, so this isn't checked in — run the quickstart above to get your own):
+One real tour, generated end to end against [karpathy/micrograd](https://github.com/karpathy/micrograd) (`output/` is gitignored, so this isn't checked in — run the quickstart above to get your own):
 
-| Tour            | Files selected | Chars selected | Abstractions | Relationships | Chapters |
-| --------------- | -------------- | -------------- | ------------ | ------------- | -------- |
-| `shepherd-tour` | 36             | 234,483        | 10           | 15            | 10       |
+| Tour             | Files selected | Chars selected | Abstractions | Relationships | Chapters |
+| ---------------- | -------------- | -------------- | ------------ | ------------- | -------- |
+| `micrograd-tour` | 3              | 7,784          | 10           | 12            | 10       |
 
 Each tour contains one markdown and one HTML file per abstraction, plus an `index.html` with the mermaid architecture diagram and chapter list. The chapter HTML files render code blocks, tables, and mermaid sequence diagrams cleanly.
 
