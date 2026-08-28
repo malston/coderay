@@ -15,10 +15,13 @@ Packages a pipeline as a PocketFlow workflow so you get retry and clean node bou
 
 ```bash
 pip install -e .            # or: pip install -e ".[openai,gemini]" for those providers
+cp .env.example .env        # fill in the one key you need, see .env.example for all options
 export GEMINI_API_KEY=...   # or ANTHROPIC_API_KEY / OPENAI_API_KEY
 
 python -m workflow.main path/to/repo
 ```
+
+If the run fails partway through (a bad LLM response after retries, a network error), the files, abstractions, and chapters completed so far are written to `run_state.json` in the target output directory — useful for figuring out how far it got without rerunning the whole pipeline.
 
 Output:
 
@@ -89,3 +92,12 @@ One real tour, generated end to end. Open [`output/shepherd-tour/index.html`](ou
 | [`output/shepherd-tour/`](output/shepherd-tour/) | 36             | 234,483        | 10           | 15            | 10       |
 
 Each tour contains one markdown and one HTML file per abstraction, plus an `index.html` with the mermaid architecture diagram and chapter list. The chapter HTML files render code blocks, tables, and mermaid sequence diagrams cleanly.
+
+## Development
+
+```bash
+pip install -e .
+python -m pytest tests/ -v
+```
+
+CI (`.github/workflows/tests.yml`) runs the same suite on every push and PR.
