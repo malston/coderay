@@ -20,15 +20,15 @@ Notes on reliability:
 """
 import os
 import re
+from importlib import resources
 from typing import TypedDict
 
 from pocketflow import Node, BatchNode
 
 from utils import call_llm, fill, list_files, read_prompt, safe_read, yaml_call
 
-ROOT = os.path.dirname(os.path.dirname(__file__))
-PROMPTS_DIR = os.path.join(ROOT, 'prompts')
-INSTRUCTIONS_DIR = os.path.join(ROOT, 'instructions')
+PROMPTS_DIR = resources.files("workflow") / "prompts"
+INSTRUCTIONS_DIR = resources.files("workflow") / "instructions"
 
 PREVIEW_CHARS_PER_FILE = 800
 CODEBASE_BUDGET = 1_000_000

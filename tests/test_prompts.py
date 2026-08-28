@@ -3,7 +3,7 @@ import os
 
 from utils import fill
 
-PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "prompts")
+PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "workflow", "prompts")
 
 
 def test_every_prompt_wraps_untrusted_repo_content_in_a_boundary():
