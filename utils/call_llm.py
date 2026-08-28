@@ -22,6 +22,7 @@ Smoke test:
 import hashlib
 import json
 import os
+import tempfile
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), ".cache")
 
@@ -54,15 +55,15 @@ def _model_for(provider):
     }[provider]
 
 
-def _cache_path(provider, model, prompt):
-    key = hashlib.sha256(f"{provider}|{model}|{prompt}".encode("utf-8")).hexdigest()
+def _cache_path(provider, model, max_out, prompt):
+    key = hashlib.sha256(f"{provider}|{model}|{max_out}|{prompt}".encode("utf-8")).hexdigest()
     return os.path.join(CACHE_DIR, f"{key}.json")
 
 
-def _cache_get(provider, model, prompt):
+def _cache_get(provider, model, max_out, prompt):
     if os.environ.get("LLM_CACHE", "1") == "0":
         return None
-    path = _cache_path(provider, model, prompt)
+    path = _cache_path(provider, model, max_out, prompt)
     if not os.path.exists(path):
         return None
     try:
@@ -71,24 +72,29 @@ def _cache_get(provider, model, prompt):
         return None
 
 
-def _cache_put(provider, model, prompt, response):
+def _cache_put(provider, model, max_out, prompt, response):
     if os.environ.get("LLM_CACHE", "1") == "0":
         return
     os.makedirs(CACHE_DIR, exist_ok=True)
-    path = _cache_path(provider, model, prompt)
-    json.dump({"provider": provider, "model": model, "response": response},
-              open(path, "w"))
+    path = _cache_path(provider, model, max_out, prompt)
+    fd, tmp_path = tempfile.mkstemp(dir=CACHE_DIR)
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump({"provider": provider, "model": model, "response": response}, f)
+        os.replace(tmp_path, path)
+    except BaseException:
+        os.unlink(tmp_path)
+        raise
 
 
 def call_llm(prompt: str) -> str:
     provider = _pick()
     model = _model_for(provider)
+    max_out = int(os.environ.get("LLM_MAX_OUTPUT_TOKENS", "16384"))
 
-    cached = _cache_get(provider, model, prompt)
+    cached = _cache_get(provider, model, max_out, prompt)
     if cached is not None:
         return cached
-
-    max_out = int(os.environ.get("LLM_MAX_OUTPUT_TOKENS", "16384"))
 
     if provider == "anthropic":
         from anthropic import Anthropic
@@ -97,7 +103,10 @@ def call_llm(prompt: str) -> str:
             max_tokens=max_out,
             messages=[{"role": "user", "content": prompt}],
         )
-        text = resp.content[0].text
+        if resp.stop_reason == "max_tokens":
+            raise RuntimeError("Anthropic response truncated (stop_reason=max_tokens)")
+        text_block = next((b for b in resp.content if getattr(b, "type", None) == "text"), None)
+        text = text_block.text if text_block else None
 
     elif provider == "openai":
         from openai import OpenAI
@@ -109,7 +118,10 @@ def call_llm(prompt: str) -> str:
             max_completion_tokens=max_out,
             messages=[{"role": "user", "content": prompt}],
         )
-        text = resp.choices[0].message.content
+        choice = resp.choices[0]
+        if choice.finish_reason == "length":
+            raise RuntimeError("OpenAI response truncated (finish_reason=length)")
+        text = choice.message.content
 
     elif provider == "gemini":
         from google import genai
@@ -120,12 +132,19 @@ def call_llm(prompt: str) -> str:
             contents=prompt,
             config=types.GenerateContentConfig(max_output_tokens=max_out),
         )
+        candidate = resp.candidates[0] if resp.candidates else None
+        finish_reason = str(getattr(candidate, "finish_reason", "") or "")
+        if candidate is not None and finish_reason and "STOP" not in finish_reason.upper():
+            raise RuntimeError(f"Gemini response incomplete (finish_reason={finish_reason})")
         text = resp.text
 
     else:
         raise RuntimeError(f"Unknown LLM_PROVIDER={provider!r}")
 
-    _cache_put(provider, model, prompt, text)
+    if not text:
+        raise RuntimeError(f"{provider} returned an empty response")
+
+    _cache_put(provider, model, max_out, prompt, text)
     return text
 
 

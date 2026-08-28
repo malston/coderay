@@ -1,8 +1,7 @@
-import sys
+import os
 
-import utils  # noqa: F401  (populates sys.modules["utils.crawl"])
-
-crawl = sys.modules["utils.crawl"]
+from utils import crawl
+from utils.crawl import list_files, safe_read
 
 
 def test_wanted_rejects_credential_shaped_names():
@@ -27,9 +26,9 @@ def test_list_files_excludes_credential_shaped_files(tmp_path):
     (tmp_path / ".env").write_text("SECRET=1\n")
     (tmp_path / "id_rsa").write_text("-----BEGIN PRIVATE KEY-----\n")
 
-    files = crawl.list_files(str(tmp_path))
+    files = list_files(str(tmp_path))
 
-    names = {p.split("/")[-1] for p in files}
+    names = {os.path.basename(p) for p in files}
     assert names == {"main.py"}
 
 
@@ -43,7 +42,35 @@ def test_list_files_excludes_symlink_escaping_the_repo_root(tmp_path):
     (outside / "credentials").write_text("AKIA...\n")
     (repo / "config.yaml").symlink_to(outside / "credentials")
 
-    files = crawl.list_files(str(repo))
+    files = list_files(str(repo))
 
-    names = {p.split("/")[-1] for p in files}
+    names = {os.path.basename(p) for p in files}
     assert names == {"main.py"}
+
+
+def test_safe_read_reads_only_max_chars(tmp_path):
+    path = tmp_path / "big.txt"
+    path.write_text("x" * 10_000)
+    assert safe_read(str(path), max_chars=100) == "x" * 100
+
+
+def test_safe_read_without_max_chars_reads_whole_file(tmp_path):
+    path = tmp_path / "small.txt"
+    path.write_text("hello")
+    assert safe_read(str(path)) == "hello"
+
+
+def test_safe_read_returns_none_on_broken_symlink(tmp_path):
+    target = tmp_path / "missing.txt"
+    link = tmp_path / "link.txt"
+    os.symlink(str(target), str(link))
+    assert safe_read(str(link)) is None
+
+
+def test_list_files_skips_broken_symlink_instead_of_crashing(tmp_path):
+    (tmp_path / "real.py").write_text("print('hi')")
+    os.symlink(str(tmp_path / "missing.py"), str(tmp_path / "dangling.py"))
+    files = list_files(str(tmp_path))
+    names = {os.path.basename(f) for f in files}
+    assert "real.py" in names
+    assert "dangling.py" not in names
