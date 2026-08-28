@@ -82,13 +82,10 @@ The chapter writing step is sequential on purpose. Parallel batching loses the c
 
 ## Example output
 
-Four real tours, generated end to end with Gemini 2.5 Flash. Open the `index.html` in any of these in a browser:
+One real tour, generated end to end. Open [`output/shepherd-tour/index.html`](output/shepherd-tour/) in a browser:
 
-| Tour                                               | Repo                                                        | Files in | Files selected | Abstractions                                                                          | Cost    |
-| -------------------------------------------------- | ----------------------------------------------------------- | -------- | -------------- | ------------------------------------------------------------------------------------- | ------- |
-| [`output/nanochat-tour/`](output/nanochat-tour/)   | [karpathy/nanochat](https://github.com/karpathy/nanochat)   | 56       | 20             | Tokenizer, GPT, COMPUTE_DTYPE, DataLoader, MuonAdamW, CheckpointManager, Task, Engine | ~$0.02  |
-| [`output/flask-tour/`](output/flask-tour/)         | [pallets/flask](https://github.com/pallets/flask)           | 236      | 20             | Flask, Config, Request, Response, AppContext, url_for, render_template, Blueprint     | ~$0.03  |
-| [`output/express-tour/`](output/express-tour/)     | [expressjs/express](https://github.com/expressjs/express)   | 213      | 8              | app, req, res, Middleware, Router, Route, View                                        | ~$0.01  |
-| [`output/micrograd-tour/`](output/micrograd-tour/) | [karpathy/micrograd](https://github.com/karpathy/micrograd) | 13       | 3              | Value, backward, Module, Neuron, Layer, MLP                                           | ~$0.005 |
+| Tour                                             | Files selected | Chars selected | Abstractions | Relationships | Chapters |
+| ------------------------------------------------ | -------------- | -------------- | ------------ | ------------- | -------- |
+| [`output/shepherd-tour/`](output/shepherd-tour/) | 36             | 234,483        | 10           | 15            | 10       |
 
 Each tour contains one markdown and one HTML file per abstraction, plus an `index.html` with the mermaid architecture diagram and chapter list. The chapter HTML files render code blocks, tables, and mermaid sequence diagrams cleanly.
