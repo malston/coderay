@@ -13,6 +13,7 @@ The --instructions flag swaps the lens (§3.4):
 """
 import argparse
 import html
+import json
 import os
 import re
 
@@ -230,6 +231,22 @@ def write_index_html(chapters, repo_name, lens, summary, mermaid, selected_files
     write_text(os.path.join(out, "index.html"), rendered)
 
 
+def dump_run_state(shared: PipelineState, out):
+    """Write whatever progress the pipeline made to a JSON file, for post-mortem
+    on an unhandled failure deep into a run (e.g. the 3rd LLM retry still failing
+    on chapter 7 of 10)."""
+    state = {
+        "selected_files": shared.get("selected_files"),
+        "abstractions": [a["name"] for a in shared["abstractions"]] if shared.get("abstractions") else None,
+        "order": shared.get("order"),
+        "relationships": shared.get("relationships"),
+        "chapters_completed": [c["name"] for c in shared["chapters"]] if shared.get("chapters") else None,
+    }
+    path = os.path.join(out, "run_state.json")
+    write_text(path, json.dumps(state, indent=2))
+    return path
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("repo_path")
@@ -245,7 +262,12 @@ def main():
     os.makedirs(out, exist_ok=True)
 
     shared: PipelineState = {"repo_path": args.repo_path, "instructions": args.instructions}
-    create_tour_flow().run(shared)
+    try:
+        create_tour_flow().run(shared)
+    except Exception:
+        state_path = dump_run_state(shared, out)
+        print(f"\nPipeline failed. Wrote partial run state to {state_path}")
+        raise
 
     chapters = shared["chapters"]
     mermaid = build_mermaid(shared["abstractions"], shared["relationships"])
