@@ -149,21 +149,31 @@ def list_files(root, *, keep_ext=DEFAULT_KEEP_EXT, skip_dirs=DEFAULT_SKIP_DIR,
                 continue
             if exclude_spec is not None and exclude_spec.match_file(rel):
                 continue
-            if max_file_bytes and os.path.getsize(path) > max_file_bytes:
-                continue
+            if max_file_bytes:
+                try:
+                    size = os.path.getsize(path)
+                except OSError:
+                    continue
+                if size > max_file_bytes:
+                    continue
             out.append(path)
     return out
 
 
-def safe_read(path):
-    """Read a file, skip per-file decode and permission errors.
+def safe_read(path, max_chars=None):
+    """Read a file, skip per-file decode and OS errors (permission denied,
+    broken symlink, vanished file).
 
     The only legitimate try/except in this module (and in the chapters that use
     it): one bad file should not kill a walk over 10,000 files.
+
+    max_chars, if given, reads only that many characters instead of the whole
+    file -- use this when the caller only needs a preview.
     """
     try:
-        return open(path, encoding='utf-8').read()
-    except (UnicodeDecodeError, PermissionError):
+        with open(path, encoding='utf-8') as f:
+            return f.read(max_chars) if max_chars is not None else f.read()
+    except (UnicodeDecodeError, OSError):
         return None
 
 
