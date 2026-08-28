@@ -80,7 +80,8 @@ def _cache_get(provider, model, max_out, prompt):
 def _cache_put(provider, model, max_out, prompt, response):
     if os.environ.get("LLM_CACHE", "1") == "0":
         return
-    os.makedirs(CACHE_DIR, exist_ok=True)
+    os.makedirs(CACHE_DIR, mode=0o700, exist_ok=True)
+    os.chmod(CACHE_DIR, 0o700)
     path = _cache_path(provider, model, max_out, prompt)
     fd, tmp_path = tempfile.mkstemp(dir=CACHE_DIR)
     try:

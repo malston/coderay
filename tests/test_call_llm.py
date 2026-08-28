@@ -1,5 +1,7 @@
 import importlib
 import json
+import os
+import stat
 import sys
 import types
 
@@ -34,6 +36,16 @@ def test_cache_put_leaves_no_temp_files_behind(tmp_path):
     entries = list(tmp_path.iterdir())
     assert len(entries) == 1
     assert json.loads(entries[0].read_text())["response"] == "world"
+
+
+def test_cache_dir_is_not_world_or_group_readable(tmp_path):
+    # Cached responses can contain target-repo file contents/secrets (coderay-3fk),
+    # so the cache dir must not be readable by other users on the machine.
+    cache_dir = tmp_path / "coderay-cache"
+    call_llm_module.CACHE_DIR = str(cache_dir)
+    _cache_put("anthropic", "claude-x", 100, "hello", "world")
+    mode = os.stat(cache_dir).st_mode
+    assert mode & (stat.S_IRWXG | stat.S_IRWXO) == 0
 
 
 def _fake_anthropic_module(stop_reason, text="hi", block_type="text"):
