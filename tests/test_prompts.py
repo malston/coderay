@@ -1,7 +1,7 @@
 import glob
 import os
 
-from utils import fill
+from coderay_utils import fill
 
 PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "workflow", "prompts")
 

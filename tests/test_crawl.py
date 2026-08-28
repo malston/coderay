@@ -1,10 +1,10 @@
 import os
 import sys
 
-import utils  # noqa: F401  (populates sys.modules["utils.crawl"])
-from utils.crawl import list_files, safe_read
+import coderay_utils  # noqa: F401  (populates sys.modules["coderay_utils.crawl"])
+from coderay_utils.crawl import list_files, safe_read
 
-crawl = sys.modules["utils.crawl"]
+crawl = sys.modules["coderay_utils.crawl"]
 
 
 def test_wanted_rejects_credential_shaped_names():

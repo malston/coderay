@@ -6,7 +6,7 @@
 
 Packages a pipeline as a PocketFlow workflow so you get retry and clean node boundaries for free, but every node maps one to one to a function in the chapter.
 
-- [`workflow/`](workflow/). Four nodes: smart crawl, analyze, relate, write chapters. The three that parse structured YAML retry bad output internally (`utils.yaml_call`); `WriteChapters` uses PocketFlow's `Node(max_retries=3)` since it calls the LLM directly.
+- [`workflow/`](workflow/). Four nodes: smart crawl, analyze, relate, write chapters. The three that parse structured YAML retry bad output internally (`coderay_utils.yaml_call`); `WriteChapters` uses PocketFlow's `Node(max_retries=3)` since it calls the LLM directly.
 - [`workflow/prompts/`](workflow/prompts/). The four prompts the chapter teaches. One file each.
 - [`workflow/instructions/`](workflow/instructions/). Four swappable lenses (the chapter's punchline). Same pipeline, different output.
 - [`skill/CODEBASE-TOUR.md`](skill/CODEBASE-TOUR.md). The agent equivalent.

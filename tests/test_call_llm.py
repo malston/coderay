@@ -5,11 +5,11 @@ import types
 
 import pytest
 
-# utils/__init__.py re-exports call_llm the function under the same name as the
-# call_llm module, shadowing `utils.call_llm` as an attribute -- fetch the
+# coderay_utils/__init__.py re-exports call_llm the function under the same name as the
+# call_llm module, shadowing `coderay_utils.call_llm` as an attribute -- fetch the
 # actual module out of sys.modules instead of relying on attribute access.
-call_llm_module = importlib.import_module("utils.call_llm")
-from utils.call_llm import _cache_path, _cache_put, call_llm
+call_llm_module = importlib.import_module("coderay_utils.call_llm")
+from coderay_utils.call_llm import _cache_path, _cache_put, call_llm
 
 
 @pytest.fixture(autouse=True)

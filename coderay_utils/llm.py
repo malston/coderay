@@ -29,7 +29,8 @@ def fill(template, **kwargs):
 def parse_yaml(text):
     """Extract and parse a ```yaml fenced block. Raises so a bad reply retries."""
     m = re.search(r"```yaml\s*\n(.*?)```", text, re.DOTALL)
-    assert m, f"LLM response missing ```yaml fence. Got:\n{text[:500]}"
+    if not m:
+        raise ValueError(f"LLM response missing ```yaml fence. Got:\n{text[:500]}")
     return yaml.safe_load(m.group(1))
 
 
