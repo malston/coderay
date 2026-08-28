@@ -1,4 +1,4 @@
-from main import build_mermaid, md_to_html, mermaid_label
+from main import MERMAID_SCRIPT, build_mermaid, md_to_html, mermaid_label
 
 
 def test_md_to_html_never_emits_raw_script_tag():
@@ -26,3 +26,9 @@ def test_build_mermaid_handles_quote_in_name():
     abstractions = [{"name": 'Weird "Quoted" Name'}]
     out = build_mermaid(abstractions, [])
     assert 'A0["Weird "Quoted" Name"]' not in out
+
+
+def test_mermaid_script_is_pinned_and_has_integrity():
+    assert "mermaid/dist/mermaid.min.js\"" not in MERMAID_SCRIPT  # unpinned "latest"
+    assert "@11.17.2/dist/mermaid.min.js" in MERMAID_SCRIPT
+    assert 'integrity="sha384-' in MERMAID_SCRIPT
