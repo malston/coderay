@@ -34,14 +34,14 @@ Output:
   Chapter 3/8: COMPUTE_DTYPE
   ...
 
-Wrote tour to ../output/nanochat-tour/
-  Open ../output/nanochat-tour/index.html in a browser
+Wrote tour to ../output/nanochat-beginner-tutorial-tour/
+  Open ../output/nanochat-beginner-tutorial-tour/index.html in a browser
 ```
 
-You get back:
+You get back (the directory name includes the lens, so running the same repo with a different `--instructions` writes to a separate directory instead of overwriting):
 
 ```text
-output/nanochat-tour/
+output/nanochat-beginner-tutorial-tour/
 ├── index.md            # mermaid diagram + chapter links
 ├── index.html          # same, browser ready, links to chapter HTML
 ├── 01_tokenizer.md     # plus 01_tokenizer.html

@@ -247,6 +247,14 @@ def dump_run_state(shared: PipelineState, out):
     return path
 
 
+def default_output_dir(repo_path, instructions):
+    """Keyed on both repo name and lens, so re-running with a different
+    --instructions writes to a separate directory instead of colliding with
+    (and leaving orphaned chapter files from) a prior run's output."""
+    name = os.path.basename(os.path.abspath(repo_path))
+    return os.path.join(os.path.dirname(__file__), "..", "output", f"{name}-{instructions}-tour")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("repo_path")
@@ -258,7 +266,7 @@ def main():
         ap.error(f"{args.repo_path} is not a directory")
 
     name = os.path.basename(os.path.abspath(args.repo_path))
-    out = args.out or os.path.join(os.path.dirname(__file__), "..", "output", f"{name}-tour")
+    out = args.out or default_output_dir(args.repo_path, args.instructions)
     os.makedirs(out, exist_ok=True)
 
     shared: PipelineState = {"repo_path": args.repo_path, "instructions": args.instructions}
