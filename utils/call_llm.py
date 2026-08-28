@@ -1,4 +1,4 @@
-"""Shared LLM wrapper used by every chapter in this repo.
+"""Shared LLM wrapper used by every node in the pipeline.
 
 Picks the provider based on which env var is set:
   ANTHROPIC_API_KEY  -> Claude (claude-sonnet-4-6)
@@ -146,32 +146,6 @@ def call_llm(prompt: str) -> str:
 
     _cache_put(provider, model, max_out, prompt, text)
     return text
-
-
-def call_image(prompt: str, output_path: str) -> str:
-    """Generate an image using Gemini's image model. Saves to output_path. Returns the path.
-
-    Only Gemini is supported for images. Reads GEMINI_API_KEY.
-    Cache: results are NOT cached on disk (images are big and unique per prompt).
-    """
-    from google import genai
-    from google.genai import types
-
-    api_key = os.environ.get("GEMINI_API_KEY")
-    assert api_key, "GEMINI_API_KEY required for image generation"
-    model = os.environ.get("GEMINI_IMAGE_MODEL", "gemini-3.1-flash-image-preview")
-
-    client = genai.Client(api_key=api_key)
-    resp = client.models.generate_content(
-        model=model,
-        contents=[prompt],
-        config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
-    )
-    for part in resp.candidates[0].content.parts:
-        if getattr(part, "inline_data", None) is not None:
-            part.as_image().save(output_path)
-            return output_path
-    raise RuntimeError(f"Image model returned no image. Prompt was:\n{prompt[:200]}")
 
 
 if __name__ == "__main__":
