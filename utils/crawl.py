@@ -1,25 +1,25 @@
-"""Crawl a repo into a single string for an LLM.
+"""List which files in a repo are worth sending to an LLM.
 
-Parameterized version. The defaults aim for "good baseline for most repos":
-keep common source extensions, skip the noise the Ch3 chapter calls out (tests,
-docs, examples, locales, vendored code, caches, build artifacts).
+The defaults aim for "good baseline for most repos": keep common source
+extensions, skip the noise (tests, docs, examples, locales, vendored code,
+caches, build artifacts).
 
 Override any default by passing your own set. The exposed constants are
 frozensets so you can union or difference them:
 
-    from utils import crawl, DEFAULT_SKIP_DIR
+    from utils import list_files, DEFAULT_SKIP_DIR
     # add to defaults:
-    crawl("repo/", skip_dirs=DEFAULT_SKIP_DIR | {"my-generated-dir"})
+    list_files("repo/", skip_dirs=DEFAULT_SKIP_DIR | {"my-generated-dir"})
     # restrict to one language:
-    crawl("repo/", keep_ext={".py"})
+    list_files("repo/", keep_ext={".py"})
 
 For path-aware filtering (subpaths, specific file patterns, recursive subdirs)
 pass `include` and `exclude` as lists of .gitignore-style patterns:
 
     # only keep files under src/core/ or pkg/
-    crawl("repo/", include=["src/core/**", "pkg/**"])
+    list_files("repo/", include=["src/core/**", "pkg/**"])
     # drop everything matching these patterns
-    crawl("repo/", exclude=["**/old/**", "**/*_test.go", "examples/legacy/**"])
+    list_files("repo/", exclude=["**/old/**", "**/*_test.go", "examples/legacy/**"])
 
 Patterns are matched against the path relative to `root`. Both lists default
 to empty (no path filtering). Patterns follow the same rules as `.gitignore`.
@@ -179,8 +179,8 @@ def safe_read(path, max_chars=None):
     """Read a file, skip per-file decode and OS errors (permission denied,
     broken symlink, vanished file).
 
-    The only legitimate try/except in this module (and in the chapters that use
-    it): one bad file should not kill a walk over 10,000 files.
+    The only legitimate try/except in this module: one bad file should not
+    kill a walk over 10,000 files.
 
     max_chars, if given, reads only that many characters instead of the whole
     file -- use this when the caller only needs a preview.
@@ -190,16 +190,3 @@ def safe_read(path, max_chars=None):
             return f.read(max_chars) if max_chars is not None else f.read()
     except (UnicodeDecodeError, OSError):
         return None
-
-
-def crawl(root, **kwargs):
-    """Walk root, read every kept file, return one concatenated string with file headers."""
-    files = list_files(root, **kwargs)
-    parts = []
-    for path in files:
-        text = safe_read(path)
-        if text is None:
-            continue
-        rel = os.path.relpath(path, root)
-        parts.append(f"{'=' * 60}\nFile: {rel}\n{'=' * 60}\n{text}\n")
-    return '\n'.join(parts)

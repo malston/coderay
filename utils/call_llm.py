@@ -1,4 +1,4 @@
-"""Shared LLM wrapper used by every chapter in this repo.
+"""Shared LLM wrapper used by every node in the pipeline.
 
 Picks the provider based on which env var is set:
   ANTHROPIC_API_KEY  -> Claude (claude-sonnet-4-6)
@@ -30,7 +30,7 @@ CACHE_DIR = os.path.join(os.path.dirname(__file__), ".cache")
 def _pick():
     p = os.environ.get("LLM_PROVIDER")
     if p:
-        return p.lower()
+        return p.strip().lower()
     if os.environ.get("ANTHROPIC_API_KEY"):
         return "anthropic"
     if os.environ.get("OPENAI_API_KEY"):
@@ -48,11 +48,14 @@ def _model_for(provider):
     # answers and don't mind the cost.
     #
     # Override per call with ANTHROPIC_MODEL / OPENAI_MODEL / GEMINI_MODEL.
-    return {
+    models = {
         "anthropic": os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
         "openai":    os.environ.get("OPENAI_MODEL", "gpt-5.1"),
         "gemini":    os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
-    }[provider]
+    }
+    if provider not in models:
+        raise RuntimeError(f"Unknown LLM_PROVIDER={provider!r}")
+    return models[provider]
 
 
 def _cache_path(provider, model, max_out, prompt):
@@ -67,7 +70,8 @@ def _cache_get(provider, model, max_out, prompt):
     if not os.path.exists(path):
         return None
     try:
-        return json.load(open(path))["response"]
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)["response"]
     except (OSError, ValueError, KeyError):
         return None
 
@@ -79,7 +83,7 @@ def _cache_put(provider, model, max_out, prompt, response):
     path = _cache_path(provider, model, max_out, prompt)
     fd, tmp_path = tempfile.mkstemp(dir=CACHE_DIR)
     try:
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump({"provider": provider, "model": model, "response": response}, f)
         os.replace(tmp_path, path)
     except BaseException:
@@ -138,40 +142,11 @@ def call_llm(prompt: str) -> str:
             raise RuntimeError(f"Gemini response incomplete (finish_reason={finish_reason})")
         text = resp.text
 
-    else:
-        raise RuntimeError(f"Unknown LLM_PROVIDER={provider!r}")
-
     if not text:
         raise RuntimeError(f"{provider} returned an empty response")
 
     _cache_put(provider, model, max_out, prompt, text)
     return text
-
-
-def call_image(prompt: str, output_path: str) -> str:
-    """Generate an image using Gemini's image model. Saves to output_path. Returns the path.
-
-    Only Gemini is supported for images. Reads GEMINI_API_KEY.
-    Cache: results are NOT cached on disk (images are big and unique per prompt).
-    """
-    from google import genai
-    from google.genai import types
-
-    api_key = os.environ.get("GEMINI_API_KEY")
-    assert api_key, "GEMINI_API_KEY required for image generation"
-    model = os.environ.get("GEMINI_IMAGE_MODEL", "gemini-3.1-flash-image-preview")
-
-    client = genai.Client(api_key=api_key)
-    resp = client.models.generate_content(
-        model=model,
-        contents=[prompt],
-        config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
-    )
-    for part in resp.candidates[0].content.parts:
-        if getattr(part, "inline_data", None) is not None:
-            part.as_image().save(output_path)
-            return output_path
-    raise RuntimeError(f"Image model returned no image. Prompt was:\n{prompt[:200]}")
 
 
 if __name__ == "__main__":

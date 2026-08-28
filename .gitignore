@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
+*.egg-info/
 .mypy_cache/
 utils/.cache/
 output/

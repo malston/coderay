@@ -1,4 +1,14 @@
-from main import MERMAID_SCRIPT, build_mermaid, md_to_html, mermaid_label
+from main import (
+    MERMAID_SCRIPT,
+    available_lenses,
+    build_mermaid,
+    md_to_html,
+    mermaid_label,
+    write_chapter_files,
+    write_index_html,
+    write_index_md,
+)
+from workflow.nodes import slug
 
 
 def test_md_to_html_never_emits_raw_script_tag():
@@ -32,3 +42,66 @@ def test_mermaid_script_is_pinned_and_has_integrity():
     assert "mermaid/dist/mermaid.min.js\"" not in MERMAID_SCRIPT  # unpinned "latest"
     assert "@11.17.2/dist/mermaid.min.js" in MERMAID_SCRIPT
     assert 'integrity="sha384-' in MERMAID_SCRIPT
+
+
+def test_available_lenses_matches_instructions_directory():
+    lenses = available_lenses()
+    assert lenses == sorted(lenses)
+    assert "beginner-tutorial" in lenses
+    assert "architecture-review" in lenses
+    assert "security-audit" in lenses
+    assert "onboarding-guide" in lenses
+
+
+def _chapters():
+    return [
+        {"name": "First", "filename": "01_first.md", "content": "# First\n\ncontent"},
+        {"name": "Second", "filename": "02_second.md", "content": "# Second\n\n[back](01_first.md)"},
+    ]
+
+
+def test_chapter_link_rewrite_matches_workflow_nodes_filename_convention(tmp_path):
+    # Regression for coderay-e06: workflow.nodes generates chapter filenames via
+    # slug(), and write_chapter_files's link-rewrite regex has to recognize
+    # whatever alphabet slug() produces, or generated links silently 404.
+    names = ["Getting Started!", "API & Auth", "C++ Bindings"]
+    filenames = {n: f"{i+1:02d}_{slug(n)}.md" for i, n in enumerate(names)}
+    chapters = [
+        {"name": n, "filename": filenames[n], "content": f"# {n}"} for n in names
+    ]
+    chapters[0]["content"] = f"See [{names[1]}]({filenames[names[1]]}) next."
+
+    write_chapter_files(chapters, "repo", str(tmp_path))
+
+    first_html = (tmp_path / chapters[0]["filename"].replace(".md", ".html")).read_text(encoding="utf-8")
+    assert f"{filenames[names[1]][:-3]}.html" in first_html
+    assert filenames[names[1]] not in first_html  # the .md link got rewritten, not left dangling
+
+
+def test_write_chapter_files_writes_md_and_html_with_nav_links(tmp_path):
+    write_chapter_files(_chapters(), "myrepo", str(tmp_path))
+
+    assert (tmp_path / "01_first.md").read_text(encoding="utf-8") == "# First\n\ncontent"
+    html_out = (tmp_path / "02_second.html").read_text(encoding="utf-8")
+    assert "01_first.html" in html_out  # markdown link rewritten to .html
+    assert "&larr;" in html_out  # prev link present for the second chapter
+    assert (tmp_path / "01_first.html").exists()
+
+
+def test_write_index_md_lists_chapters_and_mermaid(tmp_path):
+    write_index_md(_chapters(), "myrepo", "beginner-tutorial", "a summary", "flowchart TD", str(tmp_path))
+    out = (tmp_path / "index.md").read_text(encoding="utf-8")
+    assert "# myrepo" in out
+    assert "[First](01_first.md)" in out
+    assert "flowchart TD" in out
+
+
+def test_write_index_html_escapes_summary_and_lists_files(tmp_path):
+    write_index_html(
+        _chapters(), "myrepo", "beginner-tutorial", "a <script> summary",
+        "flowchart TD", ["a.py", "b.py"], "because", str(tmp_path),
+    )
+    out = (tmp_path / "index.html").read_text(encoding="utf-8")
+    assert "<script> summary" not in out
+    assert "&lt;script&gt; summary" in out
+    assert "a.py" in out and "b.py" in out

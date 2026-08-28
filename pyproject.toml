@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coderay"
+version = "0.1.0"
+description = "Crawls a repo, picks the files that matter, and writes a multi-chapter tutorial."
+requires-python = ">=3.10"
+dependencies = [
+    "pocketflow>=0.0.1,<0.1",
+    "pyyaml>=6.0,<7",
+    "pathspec>=0.12,<1",
+    "markdown-it-py>=3.0,<4",
+    "anthropic>=0.40.0,<1",
+]
+
+[project.optional-dependencies]
+openai = ["openai>=1.0.0,<2"]
+gemini = ["google-genai>=0.3.0,<1"]
+
+[tool.setuptools]
+packages = ["workflow", "utils"]

@@ -1,7 +1,19 @@
 import pytest
 
 import utils.llm as llm_module
-from workflow.nodes import Analyze, SmartCrawl
+from workflow.nodes import Analyze, PipelineState, SmartCrawl
+
+
+def test_pipeline_state_documents_every_key_the_nodes_use():
+    expected = {
+        "repo_path", "instructions",
+        "preview_budget", "target_files", "codebase_budget", "chapter_context_window",
+        "codebase", "selected_files", "selection_reasoning",
+        "summary", "abstractions", "order",
+        "relationships",
+        "chapters", "filenames",
+    }
+    assert set(PipelineState.__annotations__) == expected
 
 
 def _make_files(tmp_path, count, size=2000):

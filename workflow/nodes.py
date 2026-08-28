@@ -8,18 +8,23 @@ Five steps from the book chapter:
   5. (rendering happens in main.py)
 
 Notes on reliability:
-  - LLM calling nodes use Node(max_retries=3, wait=2). No try/except around call_llm.
-  - YAML parsing is strict and goes through utils.yaml_call, which retries with a
-    varied prompt tail on bad output before the node's own retry plumbing kicks in.
+  - SmartCrawl, Analyze, and Relate parse a ```yaml reply through utils.yaml_call,
+    which already retries (with a varied prompt tail) on bad output, so their
+    Node max_retries stays at 1 -- a second retry layer on top would multiply
+    LLM calls for a genuinely bad reply without adding anything.
+  - WriteChapters doesn't parse structured output, so it keeps Node(max_retries=3,
+    wait=2) as its only retry layer, for transient call_llm failures.
   - File reads in the main path raise. The only swallowed errors are per file decode
-    errors inside crawl(), which is correct: we don't want one binary blob to kill a
-    walk over 10,000 files.
+    errors inside utils.safe_read(), which is correct: we don't want one binary blob
+    to kill a walk over 10,000 files.
 """
-import os, re, sys
+import os
+import re
+from typing import TypedDict
+
 from pocketflow import Node, BatchNode
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from utils import call_llm, list_files, safe_read, yaml_call  # noqa: E402
+from utils import call_llm, fill, list_files, read_prompt, safe_read, yaml_call
 
 ROOT = os.path.dirname(os.path.dirname(__file__))
 PROMPTS_DIR = os.path.join(ROOT, 'prompts')
@@ -30,12 +35,62 @@ CODEBASE_BUDGET = 1_000_000
 CHAPTER_CONTEXT_WINDOW = 3
 
 
-def load_prompt(name):
-    return open(os.path.join(PROMPTS_DIR, name)).read()
+class PipelineState(TypedDict, total=False):
+    """The dict threaded through create_tour_flow()'s nodes (SmartCrawl >>
+    Analyze >> Relate >> WriteChapters), and read afterward by workflow.main's
+    renderers. Not validated at runtime -- documents the contract each node's
+    untyped `shared[...]` subscripts rely on. Every key past instructions is
+    optional at the type level since it's only present once the node that
+    writes it has run.
+
+    Set by the caller before the flow runs:
+      repo_path               str   directory to analyze
+      instructions             str   instructions/<name>.md lens to use
+
+    Optional overrides read via shared.get(...) (all have defaults):
+      preview_budget           int   SmartCrawl.prep: char budget for the file preview manifest
+      target_files             int   SmartCrawl.prep: target selected-file count
+      codebase_budget          int   SmartCrawl.post: char budget for the assembled codebase
+      chapter_context_window   int   WriteChapters.prep: # of prior chapters kept as context
+
+    Written by SmartCrawl.post; read by Analyze/Relate/WriteChapters.prep and
+    workflow.main's renderers:
+      codebase                 str
+      selected_files           list[str]
+      selection_reasoning      str
+
+    Written by Analyze.post; read by Relate/WriteChapters.prep and
+    workflow.main's renderers:
+      summary                  str
+      abstractions             list[dict]
+      order                    list[str]
+
+    Written by Relate.post; read by workflow.main.build_mermaid:
+      relationships            list[dict]
+
+    Written by WriteChapters.post; read by workflow.main's renderers:
+      chapters                 list[dict]
+      filenames                dict[str, str]
+    """
+    repo_path: str
+    instructions: str
+    preview_budget: int
+    target_files: int
+    codebase_budget: int
+    chapter_context_window: int
+    codebase: str
+    selected_files: list
+    selection_reasoning: str
+    summary: str
+    abstractions: list
+    order: list
+    relationships: list
+    chapters: list
+    filenames: dict
 
 
 def load_instructions(name):
-    return open(os.path.join(INSTRUCTIONS_DIR, f"{name}.md")).read()
+    return read_prompt(INSTRUCTIONS_DIR, f"{name}.md")
 
 
 def slug(s):
@@ -47,9 +102,9 @@ class SmartCrawl(Node):
     """First filter by extension and size (§3.2 prune the obvious),
     then ask the LLM to pick the ~0.1-2% of files that capture the architecture."""
     def __init__(self):
-        super().__init__(max_retries=3, wait=2)
+        super().__init__(max_retries=1)
 
-    def prep(self, shared):
+    def prep(self, shared: PipelineState):
         root = shared["repo_path"]
         all_files = list_files(root)
         budget = shared.get("preview_budget", 1_000_000)
@@ -65,7 +120,8 @@ class SmartCrawl(Node):
             manifest_parts.append(f"  [{i}] {rel}\n{preview}\n")
         manifest = "\n".join(manifest_parts)
 
-        prompt = load_prompt("select-files.md").format(
+        prompt = fill(
+            read_prompt(PROMPTS_DIR, "select-files.md"),
             manifest=manifest,
             chars_per_file=chars_per_file,
             target_count=target,
@@ -77,13 +133,13 @@ class SmartCrawl(Node):
 
         def normalize(result):
             indices = result["selected"]
-            assert all(0 <= i < len(files) for i in indices), \
-                f"LLM returned out of range indices: {indices}"
+            if not all(0 <= i < len(files) for i in indices):
+                raise ValueError(f"LLM returned out of range indices: {indices}")
             return [files[i] for i in indices], result.get("reasoning", "")
 
         return yaml_call(prompt, normalize)
 
-    def post(self, shared, prep_res, exec_res):
+    def post(self, shared: PipelineState, prep_res, exec_res):
         selected, reasoning = exec_res
         root = shared["repo_path"]
         budget = shared.get("codebase_budget", CODEBASE_BUDGET)
@@ -112,10 +168,10 @@ class SmartCrawl(Node):
 # Step 2. Identify the abstractions
 class Analyze(Node):
     def __init__(self):
-        super().__init__(max_retries=3, wait=2)
+        super().__init__(max_retries=1)
 
-    def prep(self, shared):
-        return load_prompt("identify-abstractions.md").format(codebase=shared["codebase"])
+    def prep(self, shared: PipelineState):
+        return fill(read_prompt(PROMPTS_DIR, "identify-abstractions.md"), codebase=shared["codebase"])
 
     def exec(self, prompt):
         def normalize(result):
@@ -128,7 +184,7 @@ class Analyze(Node):
 
         return yaml_call(prompt, normalize)
 
-    def post(self, shared, prep_res, exec_res):
+    def post(self, shared: PipelineState, prep_res, exec_res):
         shared["summary"] = exec_res["summary"]
         shared["abstractions"] = exec_res["abstractions"]
         shared["order"] = exec_res["learning_order"]
@@ -138,20 +194,21 @@ class Analyze(Node):
 # Step 3. Map relationships
 class Relate(Node):
     def __init__(self):
-        super().__init__(max_retries=3, wait=2)
+        super().__init__(max_retries=1)
 
-    def prep(self, shared):
+    def prep(self, shared: PipelineState):
         listing = "\n".join(
             f"- {a['name']}: {a['description'].strip()}" for a in shared["abstractions"]
         )
-        return load_prompt("analyze-relationships.md").format(
-            abstractions=listing, codebase=shared["codebase"]
+        return fill(
+            read_prompt(PROMPTS_DIR, "analyze-relationships.md"),
+            abstractions=listing, codebase=shared["codebase"],
         )
 
     def exec(self, prompt):
         return yaml_call(prompt, lambda result: result["relationships"])
 
-    def post(self, shared, prep_res, exec_res):
+    def post(self, shared: PipelineState, prep_res, exec_res):
         shared["relationships"] = exec_res
         print(f"  Found {len(exec_res)} relationships")
 
@@ -163,7 +220,7 @@ class WriteChapters(Node):
     def __init__(self):
         super().__init__(max_retries=3, wait=2)
 
-    def prep(self, shared):
+    def prep(self, shared: PipelineState):
         by_name = {a["name"]: a for a in shared["abstractions"]}
         order = shared["order"]
         filenames = {n: f"{i+1:02d}_{slug(n)}.md" for i, n in enumerate(order)}
@@ -188,7 +245,8 @@ class WriteChapters(Node):
             print(f"  Chapter {i+1}/{total}: {name}")
             recent = prev_chapters[-window:] if window else prev_chapters
             prev = "\n\n---\n\n".join(recent) if recent else "(This is the first chapter.)"
-            prompt = load_prompt("write-chapter.md").format(
+            prompt = fill(
+                read_prompt(PROMPTS_DIR, "write-chapter.md"),
                 name=name,
                 description=ctx["by_name"][name]["description"],
                 chapter_num=i + 1,
@@ -203,6 +261,6 @@ class WriteChapters(Node):
             prev_chapters.append(content)
         return chapters
 
-    def post(self, shared, prep_res, exec_res):
+    def post(self, shared: PipelineState, prep_res, exec_res):
         shared["chapters"] = exec_res
         shared["filenames"] = prep_res["filenames"]
