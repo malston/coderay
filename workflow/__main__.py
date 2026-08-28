@@ -16,6 +16,7 @@ import html
 import json
 import os
 import re
+from importlib.metadata import version
 
 from markdown_it import MarkdownIt
 
@@ -257,6 +258,7 @@ def default_output_dir(repo_path, instructions):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--version", action="version", version=f"coderay {version('coderay')}")
     ap.add_argument("repo_path")
     ap.add_argument("--out", default=None)
     ap.add_argument("--instructions", default="beginner-tutorial", choices=available_lenses())
