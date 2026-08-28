@@ -1,4 +1,4 @@
-.PHONY: help install test build clean
+.PHONY: help install install-global test build clean
 .DEFAULT_GOAL := help
 
 help: ## Show this help
@@ -6,6 +6,9 @@ help: ## Show this help
 
 install: ## Sync dependencies from uv.lock
 	uv sync --locked
+
+install-global: ## Install the coderay CLI onto your PATH via uv tool
+	uv tool install --editable .
 
 test: ## Run the test suite
 	uv run pytest tests/ -q
