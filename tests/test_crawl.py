@@ -31,3 +31,19 @@ def test_list_files_excludes_credential_shaped_files(tmp_path):
 
     names = {p.split("/")[-1] for p in files}
     assert names == {"main.py"}
+
+
+def test_list_files_excludes_symlink_escaping_the_repo_root(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "main.py").write_text("x = 1\n")
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "credentials").write_text("AKIA...\n")
+    (repo / "config.yaml").symlink_to(outside / "credentials")
+
+    files = crawl.list_files(str(repo))
+
+    names = {p.split("/")[-1] for p in files}
+    assert names == {"main.py"}

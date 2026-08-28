@@ -150,12 +150,15 @@ def list_files(root, *, keep_ext=DEFAULT_KEEP_EXT, skip_dirs=DEFAULT_SKIP_DIR,
     skip = set(skip_dirs)
     include_spec = _compile(include)
     exclude_spec = _compile(exclude)
+    real_root = os.path.realpath(root)
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in skip]
         for f in sorted(filenames):
             if not _wanted(f, keep_ext, keep_names):
                 continue
             path = os.path.join(dirpath, f)
+            if not os.path.realpath(path).startswith(real_root + os.sep):
+                continue  # symlink resolving outside the repo root
             rel = os.path.relpath(path, root)
             if include_spec is not None and not include_spec.match_file(rel):
                 continue
