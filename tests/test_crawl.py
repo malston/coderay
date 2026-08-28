@@ -1,7 +1,10 @@
 import os
+import sys
 
-from utils import crawl
+import utils  # noqa: F401  (populates sys.modules["utils.crawl"])
 from utils.crawl import list_files, safe_read
+
+crawl = sys.modules["utils.crawl"]
 
 
 def test_wanted_rejects_credential_shaped_names():
