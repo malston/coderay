@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*## "}; {printf "%-10s %s\n", $$1, $$2}'
+	@grep -E '^[^:]+:.*## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*## "}; {printf "%-10s %s\n", $$1, $$2}'
 
 install: ## Sync dependencies from uv.lock
 	uv sync --locked
