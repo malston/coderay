@@ -27,7 +27,7 @@ def md_to_html(md_text):
     # mermaid.js looks for <pre class="mermaid">...</pre>. Rewrite.
     return re.sub(
         r'<pre><code class="language-mermaid">(.*?)</code></pre>',
-        lambda m: f'<pre class="mermaid">{html.unescape(m.group(1))}</pre>',
+        lambda m: f'<pre class="mermaid">{m.group(1)}</pre>',
         rendered,
         flags=re.DOTALL,
     )
