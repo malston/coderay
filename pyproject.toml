@@ -10,7 +10,7 @@ requires-python = ">=3.10"
 dependencies = [
     "pocketflow>=0.0.1,<0.1",
     "pyyaml>=6.0,<7",
-    "pathspec>=0.12,<1",
+    "pathspec>=1.1.1,<2",
     "markdown-it-py>=3.0,<4",
     "anthropic>=0.40.0,<1",
 ]
