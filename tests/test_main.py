@@ -1,4 +1,7 @@
 import json
+import subprocess
+import sys
+from importlib.metadata import version
 
 from workflow.__main__ import (
     MERMAID_SCRIPT,
@@ -13,6 +16,14 @@ from workflow.__main__ import (
     write_index_md,
 )
 from workflow.nodes import slug
+
+
+def test_version_flag_prints_installed_package_version():
+    result = subprocess.run(
+        [sys.executable, "-m", "workflow", "--version"],
+        capture_output=True, text=True, check=True,
+    )
+    assert result.stdout.strip() == f"coderay {version('coderay')}"
 
 
 def test_default_output_dir_is_keyed_on_lens():
