@@ -46,6 +46,31 @@ def test_analyze_rejects_duplicate_abstraction_names(monkeypatch):
         Analyze().exec("prompt")
 
 
+def test_analyze_retry_sends_a_different_prompt_each_time(monkeypatch, tmp_path):
+    # Regression for coderay-2t7: the on-disk response cache keys on the exact
+    # prompt, so a retry against identical malformed output would previously
+    # just replay the same cached bad response. yaml_call varies the prompt
+    # tail on each retry, which both produces a fresh call and defeats the
+    # cache. Verify the prompts actually differ, not just that we eventually
+    # raise.
+    import importlib
+    call_llm_module = importlib.import_module("utils.call_llm")
+
+    monkeypatch.setattr(call_llm_module, "CACHE_DIR", str(tmp_path))
+    prompts_seen = []
+
+    def fake_call_llm(prompt):
+        prompts_seen.append(prompt)
+        return "not valid yaml, no fence"
+
+    monkeypatch.setattr(llm_module, "call_llm", fake_call_llm)
+    with pytest.raises(AssertionError):
+        Analyze().exec("some prompt")
+    assert len(prompts_seen) > 1
+    assert len(set(prompts_seen)) == len(prompts_seen), \
+        "retries sent an identical prompt -- cache would serve the stale bad response"
+
+
 def test_analyze_accepts_matching_names_and_order(monkeypatch):
     yaml_text = (
         "```yaml\n"

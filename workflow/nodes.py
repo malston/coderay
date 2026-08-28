@@ -9,7 +9,8 @@ Five steps from the book chapter:
 
 Notes on reliability:
   - LLM calling nodes use Node(max_retries=3, wait=2). No try/except around call_llm.
-  - YAML parsing is strict. Bad output triggers a retry via the node's retry plumbing.
+  - YAML parsing is strict and goes through utils.yaml_call, which retries with a
+    varied prompt tail on bad output before the node's own retry plumbing kicks in.
   - File reads in the main path raise. The only swallowed errors are per file decode
     errors inside crawl(), which is correct: we don't want one binary blob to kill a
     walk over 10,000 files.
