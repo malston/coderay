@@ -99,8 +99,20 @@ DEFAULT_SKIP_DIR = frozenset({
 
 DEFAULT_MAX_FILE_BYTES = 500_000
 
+# Credential-shaped files. Never sent to the LLM or cached, regardless of
+# keep_ext/keep_names — these are excluded even if a caller explicitly asks
+# for their extension.
+DEFAULT_SKIP_NAMES = frozenset({
+    '.env', '.env.local', '.env.production', '.netrc', '.npmrc', '.pypirc',
+    'credentials', 'credentials.json', 'service-account.json',
+    'id_rsa', 'id_ed25519', '.htpasswd', 'terraform.tfvars',
+})
+DEFAULT_SKIP_SUFFIXES = ('.pem', '.key', '.p12', '.pfx', '.keystore', '.jks')
+
 
 def _wanted(filename, keep_ext, keep_names):
+    if filename in DEFAULT_SKIP_NAMES or filename.endswith(DEFAULT_SKIP_SUFFIXES):
+        return False
     if filename in keep_names:
         return True
     return os.path.splitext(filename)[1] in keep_ext
