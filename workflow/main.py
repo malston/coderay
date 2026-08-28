@@ -153,7 +153,8 @@ def main():
                              "security-audit", "onboarding-guide"])
     args = ap.parse_args()
 
-    assert os.path.isdir(args.repo_path), f"{args.repo_path} is not a directory"
+    if not os.path.isdir(args.repo_path):
+        ap.error(f"{args.repo_path} is not a directory")
 
     name = os.path.basename(os.path.abspath(args.repo_path).rstrip('/'))
     out = args.out or os.path.join(os.path.dirname(__file__), "..", "output", f"{name}-tour")

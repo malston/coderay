@@ -8,9 +8,12 @@ Five steps from the book chapter:
   5. (rendering happens in main.py)
 
 Notes on reliability:
-  - LLM calling nodes use Node(max_retries=3, wait=2). No try/except around call_llm.
-  - YAML parsing is strict and goes through utils.yaml_call, which retries with a
-    varied prompt tail on bad output before the node's own retry plumbing kicks in.
+  - SmartCrawl, Analyze, and Relate parse a ```yaml reply through utils.yaml_call,
+    which already retries (with a varied prompt tail) on bad output, so their
+    Node max_retries stays at 1 -- a second retry layer on top would multiply
+    LLM calls for a genuinely bad reply without adding anything.
+  - WriteChapters doesn't parse structured output, so it keeps Node(max_retries=3,
+    wait=2) as its only retry layer, for transient call_llm failures.
   - File reads in the main path raise. The only swallowed errors are per file decode
     errors inside utils.safe_read(), which is correct: we don't want one binary blob
     to kill a walk over 10,000 files.
@@ -42,7 +45,7 @@ class SmartCrawl(Node):
     """First filter by extension and size (§3.2 prune the obvious),
     then ask the LLM to pick the ~0.1-2% of files that capture the architecture."""
     def __init__(self):
-        super().__init__(max_retries=3, wait=2)
+        super().__init__(max_retries=1)
 
     def prep(self, shared):
         root = shared["repo_path"]
@@ -73,8 +76,8 @@ class SmartCrawl(Node):
 
         def normalize(result):
             indices = result["selected"]
-            assert all(0 <= i < len(files) for i in indices), \
-                f"LLM returned out of range indices: {indices}"
+            if not all(0 <= i < len(files) for i in indices):
+                raise ValueError(f"LLM returned out of range indices: {indices}")
             return [files[i] for i in indices], result.get("reasoning", "")
 
         return yaml_call(prompt, normalize)
@@ -108,7 +111,7 @@ class SmartCrawl(Node):
 # Step 2. Identify the abstractions
 class Analyze(Node):
     def __init__(self):
-        super().__init__(max_retries=3, wait=2)
+        super().__init__(max_retries=1)
 
     def prep(self, shared):
         return fill(read_prompt(PROMPTS_DIR, "identify-abstractions.md"), codebase=shared["codebase"])
@@ -134,7 +137,7 @@ class Analyze(Node):
 # Step 3. Map relationships
 class Relate(Node):
     def __init__(self):
-        super().__init__(max_retries=3, wait=2)
+        super().__init__(max_retries=1)
 
     def prep(self, shared):
         listing = "\n".join(
