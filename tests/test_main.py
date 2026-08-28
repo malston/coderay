@@ -1,7 +1,10 @@
+import json
+
 from main import (
     MERMAID_SCRIPT,
     available_lenses,
     build_mermaid,
+    dump_run_state,
     md_to_html,
     mermaid_label,
     write_chapter_files,
@@ -105,3 +108,30 @@ def test_write_index_html_escapes_summary_and_lists_files(tmp_path):
     assert "<script> summary" not in out
     assert "&lt;script&gt; summary" in out
     assert "a.py" in out and "b.py" in out
+
+
+def test_dump_run_state_captures_partial_progress(tmp_path):
+    shared = {
+        "selected_files": ["a.py", "b.py"],
+        "abstractions": [{"name": "Foo"}, {"name": "Bar"}],
+        "order": ["Foo", "Bar"],
+    }
+    path = dump_run_state(shared, str(tmp_path))
+
+    state = json.loads((tmp_path / "run_state.json").read_text(encoding="utf-8"))
+    assert path == str(tmp_path / "run_state.json")
+    assert state["selected_files"] == ["a.py", "b.py"]
+    assert state["abstractions"] == ["Foo", "Bar"]
+    assert state["chapters_completed"] is None
+
+
+def test_dump_run_state_handles_empty_shared(tmp_path):
+    dump_run_state({}, str(tmp_path))
+    state = json.loads((tmp_path / "run_state.json").read_text(encoding="utf-8"))
+    assert state == {
+        "selected_files": None,
+        "abstractions": None,
+        "order": None,
+        "relationships": None,
+        "chapters_completed": None,
+    }
