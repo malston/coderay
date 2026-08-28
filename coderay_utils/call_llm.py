@@ -9,22 +9,23 @@ Override the auto pick with LLM_PROVIDER=anthropic|openai|gemini.
 Override the model with ANTHROPIC_MODEL / OPENAI_MODEL / GEMINI_MODEL.
 
 Caching:
-  Responses are cached on disk under utils/.cache/ keyed by sha256 of
-  (provider + model + prompt). The cache survives across runs so iterating on
-  downstream code (UI, post processing, README copy) costs nothing.
+  Responses are cached on disk under ~/.cache/coderay/ (or $XDG_CACHE_HOME/coderay
+  if set) keyed by sha256 of (provider + model + prompt). The cache survives
+  across runs so iterating on downstream code (UI, post processing, README
+  copy) costs nothing.
 
   Disable with LLM_CACHE=0.
-  Clear with: rm -rf utils/.cache
+  Clear with: rm -rf ~/.cache/coderay
 
 Smoke test:
-  python -m utils.call_llm
+  python -m coderay_utils.call_llm
 """
 import hashlib
 import json
 import os
 import tempfile
 
-CACHE_DIR = os.path.join(os.path.dirname(__file__), ".cache")
+CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "coderay")
 
 
 def _pick():
@@ -79,7 +80,8 @@ def _cache_get(provider, model, max_out, prompt):
 def _cache_put(provider, model, max_out, prompt, response):
     if os.environ.get("LLM_CACHE", "1") == "0":
         return
-    os.makedirs(CACHE_DIR, exist_ok=True)
+    os.makedirs(CACHE_DIR, mode=0o700, exist_ok=True)
+    os.chmod(CACHE_DIR, 0o700)
     path = _cache_path(provider, model, max_out, prompt)
     fd, tmp_path = tempfile.mkstemp(dir=CACHE_DIR)
     try:
