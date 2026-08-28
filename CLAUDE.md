@@ -70,7 +70,7 @@ python -m pytest tests/ -v    # run the test suite (no API key or network needed
 python -m workflow path/to/repo   # run the pipeline end to end (needs an API key, see .env.example)
 ```
 
-CI runs `pytest` on every push/PR via `.github/workflows/tests.yml`.
+CI runs `pytest` on every push/PR via `.github/workflows/tests.yml`. To cut a release, bump `version` in `pyproject.toml`, tag it (e.g. `git tag v0.2.0 && git push origin v0.2.0`), and `.github/workflows/release.yml` builds the package and creates a GitHub Release with the sdist/wheel attached.
 
 ## Architecture Overview
 
