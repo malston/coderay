@@ -19,6 +19,9 @@ dependencies = [
 openai = ["openai>=1.0.0,<2"]
 gemini = ["google-genai>=0.3.0,<1"]
 
+[dependency-groups]
+dev = ["pytest>=8.0,<9"]
+
 [project.scripts]
 coderay = "workflow.__main__:main"
 
