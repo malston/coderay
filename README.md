@@ -85,11 +85,11 @@ The chapter writing step is sequential on purpose. Parallel batching loses the c
 
 ## Example output
 
-One real tour, generated end to end. Open [`output/shepherd-tour/index.html`](output/shepherd-tour/) in a browser:
+One real tour, generated end to end (`output/` is gitignored, so this isn't checked in — run the quickstart above to get your own):
 
-| Tour                                             | Files selected | Chars selected | Abstractions | Relationships | Chapters |
-| ------------------------------------------------ | -------------- | -------------- | ------------ | ------------- | -------- |
-| [`output/shepherd-tour/`](output/shepherd-tour/) | 36             | 234,483        | 10           | 15            | 10       |
+| Tour            | Files selected | Chars selected | Abstractions | Relationships | Chapters |
+| --------------- | -------------- | -------------- | ------------ | ------------- | -------- |
+| `shepherd-tour` | 36             | 234,483        | 10           | 15            | 10       |
 
 Each tour contains one markdown and one HTML file per abstraction, plus an `index.html` with the mermaid architecture diagram and chapter list. The chapter HTML files render code blocks, tables, and mermaid sequence diagrams cleanly.
 
