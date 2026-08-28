@@ -33,14 +33,19 @@ def md_to_html(md_text):
     )
 
 
+def mermaid_label(s):
+    """Mermaid labels have no escape syntax; restrict to characters that can't break out."""
+    return re.sub(r'[^\w .,:/()\[\]-]', '', s)[:60]
+
+
 def build_mermaid(abstractions, relationships):
     ids = {a["name"]: f"A{i}" for i, a in enumerate(abstractions)}
     lines = ["flowchart TD"]
     for i, a in enumerate(abstractions):
-        lines.append(f'    A{i}["{a["name"]}"]')
+        lines.append(f'    A{i}["{mermaid_label(a["name"])}"]')
     for r in relationships:
         if r["from"] in ids and r["to"] in ids:
-            lines.append(f'    {ids[r["from"]]} -- "{r["label"][:30]}" --> {ids[r["to"]]}')
+            lines.append(f'    {ids[r["from"]]} -- "{mermaid_label(r["label"][:30])}" --> {ids[r["to"]]}')
     return "\n".join(lines)
 
 
@@ -160,11 +165,11 @@ def main():
         open(md_path, "w").write(ch["content"])
 
         prev_link = (
-            f'<a href="{chapter_html_name(chapters[i-1]["filename"])}">&larr; {chapters[i-1]["name"]}</a>'
+            f'<a href="{chapter_html_name(chapters[i-1]["filename"])}">&larr; {html.escape(chapters[i-1]["name"])}</a>'
             if i > 0 else "&nbsp;"
         )
         next_link = (
-            f'<a href="{chapter_html_name(chapters[i+1]["filename"])}">{chapters[i+1]["name"]} &rarr;</a>'
+            f'<a href="{chapter_html_name(chapters[i+1]["filename"])}">{html.escape(chapters[i+1]["name"])} &rarr;</a>'
             if i < len(chapters) - 1 else "&nbsp;"
         )
         # Rewrite markdown chapter links to point at .html files.
@@ -174,10 +179,10 @@ def main():
             ch["content"],
         )
         chapter_html = CHAPTER_HTML_TEMPLATE.format(
-            title=f'{ch["name"]} — {name}',
+            title=f'{html.escape(ch["name"])} — {html.escape(name)}',
             shared_style=SHARED_STYLE,
             mermaid_script=MERMAID_SCRIPT,
-            repo_name=name,
+            repo_name=html.escape(name),
             body_html=md_to_html(body_md),
             prev_link=prev_link,
             next_link=next_link,
@@ -200,15 +205,15 @@ def main():
 
     # Index HTML
     chapter_list_html = "\n".join(
-        f'    <li><a href="{chapter_html_name(ch["filename"])}">{ch["name"]}</a></li>'
+        f'    <li><a href="{chapter_html_name(ch["filename"])}">{html.escape(ch["name"])}</a></li>'
         for ch in chapters
     )
     files_list_html = "\n".join(
-        f'    <li><code>{f}</code></li>' for f in shared["selected_files"]
+        f'    <li><code>{html.escape(f)}</code></li>' for f in shared["selected_files"]
     )
     reasoning_html = md_to_html(shared["selection_reasoning"])
     rendered = INDEX_HTML_TEMPLATE.format(
-        repo_name=name,
+        repo_name=html.escape(name),
         lens=args.instructions,
         n_chapters=len(chapters),
         n_files=len(shared["selected_files"]),
