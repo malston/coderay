@@ -67,7 +67,7 @@ pip install -e .              # install this package (workflow/ + utils/) in edi
 pip install -e ".[openai,gemini]"  # add optional provider SDKs as needed
 
 python -m pytest tests/ -v    # run the test suite (no API key or network needed)
-python -m workflow.main path/to/repo   # run the pipeline end to end (needs an API key, see .env.example)
+python -m workflow path/to/repo   # run the pipeline end to end (needs an API key, see .env.example)
 ```
 
 CI runs `pytest` on every push/PR via `.github/workflows/tests.yml`.
@@ -82,14 +82,14 @@ SmartCrawl -> Analyze -> Relate -> WriteChapters
 
 - **SmartCrawl** walks the target repo (`utils/crawl.py`), builds a preview manifest, and asks the LLM which ~0.1-2% of files matter. Enforces `preview_budget` and `codebase_budget` so large repos can't blow the LLM's context window.
 - **Analyze** / **Relate** / **WriteChapters** call the LLM via `utils.call_llm` and parse its YAML output via `utils.yaml_call`, which retries with a varied prompt on bad output (the retry-safe path — don't reintroduce a local prompt-parsing loop that bypasses it, see the Rules doc).
-- `workflow/main.py` renders the pipeline's output (`shared` dict, typed as `PipelineState` in `workflow/nodes.py`) to markdown + HTML.
+- `workflow/__main__.py` renders the pipeline's output (`shared` dict, typed as `PipelineState` in `workflow/nodes.py`) to markdown + HTML.
 - `prompts/*.md` are the four LLM prompt templates; `instructions/*.md` are swappable output lenses (`--instructions <name>`), auto-discovered from the directory — adding a lens is just adding a file.
 
 Full architecture rationale and past review findings: `.full-review/*.md` (a comprehensive code review that produced the fixes now on `main`).
 
 ## Conventions & Patterns
 
-- Untrusted input (the target repo's own files, and anything the LLM echoes back from them) must be escaped before it reaches HTML/Mermaid output. This bit the project once (a confirmed stored-XSS bug); see `.full-review/02a-security.md` before touching `workflow/main.py`'s rendering code.
+- Untrusted input (the target repo's own files, and anything the LLM echoes back from them) must be escaped before it reaches HTML/Mermaid output. This bit the project once (a confirmed stored-XSS bug); see `.full-review/02a-security.md` before touching `workflow/__main__.py`'s rendering code.
 - LLM YAML parsing goes through `utils.yaml_call`, not a bespoke `parse_yaml`/`.format()` combo in `workflow/nodes.py` — that duplication was a real bug (a cache/retry defect) fixed in a prior epic. Reuse `utils.yaml_call` and `utils.fill()` for new LLM-calling code.
 - Any file-content budget (`preview_budget`, `codebase_budget`) must be enforced by capping _how many files_ are included, not by raising a per-file floor — that inversion was the root cause of two Critical scalability bugs.
 - Tests live in `tests/`, run via plain `pytest`, no network/API key required — LLM calls are faked at the `call_llm`/`yaml_call` boundary, not mocked deeper in the call stack.

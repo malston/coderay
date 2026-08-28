@@ -37,7 +37,7 @@ CHAPTER_CONTEXT_WINDOW = 3
 
 class PipelineState(TypedDict, total=False):
     """The dict threaded through create_tour_flow()'s nodes (SmartCrawl >>
-    Analyze >> Relate >> WriteChapters), and read afterward by workflow.main's
+    Analyze >> Relate >> WriteChapters), and read afterward by workflow.__main__'s
     renderers. Not validated at runtime -- documents the contract each node's
     untyped `shared[...]` subscripts rely on. Every key past instructions is
     optional at the type level since it's only present once the node that
@@ -54,21 +54,21 @@ class PipelineState(TypedDict, total=False):
       chapter_context_window   int   WriteChapters.prep: # of prior chapters kept as context
 
     Written by SmartCrawl.post; read by Analyze/Relate/WriteChapters.prep and
-    workflow.main's renderers:
+    workflow.__main__'s renderers:
       codebase                 str
       selected_files           list[str]
       selection_reasoning      str
 
     Written by Analyze.post; read by Relate/WriteChapters.prep and
-    workflow.main's renderers:
+    workflow.__main__'s renderers:
       summary                  str
       abstractions             list[dict]
       order                    list[str]
 
-    Written by Relate.post; read by workflow.main.build_mermaid:
+    Written by Relate.post; read by workflow.__main__.build_mermaid:
       relationships            list[dict]
 
-    Written by WriteChapters.post; read by workflow.main's renderers:
+    Written by WriteChapters.post; read by workflow.__main__'s renderers:
       chapters                 list[dict]
       filenames                dict[str, str]
     """

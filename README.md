@@ -18,7 +18,7 @@ pip install -e .            # or: pip install -e ".[openai,gemini]" for those pr
 cp .env.example .env        # fill in the one key you need, see .env.example for all options
 export GEMINI_API_KEY=...   # or ANTHROPIC_API_KEY / OPENAI_API_KEY
 
-python -m workflow.main path/to/repo
+python -m workflow path/to/repo   # or just: coderay path/to/repo
 ```
 
 If the run fails partway through (a bad LLM response after retries, a network error), the files, abstractions, and chapters completed so far are written to `run_state.json` in the target output directory — useful for figuring out how far it got without rerunning the whole pipeline.
@@ -55,9 +55,9 @@ output/nanochat-tour/
 Same pipeline. Same code. Different `instructions/` file. Different output entirely.
 
 ```bash
-python -m workflow.main path/to/repo --instructions architecture-review
-python -m workflow.main path/to/repo --instructions security-audit
-python -m workflow.main path/to/repo --instructions onboarding-guide
+python -m workflow path/to/repo --instructions architecture-review
+python -m workflow path/to/repo --instructions security-audit
+python -m workflow path/to/repo --instructions onboarding-guide
 ```
 
 | Lens                          | What you get back                                                                         |

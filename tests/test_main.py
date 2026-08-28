@@ -1,6 +1,6 @@
 import json
 
-from main import (
+from workflow.__main__ import (
     MERMAID_SCRIPT,
     available_lenses,
     build_mermaid,

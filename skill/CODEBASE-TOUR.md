@@ -54,7 +54,7 @@ If the repo is too big to hold in context after the smart crawl, stop. Tell the 
 
 ```bash
 pip install -e .
-python -m workflow.main path/to/repo --instructions beginner-tutorial
+python -m workflow path/to/repo --instructions beginner-tutorial
 ```
 
 The workflow uses the same prompts and lenses, just packaged for cold reruns.
