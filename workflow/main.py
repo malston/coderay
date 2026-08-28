@@ -1,9 +1,9 @@
 """CLI for Chapter 3's Codebase Knowledge Builder.
 
 Usage:
-    python main.py path/to/repo
-    python main.py path/to/repo --out ../output/vscode-tour
-    python main.py path/to/repo --instructions architecture-review
+    python -m workflow.main path/to/repo
+    python -m workflow.main path/to/repo --out ../output/vscode-tour
+    python -m workflow.main path/to/repo --instructions architecture-review
 
 The --instructions flag swaps the lens (§3.4):
     beginner-tutorial   (default)
@@ -13,7 +13,7 @@ The --instructions flag swaps the lens (§3.4):
 """
 import argparse, html, os, re
 from markdown_it import MarkdownIt
-from flow import create_tour_flow
+from workflow.flow import create_tour_flow
 
 # CommonMark parser. Unlike python-markdown's fenced_code extension, this
 # correctly handles fenced code blocks indented inside list items.

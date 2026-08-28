@@ -15,11 +15,10 @@ Notes on reliability:
     errors inside crawl(), which is correct: we don't want one binary blob to kill a
     walk over 10,000 files.
 """
-import os, re, sys
+import os, re
 from pocketflow import Node, BatchNode
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from utils import call_llm, list_files, safe_read, yaml_call  # noqa: E402
+from utils import call_llm, list_files, safe_read, yaml_call
 
 ROOT = os.path.dirname(os.path.dirname(__file__))
 PROMPTS_DIR = os.path.join(ROOT, 'prompts')

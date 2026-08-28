@@ -1,6 +1,6 @@
 """Codebase Knowledge Builder pipeline."""
 from pocketflow import Flow
-from nodes import SmartCrawl, Analyze, Relate, WriteChapters
+from workflow.nodes import SmartCrawl, Analyze, Relate, WriteChapters
 
 
 def create_tour_flow() -> Flow:

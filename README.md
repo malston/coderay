@@ -14,16 +14,15 @@ Packages a pipeline as a PocketFlow workflow so you get retry and clean node bou
 ## Quickstart
 
 ```bash
-pip install -r ./utils/requirements.txt
+pip install -e .            # or: pip install -e ".[openai,gemini]" for those providers
 export GEMINI_API_KEY=...   # or ANTHROPIC_API_KEY / OPENAI_API_KEY
 
-cd workflow
-python main.py path/to/repo
+python -m workflow.main path/to/repo
 ```
 
 Output:
 
-```
+```bash
   Selected 20 files (280,023 chars)
   Found 8 abstractions
   Found 13 relationships
@@ -38,7 +37,7 @@ Wrote tour to ../output/nanochat-tour/
 
 You get back:
 
-```
+```text
 output/nanochat-tour/
 ├── index.md            # mermaid diagram + chapter links
 ├── index.html          # same, browser ready, links to chapter HTML
@@ -53,17 +52,17 @@ output/nanochat-tour/
 Same pipeline. Same code. Different `instructions/` file. Different output entirely.
 
 ```bash
-python main.py path/to/repo --instructions architecture-review
-python main.py path/to/repo --instructions security-audit
-python main.py path/to/repo --instructions onboarding-guide
+python -m workflow.main path/to/repo --instructions architecture-review
+python -m workflow.main path/to/repo --instructions security-audit
+python -m workflow.main path/to/repo --instructions onboarding-guide
 ```
 
-| Lens | What you get back |
-| ---- | ----------------- |
+| Lens                          | What you get back                                                                         |
+| ----------------------------- | ----------------------------------------------------------------------------------------- |
 | `beginner-tutorial` (default) | Analogies, code blocks under 10 lines, "what happens when you close a tab" style openings |
-| `architecture-review` | Design decisions, alternatives, what breaks under load, technical debt |
-| `security-audit` | Trust boundaries, validation gaps, blast radius |
-| `onboarding-guide` | First week TODO list, what to touch and avoid, real shell commands |
+| `architecture-review`         | Design decisions, alternatives, what breaks under load, technical debt                    |
+| `security-audit`              | Trust boundaries, validation gaps, blast radius                                           |
+| `onboarding-guide`            | First week TODO list, what to touch and avoid, real shell commands                        |
 
 ## How it works
 
@@ -85,11 +84,11 @@ The chapter writing step is sequential on purpose. Parallel batching loses the c
 
 Four real tours, generated end to end with Gemini 2.5 Flash. Open the `index.html` in any of these in a browser:
 
-| Tour | Repo | Files in | Files selected | Abstractions | Cost |
-| ---- | ---- | -------- | -------------- | ------------ | ---- |
-| [`output/nanochat-tour/`](output/nanochat-tour/) | [karpathy/nanochat](https://github.com/karpathy/nanochat) | 56 | 20 | Tokenizer, GPT, COMPUTE_DTYPE, DataLoader, MuonAdamW, CheckpointManager, Task, Engine | ~$0.02 |
-| [`output/flask-tour/`](output/flask-tour/) | [pallets/flask](https://github.com/pallets/flask) | 236 | 20 | Flask, Config, Request, Response, AppContext, url_for, render_template, Blueprint | ~$0.03 |
-| [`output/express-tour/`](output/express-tour/) | [expressjs/express](https://github.com/expressjs/express) | 213 | 8 | app, req, res, Middleware, Router, Route, View | ~$0.01 |
-| [`output/micrograd-tour/`](output/micrograd-tour/) | [karpathy/micrograd](https://github.com/karpathy/micrograd) | 13 | 3 | Value, backward, Module, Neuron, Layer, MLP | ~$0.005 |
+| Tour                                               | Repo                                                        | Files in | Files selected | Abstractions                                                                          | Cost    |
+| -------------------------------------------------- | ----------------------------------------------------------- | -------- | -------------- | ------------------------------------------------------------------------------------- | ------- |
+| [`output/nanochat-tour/`](output/nanochat-tour/)   | [karpathy/nanochat](https://github.com/karpathy/nanochat)   | 56       | 20             | Tokenizer, GPT, COMPUTE_DTYPE, DataLoader, MuonAdamW, CheckpointManager, Task, Engine | ~$0.02  |
+| [`output/flask-tour/`](output/flask-tour/)         | [pallets/flask](https://github.com/pallets/flask)           | 236      | 20             | Flask, Config, Request, Response, AppContext, url_for, render_template, Blueprint     | ~$0.03  |
+| [`output/express-tour/`](output/express-tour/)     | [expressjs/express](https://github.com/expressjs/express)   | 213      | 8              | app, req, res, Middleware, Router, Route, View                                        | ~$0.01  |
+| [`output/micrograd-tour/`](output/micrograd-tour/) | [karpathy/micrograd](https://github.com/karpathy/micrograd) | 13       | 3              | Value, backward, Module, Neuron, Layer, MLP                                           | ~$0.005 |
 
 Each tour contains one markdown and one HTML file per abstraction, plus an `index.html` with the mermaid architecture diagram and chapter list. The chapter HTML files render code blocks, tables, and mermaid sequence diagrams cleanly.
