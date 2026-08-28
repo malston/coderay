@@ -1,6 +1,6 @@
 import pytest
 
-import utils.llm as llm_module
+import coderay_utils.llm as llm_module
 from workflow.nodes import Analyze, PipelineState, SmartCrawl
 
 
@@ -66,7 +66,7 @@ def test_analyze_retry_sends_a_different_prompt_each_time(monkeypatch, tmp_path)
     # cache. Verify the prompts actually differ, not just that we eventually
     # raise.
     import importlib
-    call_llm_module = importlib.import_module("utils.call_llm")
+    call_llm_module = importlib.import_module("coderay_utils.call_llm")
 
     monkeypatch.setattr(call_llm_module, "CACHE_DIR", str(tmp_path))
     prompts_seen = []

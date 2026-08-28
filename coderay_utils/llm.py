@@ -2,7 +2,6 @@
 `{slots}`, pull a fenced ```yaml block, and retry a structured call when a
 flaky model drops a field or returns malformed YAML.
 """
-import os
 import re
 
 import yaml
@@ -11,9 +10,10 @@ from .call_llm import call_llm
 
 
 def read_prompt(prompts_dir, name):
-    """Read a prompt file. `prompts/` stays the source of truth for every prompt."""
-    with open(os.path.join(prompts_dir, name), encoding="utf-8") as f:
-        return f.read()
+    """Read a prompt file from a directory (an importlib.resources Traversable
+    or a pathlib.Path). `workflow/prompts/` stays the source of truth for every
+    prompt."""
+    return (prompts_dir / name).read_text(encoding="utf-8")
 
 
 def fill(template, **kwargs):
@@ -29,7 +29,8 @@ def fill(template, **kwargs):
 def parse_yaml(text):
     """Extract and parse a ```yaml fenced block. Raises so a bad reply retries."""
     m = re.search(r"```yaml\s*\n(.*?)```", text, re.DOTALL)
-    assert m, f"LLM response missing ```yaml fence. Got:\n{text[:500]}"
+    if not m:
+        raise ValueError(f"LLM response missing ```yaml fence. Got:\n{text[:500]}")
     return yaml.safe_load(m.group(1))
 
 

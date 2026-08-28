@@ -16,6 +16,7 @@ import html
 import json
 import os
 import re
+from importlib.metadata import version
 
 from markdown_it import MarkdownIt
 
@@ -152,7 +153,7 @@ def chapter_html_name(md_name):
 
 
 def available_lenses():
-    return sorted(f[:-3] for f in os.listdir(INSTRUCTIONS_DIR) if f.endswith(".md"))
+    return sorted(p.name[:-3] for p in INSTRUCTIONS_DIR.iterdir() if p.name.endswith(".md"))
 
 
 def write_text(path, content):
@@ -247,8 +248,17 @@ def dump_run_state(shared: PipelineState, out):
     return path
 
 
+def default_output_dir(repo_path, instructions):
+    """Keyed on both repo name and lens, so re-running with a different
+    --instructions writes to a separate directory instead of colliding with
+    (and leaving orphaned chapter files from) a prior run's output."""
+    name = os.path.basename(os.path.abspath(repo_path))
+    return os.path.join(os.path.dirname(__file__), "..", "output", f"{name}-{instructions}-tour")
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--version", action="version", version=f"coderay {version('coderay')}")
     ap.add_argument("repo_path")
     ap.add_argument("--out", default=None)
     ap.add_argument("--instructions", default="beginner-tutorial", choices=available_lenses())
@@ -258,7 +268,7 @@ def main():
         ap.error(f"{args.repo_path} is not a directory")
 
     name = os.path.basename(os.path.abspath(args.repo_path))
-    out = args.out or os.path.join(os.path.dirname(__file__), "..", "output", f"{name}-tour")
+    out = args.out or default_output_dir(args.repo_path, args.instructions)
     os.makedirs(out, exist_ok=True)
 
     shared: PipelineState = {"repo_path": args.repo_path, "instructions": args.instructions}

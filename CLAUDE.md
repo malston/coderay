@@ -3,6 +3,7 @@
 This file provides instructions and context for AI coding agents working on this project.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->
+
 ## Beads Issue Tracker
 
 This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
@@ -52,26 +53,43 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 5. **Hand off** - Summarize changes, validation, issue status, and any blocked sync/commit/push step
 
 **Critical rules:**
+
 - Explicit user or orchestrator instructions override this Beads block.
 - Do not commit or push without clear authority from the active profile or the current user request.
 - If a required sync or push is blocked, stop and report the exact command and error.
-<!-- END BEADS INTEGRATION -->
 
+<!-- END BEADS INTEGRATION -->
 
 ## Build & Test
 
-_Add your build and test commands here_
-
 ```bash
-# Example:
-# npm install
-# npm test
+pip install -e .              # install this package (workflow/ + coderay_utils/) in editable mode
+pip install -e ".[openai,gemini]"  # add optional provider SDKs as needed
+
+python -m pytest tests/ -v    # run the test suite (no API key or network needed)
+python -m workflow path/to/repo   # run the pipeline end to end (needs an API key, see .env.example)
 ```
+
+CI runs `pytest` on every push/PR via `.github/workflows/tests.yml`.
 
 ## Architecture Overview
 
-_Add a brief overview of your project architecture_
+A PocketFlow pipeline with four sequential nodes (`workflow/nodes.py`, wired in `workflow/flow.py`):
+
+```text
+SmartCrawl -> Analyze -> Relate -> WriteChapters
+```
+
+- **SmartCrawl** walks the target repo (`coderay_utils/crawl.py`), builds a preview manifest, and asks the LLM which ~0.1-2% of files matter. Enforces `preview_budget` and `codebase_budget` so large repos can't blow the LLM's context window.
+- **Analyze** / **Relate** / **WriteChapters** call the LLM via `coderay_utils.call_llm` and parse its YAML output via `coderay_utils.yaml_call`, which retries with a varied prompt on bad output (the retry-safe path — don't reintroduce a local prompt-parsing loop that bypasses it, see the Rules doc).
+- `workflow/__main__.py` renders the pipeline's output (`shared` dict, typed as `PipelineState` in `workflow/nodes.py`) to markdown + HTML.
+- `workflow/prompts/*.md` are the four LLM prompt templates; `workflow/instructions/*.md` are swappable output lenses (`--instructions <name>`), auto-discovered from the directory — adding a lens is just adding a file.
+
+Full architecture rationale and past review findings: `.full-review/*.md` (a comprehensive code review that produced the fixes now on `main`).
 
 ## Conventions & Patterns
 
-_Add your project-specific conventions here_
+- Untrusted input (the target repo's own files, and anything the LLM echoes back from them) must be escaped before it reaches HTML/Mermaid output. This bit the project once (a confirmed stored-XSS bug); see `.full-review/02a-security.md` before touching `workflow/__main__.py`'s rendering code.
+- LLM YAML parsing goes through `coderay_utils.yaml_call`, not a bespoke `parse_yaml`/`.format()` combo in `workflow/nodes.py` — that duplication was a real bug (a cache/retry defect) fixed in a prior epic. Reuse `coderay_utils.yaml_call` and `coderay_utils.fill()` for new LLM-calling code.
+- Any file-content budget (`preview_budget`, `codebase_budget`) must be enforced by capping _how many files_ are included, not by raising a per-file floor — that inversion was the root cause of two Critical scalability bugs.
+- Tests live in `tests/`, run via plain `pytest`, no network/API key required — LLM calls are faked at the `call_llm`/`yaml_call` boundary, not mocked deeper in the call stack.

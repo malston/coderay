@@ -7,7 +7,7 @@ caches, build artifacts).
 Override any default by passing your own set. The exposed constants are
 frozensets so you can union or difference them:
 
-    from utils import list_files, DEFAULT_SKIP_DIR
+    from coderay_utils import list_files, DEFAULT_SKIP_DIR
     # add to defaults:
     list_files("repo/", skip_dirs=DEFAULT_SKIP_DIR | {"my-generated-dir"})
     # restrict to one language:
