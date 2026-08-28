@@ -18,7 +18,9 @@ Notes on reliability:
     errors inside utils.safe_read(), which is correct: we don't want one binary blob
     to kill a walk over 10,000 files.
 """
-import os, re
+import os
+import re
+
 from pocketflow import Node, BatchNode
 
 from utils import call_llm, fill, list_files, read_prompt, safe_read, yaml_call
