@@ -23,7 +23,7 @@ gemini = ["google-genai>=0.3.0,<1"]
 coderay = "workflow.__main__:main"
 
 [tool.setuptools]
-packages = ["workflow", "utils"]
+packages = ["workflow", "coderay_utils"]
 
 [tool.setuptools.package-data]
 workflow = ["prompts/*.md", "instructions/*.md"]

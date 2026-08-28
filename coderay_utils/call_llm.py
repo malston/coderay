@@ -18,7 +18,7 @@ Caching:
   Clear with: rm -rf ~/.cache/coderay
 
 Smoke test:
-  python -m utils.call_llm
+  python -m coderay_utils.call_llm
 """
 import hashlib
 import json

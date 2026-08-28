@@ -8,14 +8,14 @@ Five steps from the book chapter:
   5. (rendering happens in main.py)
 
 Notes on reliability:
-  - SmartCrawl, Analyze, and Relate parse a ```yaml reply through utils.yaml_call,
+  - SmartCrawl, Analyze, and Relate parse a ```yaml reply through coderay_utils.yaml_call,
     which already retries (with a varied prompt tail) on bad output, so their
     Node max_retries stays at 1 -- a second retry layer on top would multiply
     LLM calls for a genuinely bad reply without adding anything.
   - WriteChapters doesn't parse structured output, so it keeps Node(max_retries=3,
     wait=2) as its only retry layer, for transient call_llm failures.
   - File reads in the main path raise. The only swallowed errors are per file decode
-    errors inside utils.safe_read(), which is correct: we don't want one binary blob
+    errors inside coderay_utils.safe_read(), which is correct: we don't want one binary blob
     to kill a walk over 10,000 files.
 """
 import os
@@ -25,7 +25,7 @@ from typing import TypedDict
 
 from pocketflow import Node, BatchNode
 
-from utils import call_llm, fill, list_files, read_prompt, safe_read, yaml_call
+from coderay_utils import call_llm, fill, list_files, read_prompt, safe_read, yaml_call
 
 PROMPTS_DIR = resources.files("workflow") / "prompts"
 INSTRUCTIONS_DIR = resources.files("workflow") / "instructions"
