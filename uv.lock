@@ -362,7 +362,7 @@ requires-dist = [
     { name = "markdown-it-py", specifier = ">=3.0,<4" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.0.0,<2" },
     { name = "pathspec", specifier = ">=0.12,<1" },
-    { name = "pocketflow", specifier = ">=0.0.1,<0.1" },
+    { name = "pocketflow", specifier = ">=0.0.3,<0.1" },
     { name = "pyyaml", specifier = ">=6.0,<7" },
 ]
 provides-extras = ["openai", "gemini"]
