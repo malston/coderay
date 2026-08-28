@@ -8,9 +8,9 @@ version = "0.1.0"
 description = "Crawls a repo, picks the files that matter, and writes a multi-chapter tutorial."
 requires-python = ">=3.10"
 dependencies = [
-    "pocketflow>=0.0.1,<0.1",
-    "pyyaml>=6.0,<7",
-    "pathspec>=0.12,<1",
+    "pocketflow>=0.0.3,<0.1",
+    "pyyaml>=6.0.3,<7",
+    "pathspec>=1.1.1,<2",
     "markdown-it-py>=4.2.0,<5",
     "anthropic>=0.40.0,<1",
 ]
