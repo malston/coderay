@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "coderay",
+  "project_id": "edef5b7f-682a-435b-b14a-16ed8525125b"
+}

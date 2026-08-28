@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.mypy_cache/
+utils/.cache/
+output/
+.env
+.full-review/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
