@@ -12,13 +12,13 @@ Notes on reliability:
   - YAML parsing is strict and goes through utils.yaml_call, which retries with a
     varied prompt tail on bad output before the node's own retry plumbing kicks in.
   - File reads in the main path raise. The only swallowed errors are per file decode
-    errors inside crawl(), which is correct: we don't want one binary blob to kill a
-    walk over 10,000 files.
+    errors inside utils.safe_read(), which is correct: we don't want one binary blob
+    to kill a walk over 10,000 files.
 """
 import os, re
 from pocketflow import Node, BatchNode
 
-from utils import call_llm, list_files, safe_read, yaml_call
+from utils import call_llm, fill, list_files, read_prompt, safe_read, yaml_call
 
 ROOT = os.path.dirname(os.path.dirname(__file__))
 PROMPTS_DIR = os.path.join(ROOT, 'prompts')
@@ -29,12 +29,8 @@ CODEBASE_BUDGET = 1_000_000
 CHAPTER_CONTEXT_WINDOW = 3
 
 
-def load_prompt(name):
-    return open(os.path.join(PROMPTS_DIR, name)).read()
-
-
 def load_instructions(name):
-    return open(os.path.join(INSTRUCTIONS_DIR, f"{name}.md")).read()
+    return read_prompt(INSTRUCTIONS_DIR, f"{name}.md")
 
 
 def slug(s):
@@ -64,7 +60,8 @@ class SmartCrawl(Node):
             manifest_parts.append(f"  [{i}] {rel}\n{preview}\n")
         manifest = "\n".join(manifest_parts)
 
-        prompt = load_prompt("select-files.md").format(
+        prompt = fill(
+            read_prompt(PROMPTS_DIR, "select-files.md"),
             manifest=manifest,
             chars_per_file=chars_per_file,
             target_count=target,
@@ -114,7 +111,7 @@ class Analyze(Node):
         super().__init__(max_retries=3, wait=2)
 
     def prep(self, shared):
-        return load_prompt("identify-abstractions.md").format(codebase=shared["codebase"])
+        return fill(read_prompt(PROMPTS_DIR, "identify-abstractions.md"), codebase=shared["codebase"])
 
     def exec(self, prompt):
         def normalize(result):
@@ -143,8 +140,9 @@ class Relate(Node):
         listing = "\n".join(
             f"- {a['name']}: {a['description'].strip()}" for a in shared["abstractions"]
         )
-        return load_prompt("analyze-relationships.md").format(
-            abstractions=listing, codebase=shared["codebase"]
+        return fill(
+            read_prompt(PROMPTS_DIR, "analyze-relationships.md"),
+            abstractions=listing, codebase=shared["codebase"],
         )
 
     def exec(self, prompt):
@@ -187,7 +185,8 @@ class WriteChapters(Node):
             print(f"  Chapter {i+1}/{total}: {name}")
             recent = prev_chapters[-window:] if window else prev_chapters
             prev = "\n\n---\n\n".join(recent) if recent else "(This is the first chapter.)"
-            prompt = load_prompt("write-chapter.md").format(
+            prompt = fill(
+                read_prompt(PROMPTS_DIR, "write-chapter.md"),
                 name=name,
                 description=ctx["by_name"][name]["description"],
                 chapter_num=i + 1,
