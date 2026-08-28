@@ -8,6 +8,7 @@ from main import (
     write_index_html,
     write_index_md,
 )
+from workflow.nodes import slug
 
 
 def test_md_to_html_never_emits_raw_script_tag():
@@ -57,6 +58,24 @@ def _chapters():
         {"name": "First", "filename": "01_first.md", "content": "# First\n\ncontent"},
         {"name": "Second", "filename": "02_second.md", "content": "# Second\n\n[back](01_first.md)"},
     ]
+
+
+def test_chapter_link_rewrite_matches_workflow_nodes_filename_convention(tmp_path):
+    # Regression for coderay-e06: workflow.nodes generates chapter filenames via
+    # slug(), and write_chapter_files's link-rewrite regex has to recognize
+    # whatever alphabet slug() produces, or generated links silently 404.
+    names = ["Getting Started!", "API & Auth", "C++ Bindings"]
+    filenames = {n: f"{i+1:02d}_{slug(n)}.md" for i, n in enumerate(names)}
+    chapters = [
+        {"name": n, "filename": filenames[n], "content": f"# {n}"} for n in names
+    ]
+    chapters[0]["content"] = f"See [{names[1]}]({filenames[names[1]]}) next."
+
+    write_chapter_files(chapters, "repo", str(tmp_path))
+
+    first_html = (tmp_path / chapters[0]["filename"].replace(".md", ".html")).read_text(encoding="utf-8")
+    assert f"{filenames[names[1]][:-3]}.html" in first_html
+    assert filenames[names[1]] not in first_html  # the .md link got rewritten, not left dangling
 
 
 def test_write_chapter_files_writes_md_and_html_with_nav_links(tmp_path):
