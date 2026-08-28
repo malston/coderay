@@ -14,15 +14,19 @@ Notes on reliability:
     errors inside crawl(), which is correct: we don't want one binary blob to kill a
     walk over 10,000 files.
 """
-import os, re, sys, yaml
+import os, re, sys
 from pocketflow import Node, BatchNode
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from utils import call_llm, list_files, safe_read  # noqa: E402
+from utils import call_llm, list_files, safe_read, yaml_call  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(__file__))
 PROMPTS_DIR = os.path.join(ROOT, 'prompts')
 INSTRUCTIONS_DIR = os.path.join(ROOT, 'instructions')
+
+PREVIEW_CHARS_PER_FILE = 800
+CODEBASE_BUDGET = 1_000_000
+CHAPTER_CONTEXT_WINDOW = 3
 
 
 def load_prompt(name):
@@ -31,13 +35,6 @@ def load_prompt(name):
 
 def load_instructions(name):
     return open(os.path.join(INSTRUCTIONS_DIR, f"{name}.md")).read()
-
-
-def parse_yaml(text):
-    """Strict YAML extractor. Raises on missing or invalid fence so retry kicks in."""
-    m = re.search(r"```yaml\s*\n(.*?)```", text, re.DOTALL)
-    assert m, f"LLM response missing ```yaml fence. Got:\n{text[:500]}"
-    return yaml.safe_load(m.group(1))
 
 
 def slug(s):
@@ -53,15 +50,16 @@ class SmartCrawl(Node):
 
     def prep(self, shared):
         root = shared["repo_path"]
-        files = list_files(root)
+        all_files = list_files(root)
         budget = shared.get("preview_budget", 1_000_000)
-        chars_per_file = max(800, budget // max(len(files), 1))
+        chars_per_file = PREVIEW_CHARS_PER_FILE
+        max_files = max(1, budget // chars_per_file)
+        files = all_files[:max_files]
         target = shared.get("target_files", min(50, max(20, len(files) // 20)))
 
         manifest_parts = []
         for i, path in enumerate(files):
-            text = safe_read(path) or ""
-            preview = text[:chars_per_file]
+            preview = safe_read(path, max_chars=chars_per_file) or ""
             rel = os.path.relpath(path, root)
             manifest_parts.append(f"  [{i}] {rel}\n{preview}\n")
         manifest = "\n".join(manifest_parts)
@@ -75,25 +73,39 @@ class SmartCrawl(Node):
 
     def exec(self, inputs):
         prompt, files, root = inputs
-        result = parse_yaml(call_llm(prompt))
-        indices = result["selected"]
-        assert all(0 <= i < len(files) for i in indices), \
-            f"LLM returned out of range indices: {indices}"
-        return [files[i] for i in indices], result.get("reasoning", "")
+
+        def normalize(result):
+            indices = result["selected"]
+            assert all(0 <= i < len(files) for i in indices), \
+                f"LLM returned out of range indices: {indices}"
+            return [files[i] for i in indices], result.get("reasoning", "")
+
+        return yaml_call(prompt, normalize)
 
     def post(self, shared, prep_res, exec_res):
         selected, reasoning = exec_res
         root = shared["repo_path"]
+        budget = shared.get("codebase_budget", CODEBASE_BUDGET)
         parts = []
+        included = []
+        total_chars = 0
         for p in selected:
+            if total_chars >= budget:
+                break
             text = safe_read(p)
             if text is None:
                 continue
-            parts.append(f"{'=' * 60}\nFile: {os.path.relpath(p, root)}\n{'=' * 60}\n{text}")
+            block = f"{'=' * 60}\nFile: {os.path.relpath(p, root)}\n{'=' * 60}\n{text}"
+            parts.append(block)
+            included.append(p)
+            total_chars += len(block)
         shared["codebase"] = "\n\n".join(parts)
-        shared["selected_files"] = [os.path.relpath(p, root) for p in selected]
+        shared["selected_files"] = [os.path.relpath(p, root) for p in included]
         shared["selection_reasoning"] = reasoning
-        print(f"  Selected {len(selected)} files ({len(shared['codebase']):,} chars)")
+        dropped = len(selected) - len(included)
+        if dropped:
+            print(f"  Dropped {dropped} files over codebase budget ({budget:,} chars)")
+        print(f"  Selected {len(included)} files ({len(shared['codebase']):,} chars)")
 
 
 # Step 2. Identify the abstractions
@@ -105,11 +117,15 @@ class Analyze(Node):
         return load_prompt("identify-abstractions.md").format(codebase=shared["codebase"])
 
     def exec(self, prompt):
-        result = parse_yaml(call_llm(prompt))
-        names = {a["name"] for a in result["abstractions"]}
-        order = set(result["learning_order"])
-        assert names == order, f"abstractions and learning_order disagree: {names ^ order}"
-        return result
+        def normalize(result):
+            names = [a["name"] for a in result["abstractions"]]
+            order = result["learning_order"]
+            assert len(names) == len(set(names)), f"duplicate abstraction names: {names}"
+            assert sorted(names) == sorted(order), \
+                f"abstractions and learning_order disagree: {set(names) ^ set(order)}"
+            return result
+
+        return yaml_call(prompt, normalize)
 
     def post(self, shared, prep_res, exec_res):
         shared["summary"] = exec_res["summary"]
@@ -132,7 +148,7 @@ class Relate(Node):
         )
 
     def exec(self, prompt):
-        return parse_yaml(call_llm(prompt))["relationships"]
+        return yaml_call(prompt, lambda result: result["relationships"])
 
     def post(self, shared, prep_res, exec_res):
         shared["relationships"] = exec_res
@@ -159,15 +175,18 @@ class WriteChapters(Node):
             "chapter_list": chapter_list,
             "codebase": shared["codebase"],
             "instructions": instructions,
+            "context_window": shared.get("chapter_context_window", CHAPTER_CONTEXT_WINDOW),
         }
 
     def exec(self, ctx):
         chapters = []
         prev_chapters = []
         total = len(ctx["order"])
+        window = ctx["context_window"]
         for i, name in enumerate(ctx["order"]):
             print(f"  Chapter {i+1}/{total}: {name}")
-            prev = "\n\n---\n\n".join(prev_chapters) if prev_chapters else "(This is the first chapter.)"
+            recent = prev_chapters[-window:] if window else prev_chapters
+            prev = "\n\n---\n\n".join(recent) if recent else "(This is the first chapter.)"
             prompt = load_prompt("write-chapter.md").format(
                 name=name,
                 description=ctx["by_name"][name]["description"],
