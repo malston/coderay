@@ -67,7 +67,8 @@ def _cache_get(provider, model, max_out, prompt):
     if not os.path.exists(path):
         return None
     try:
-        return json.load(open(path))["response"]
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)["response"]
     except (OSError, ValueError, KeyError):
         return None
 
@@ -79,7 +80,7 @@ def _cache_put(provider, model, max_out, prompt, response):
     path = _cache_path(provider, model, max_out, prompt)
     fd, tmp_path = tempfile.mkstemp(dir=CACHE_DIR)
     try:
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump({"provider": provider, "model": model, "response": response}, f)
         os.replace(tmp_path, path)
     except BaseException:

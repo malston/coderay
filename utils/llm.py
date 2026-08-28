@@ -12,7 +12,8 @@ from .call_llm import call_llm
 
 def read_prompt(prompts_dir, name):
     """Read a prompt file. `prompts/` stays the source of truth for every prompt."""
-    return open(os.path.join(prompts_dir, name)).read()
+    with open(os.path.join(prompts_dir, name), encoding="utf-8") as f:
+        return f.read()
 
 
 def fill(template, **kwargs):
