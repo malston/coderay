@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=84.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -20,7 +20,7 @@ openai = ["openai>=3.3.1,<4"]
 gemini = ["google-genai>=0.3.0,<1"]
 
 [dependency-groups]
-dev = ["pytest>=8.0,<9"]
+dev = ["pytest>=9.1.1,<10"]
 
 [project.scripts]
 coderay = "workflow.__main__:main"
