@@ -83,7 +83,7 @@ SmartCrawl -> Analyze -> Relate -> WriteChapters
 - **SmartCrawl** walks the target repo (`utils/crawl.py`), builds a preview manifest, and asks the LLM which ~0.1-2% of files matter. Enforces `preview_budget` and `codebase_budget` so large repos can't blow the LLM's context window.
 - **Analyze** / **Relate** / **WriteChapters** call the LLM via `utils.call_llm` and parse its YAML output via `utils.yaml_call`, which retries with a varied prompt on bad output (the retry-safe path — don't reintroduce a local prompt-parsing loop that bypasses it, see the Rules doc).
 - `workflow/__main__.py` renders the pipeline's output (`shared` dict, typed as `PipelineState` in `workflow/nodes.py`) to markdown + HTML.
-- `prompts/*.md` are the four LLM prompt templates; `instructions/*.md` are swappable output lenses (`--instructions <name>`), auto-discovered from the directory — adding a lens is just adding a file.
+- `workflow/prompts/*.md` are the four LLM prompt templates; `workflow/instructions/*.md` are swappable output lenses (`--instructions <name>`), auto-discovered from the directory — adding a lens is just adding a file.
 
 Full architecture rationale and past review findings: `.full-review/*.md` (a comprehensive code review that produced the fixes now on `main`).
 

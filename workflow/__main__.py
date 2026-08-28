@@ -152,7 +152,7 @@ def chapter_html_name(md_name):
 
 
 def available_lenses():
-    return sorted(f[:-3] for f in os.listdir(INSTRUCTIONS_DIR) if f.endswith(".md"))
+    return sorted(p.name[:-3] for p in INSTRUCTIONS_DIR.iterdir() if p.name.endswith(".md"))
 
 
 def write_text(path, content):

@@ -24,3 +24,6 @@ coderay = "workflow.__main__:main"
 
 [tool.setuptools]
 packages = ["workflow", "utils"]
+
+[tool.setuptools.package-data]
+workflow = ["prompts/*.md", "instructions/*.md"]
