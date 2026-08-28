@@ -80,3 +80,15 @@ def test_healthy_anthropic_response_is_cached_and_returned(monkeypatch, tmp_path
     monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module("end_turn", text="ok"))
     assert call_llm("prompt") == "ok"
     assert list(tmp_path.iterdir())
+
+
+def test_unknown_provider_raises_a_helpful_error(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "carrier-pigeon")
+    with pytest.raises(RuntimeError, match="Unknown LLM_PROVIDER='carrier-pigeon'"):
+        call_llm("prompt")
+
+
+def test_provider_env_var_is_stripped_and_lowercased(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "  ANTHROPIC  ")
+    monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module("end_turn", text="ok"))
+    assert call_llm("prompt") == "ok"

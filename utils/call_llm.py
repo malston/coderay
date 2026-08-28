@@ -30,7 +30,7 @@ CACHE_DIR = os.path.join(os.path.dirname(__file__), ".cache")
 def _pick():
     p = os.environ.get("LLM_PROVIDER")
     if p:
-        return p.lower()
+        return p.strip().lower()
     if os.environ.get("ANTHROPIC_API_KEY"):
         return "anthropic"
     if os.environ.get("OPENAI_API_KEY"):
@@ -48,11 +48,14 @@ def _model_for(provider):
     # answers and don't mind the cost.
     #
     # Override per call with ANTHROPIC_MODEL / OPENAI_MODEL / GEMINI_MODEL.
-    return {
+    models = {
         "anthropic": os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
         "openai":    os.environ.get("OPENAI_MODEL", "gpt-5.1"),
         "gemini":    os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
-    }[provider]
+    }
+    if provider not in models:
+        raise RuntimeError(f"Unknown LLM_PROVIDER={provider!r}")
+    return models[provider]
 
 
 def _cache_path(provider, model, max_out, prompt):
@@ -138,9 +141,6 @@ def call_llm(prompt: str) -> str:
         if candidate is not None and finish_reason and "STOP" not in finish_reason.upper():
             raise RuntimeError(f"Gemini response incomplete (finish_reason={finish_reason})")
         text = resp.text
-
-    else:
-        raise RuntimeError(f"Unknown LLM_PROVIDER={provider!r}")
 
     if not text:
         raise RuntimeError(f"{provider} returned an empty response")
