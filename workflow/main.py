@@ -19,7 +19,7 @@ import re
 from markdown_it import MarkdownIt
 
 from workflow.flow import create_tour_flow
-from workflow.nodes import INSTRUCTIONS_DIR
+from workflow.nodes import INSTRUCTIONS_DIR, PipelineState
 
 # CommonMark parser. Unlike python-markdown's fenced_code extension, this
 # correctly handles fenced code blocks indented inside list items.
@@ -244,7 +244,7 @@ def main():
     out = args.out or os.path.join(os.path.dirname(__file__), "..", "output", f"{name}-tour")
     os.makedirs(out, exist_ok=True)
 
-    shared = {"repo_path": args.repo_path, "instructions": args.instructions}
+    shared: PipelineState = {"repo_path": args.repo_path, "instructions": args.instructions}
     create_tour_flow().run(shared)
 
     chapters = shared["chapters"]

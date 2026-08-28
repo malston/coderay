@@ -20,6 +20,7 @@ Notes on reliability:
 """
 import os
 import re
+from typing import TypedDict
 
 from pocketflow import Node, BatchNode
 
@@ -32,6 +33,60 @@ INSTRUCTIONS_DIR = os.path.join(ROOT, 'instructions')
 PREVIEW_CHARS_PER_FILE = 800
 CODEBASE_BUDGET = 1_000_000
 CHAPTER_CONTEXT_WINDOW = 3
+
+
+class PipelineState(TypedDict, total=False):
+    """The dict threaded through create_tour_flow()'s nodes (SmartCrawl >>
+    Analyze >> Relate >> WriteChapters), and read afterward by workflow.main's
+    renderers. Not validated at runtime -- documents the contract each node's
+    untyped `shared[...]` subscripts rely on. Every key past instructions is
+    optional at the type level since it's only present once the node that
+    writes it has run.
+
+    Set by the caller before the flow runs:
+      repo_path               str   directory to analyze
+      instructions             str   instructions/<name>.md lens to use
+
+    Optional overrides read via shared.get(...) (all have defaults):
+      preview_budget           int   SmartCrawl.prep: char budget for the file preview manifest
+      target_files             int   SmartCrawl.prep: target selected-file count
+      codebase_budget          int   SmartCrawl.post: char budget for the assembled codebase
+      chapter_context_window   int   WriteChapters.prep: # of prior chapters kept as context
+
+    Written by SmartCrawl.post; read by Analyze/Relate/WriteChapters.prep and
+    workflow.main's renderers:
+      codebase                 str
+      selected_files           list[str]
+      selection_reasoning      str
+
+    Written by Analyze.post; read by Relate/WriteChapters.prep and
+    workflow.main's renderers:
+      summary                  str
+      abstractions             list[dict]
+      order                    list[str]
+
+    Written by Relate.post; read by workflow.main.build_mermaid:
+      relationships            list[dict]
+
+    Written by WriteChapters.post; read by workflow.main's renderers:
+      chapters                 list[dict]
+      filenames                dict[str, str]
+    """
+    repo_path: str
+    instructions: str
+    preview_budget: int
+    target_files: int
+    codebase_budget: int
+    chapter_context_window: int
+    codebase: str
+    selected_files: list
+    selection_reasoning: str
+    summary: str
+    abstractions: list
+    order: list
+    relationships: list
+    chapters: list
+    filenames: dict
 
 
 def load_instructions(name):
@@ -49,7 +104,7 @@ class SmartCrawl(Node):
     def __init__(self):
         super().__init__(max_retries=1)
 
-    def prep(self, shared):
+    def prep(self, shared: PipelineState):
         root = shared["repo_path"]
         all_files = list_files(root)
         budget = shared.get("preview_budget", 1_000_000)
@@ -84,7 +139,7 @@ class SmartCrawl(Node):
 
         return yaml_call(prompt, normalize)
 
-    def post(self, shared, prep_res, exec_res):
+    def post(self, shared: PipelineState, prep_res, exec_res):
         selected, reasoning = exec_res
         root = shared["repo_path"]
         budget = shared.get("codebase_budget", CODEBASE_BUDGET)
@@ -115,7 +170,7 @@ class Analyze(Node):
     def __init__(self):
         super().__init__(max_retries=1)
 
-    def prep(self, shared):
+    def prep(self, shared: PipelineState):
         return fill(read_prompt(PROMPTS_DIR, "identify-abstractions.md"), codebase=shared["codebase"])
 
     def exec(self, prompt):
@@ -129,7 +184,7 @@ class Analyze(Node):
 
         return yaml_call(prompt, normalize)
 
-    def post(self, shared, prep_res, exec_res):
+    def post(self, shared: PipelineState, prep_res, exec_res):
         shared["summary"] = exec_res["summary"]
         shared["abstractions"] = exec_res["abstractions"]
         shared["order"] = exec_res["learning_order"]
@@ -141,7 +196,7 @@ class Relate(Node):
     def __init__(self):
         super().__init__(max_retries=1)
 
-    def prep(self, shared):
+    def prep(self, shared: PipelineState):
         listing = "\n".join(
             f"- {a['name']}: {a['description'].strip()}" for a in shared["abstractions"]
         )
@@ -153,7 +208,7 @@ class Relate(Node):
     def exec(self, prompt):
         return yaml_call(prompt, lambda result: result["relationships"])
 
-    def post(self, shared, prep_res, exec_res):
+    def post(self, shared: PipelineState, prep_res, exec_res):
         shared["relationships"] = exec_res
         print(f"  Found {len(exec_res)} relationships")
 
@@ -165,7 +220,7 @@ class WriteChapters(Node):
     def __init__(self):
         super().__init__(max_retries=3, wait=2)
 
-    def prep(self, shared):
+    def prep(self, shared: PipelineState):
         by_name = {a["name"]: a for a in shared["abstractions"]}
         order = shared["order"]
         filenames = {n: f"{i+1:02d}_{slug(n)}.md" for i, n in enumerate(order)}
@@ -206,6 +261,6 @@ class WriteChapters(Node):
             prev_chapters.append(content)
         return chapters
 
-    def post(self, shared, prep_res, exec_res):
+    def post(self, shared: PipelineState, prep_res, exec_res):
         shared["chapters"] = exec_res
         shared["filenames"] = prep_res["filenames"]
