@@ -107,16 +107,18 @@ def call_llm(prompt: str) -> str:
     if cached is not None:
         return cached
 
+    # The real breakpoint is always the last occurrence in a correctly-filled
+    # prompt (nothing legitimate follows it), so rpartition ignores a
+    # lookalike string planted earlier by untrusted repo content.
+    prefix, sep, suffix = prompt.rpartition(CACHE_BREAKPOINT)
+    plain_prompt = prefix + suffix if sep else prompt
+
     if provider == "anthropic":
         from anthropic import Anthropic
-        prefix, sep, suffix = prompt.partition(CACHE_BREAKPOINT)
-        if sep:
-            content = [
-                {"type": "text", "text": prefix, "cache_control": {"type": "ephemeral"}},
-                {"type": "text", "text": suffix},
-            ]
-        else:
-            content = prompt
+        content = [
+            {"type": "text", "text": prefix, "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": suffix},
+        ] if sep else prompt
         resp = Anthropic().messages.create(
             model=model,
             max_tokens=max_out,
@@ -135,7 +137,7 @@ def call_llm(prompt: str) -> str:
         resp = OpenAI().chat.completions.create(
             model=model,
             max_completion_tokens=max_out,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": plain_prompt}],
         )
         choice = resp.choices[0]
         if choice.finish_reason == "length":
@@ -148,7 +150,7 @@ def call_llm(prompt: str) -> str:
         client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
         resp = client.models.generate_content(
             model=model,
-            contents=prompt,
+            contents=plain_prompt,
             config=types.GenerateContentConfig(max_output_tokens=max_out),
         )
         candidate = resp.candidates[0] if resp.candidates else None

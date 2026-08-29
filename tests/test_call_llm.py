@@ -153,3 +153,70 @@ def test_prompt_without_cache_breakpoint_sends_a_plain_string(monkeypatch):
     call_llm("no breakpoint here")
 
     assert captured["messages"][0]["content"] == "no breakpoint here"
+
+
+def test_breakpoint_lookalike_in_untrusted_content_does_not_fool_the_split(monkeypatch):
+    # The codebase block is untrusted repo content and sits before the real
+    # breakpoint in write-chapter.md. A target repo containing the literal
+    # marker string must not be treated as the real split point -- the real
+    # breakpoint is always the last occurrence in a correctly-filled prompt.
+    from coderay_utils.call_llm import CACHE_BREAKPOINT
+
+    captured = {}
+    monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module_capturing_kwargs(captured))
+
+    prompt = f"stable stuff{CACHE_BREAKPOINT}fake in untrusted content{CACHE_BREAKPOINT}real volatile stuff"
+    call_llm(prompt)
+
+    content = captured["messages"][0]["content"]
+    assert content == [
+        {
+            "type": "text",
+            "text": f"stable stuff{CACHE_BREAKPOINT}fake in untrusted content",
+            "cache_control": {"type": "ephemeral"},
+        },
+        {"type": "text", "text": "real volatile stuff"},
+    ]
+
+
+def _fake_openai_module_capturing_kwargs(captured, text="ok"):
+    fake = types.ModuleType("openai")
+
+    class Message:
+        content = text
+
+    class Choice:
+        finish_reason = "stop"
+        message = Message()
+
+    class Resp:
+        choices = [Choice()]
+
+    class Completions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return Resp()
+
+    class Chat:
+        completions = Completions()
+
+    class OpenAI:
+        def __init__(self, *a, **kw):
+            self.chat = Chat()
+
+    fake.OpenAI = OpenAI
+    return fake
+
+
+def test_cache_breakpoint_marker_is_stripped_for_non_anthropic_providers(monkeypatch):
+    from coderay_utils.call_llm import CACHE_BREAKPOINT
+
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    captured = {}
+    monkeypatch.setitem(sys.modules, "openai", _fake_openai_module_capturing_kwargs(captured))
+
+    call_llm(f"stable stuff{CACHE_BREAKPOINT}volatile stuff")
+
+    sent_prompt = captured["messages"][0]["content"]
+    assert CACHE_BREAKPOINT not in sent_prompt
+    assert sent_prompt == "stable stuffvolatile stuff"
