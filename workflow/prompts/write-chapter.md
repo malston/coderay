@@ -1,4 +1,4 @@
-Write a tutorial chapter about **{name}** (Chapter {chapter_num} of {total}).
+Write chapter {chapter_num} of {total}, about **{name}**.
 
 Start with: `# Chapter {chapter_num}: {name}`
 

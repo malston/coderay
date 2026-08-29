@@ -216,7 +216,7 @@ class Relate(Node):
 # Step 4. Write chapters SEQUENTIALLY, passing prior chapters as context
 class WriteChapters(Node):
     """NOT a BatchNode. Each chapter needs the previous chapters as context so the
-    tutorial reads as a narrative, not a pile of disconnected pages (§3.3)."""
+    tour reads as a narrative, not a pile of disconnected pages (§3.3)."""
     def __init__(self):
         super().__init__(max_retries=3, wait=2)
 

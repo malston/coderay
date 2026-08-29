@@ -1,6 +1,6 @@
 ---
 name: codebase-tour
-description: Produce a beginner friendly tour of an unfamiliar codebase. Identify 5-10 core abstractions, map relationships, write one tutorial chapter per abstraction with sequential context.
+description: Produce a tour of an unfamiliar codebase, in the lens you pick (beginner tutorial, architecture review, security audit, or onboarding guide). Identify 5-10 core abstractions, map relationships, write one chapter per abstraction with sequential context.
 ---
 
 # Skill: Codebase Tour
@@ -33,7 +33,7 @@ For each pair that interacts, write one edge: `<A> <verb> <B>`. Use [`../workflo
 
 ### Step 4. Write chapters with sequential context
 
-Write one chapter per abstraction, in learning order. **Pass every previous chapter as context to the next one** so the tutorial reads as a narrative. Each chapter follows the rules in [`../workflow/prompts/write-chapter.md`](../workflow/prompts/write-chapter.md) and the lens you chose from [`../workflow/instructions/`](../workflow/instructions/).
+Write one chapter per abstraction, in learning order. **Pass every previous chapter as context to the next one** so the tour reads as a narrative. Each chapter follows the rules in [`../workflow/prompts/write-chapter.md`](../workflow/prompts/write-chapter.md) and the lens you chose from [`../workflow/instructions/`](../workflow/instructions/).
 
 Write the chapter files into `docs/tour/NN_name.md`, plus an `index.md` linking them, plus an `index.html` with a mermaid diagram of the relationships.
 
@@ -41,8 +41,8 @@ Write the chapter files into `docs/tour/NN_name.md`, plus an `index.md` linking 
 
 The instructions file changes everything about the output. Pick one:
 
-| Lens                                                               | For                                              |
-| ------------------------------------------------------------------ | ------------------------------------------------ |
+| Lens                                                                        | For                                              |
+| --------------------------------------------------------------------------- | ------------------------------------------------ |
 | [`beginner-tutorial.md`](../workflow/instructions/beginner-tutorial.md)     | New developer onboarding                         |
 | [`architecture-review.md`](../workflow/instructions/architecture-review.md) | Tech lead evaluating technical debt              |
 | [`security-audit.md`](../workflow/instructions/security-audit.md)           | Security team during an audit                    |
