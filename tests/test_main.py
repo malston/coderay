@@ -7,6 +7,7 @@ from workflow.__main__ import (
     MERMAID_SCRIPT,
     available_lenses,
     build_mermaid,
+    build_related_links,
     default_output_dir,
     dump_run_state,
     md_to_html,
@@ -94,7 +95,7 @@ def test_chapter_link_rewrite_matches_workflow_nodes_filename_convention(tmp_pat
     ]
     chapters[0]["content"] = f"See [{names[1]}]({filenames[names[1]]}) next."
 
-    write_chapter_files(chapters, "repo", str(tmp_path))
+    write_chapter_files(chapters, "repo", str(tmp_path), [])
 
     first_html = (tmp_path / chapters[0]["filename"].replace(".md", ".html")).read_text(encoding="utf-8")
     assert f"{filenames[names[1]][:-3]}.html" in first_html
@@ -102,13 +103,66 @@ def test_chapter_link_rewrite_matches_workflow_nodes_filename_convention(tmp_pat
 
 
 def test_write_chapter_files_writes_md_and_html_with_nav_links(tmp_path):
-    write_chapter_files(_chapters(), "myrepo", str(tmp_path))
+    chapters = _chapters()
+    write_chapter_files(chapters, "myrepo", str(tmp_path), [])
 
     assert (tmp_path / "01_first.md").read_text(encoding="utf-8") == "# First\n\ncontent"
     html_out = (tmp_path / "02_second.html").read_text(encoding="utf-8")
     assert "01_first.html" in html_out  # markdown link rewritten to .html
     assert "&larr;" in html_out  # prev link present for the second chapter
     assert (tmp_path / "01_first.html").exists()
+
+
+def test_write_chapter_files_adds_related_section_for_outgoing_and_incoming_edges(tmp_path):
+    chapters = _chapters()
+    relationships = [{"from": "First", "to": "Second", "label": "uses"}]
+
+    write_chapter_files(chapters, "myrepo", str(tmp_path), relationships)
+
+    first_html = (tmp_path / "01_first.html").read_text(encoding="utf-8")
+    second_html = (tmp_path / "02_second.html").read_text(encoding="utf-8")
+
+    assert "uses" in first_html
+    assert "02_second.html" in first_html  # outgoing edge links to the other chapter
+
+    assert "uses" in second_html
+    assert "01_first.html" in second_html  # incoming edge links back
+
+
+def test_write_chapter_files_escapes_relationship_label_and_names(tmp_path):
+    # Regression: relationships come from an LLM call (coderay-o41); this project
+    # already shipped a stored-XSS bug once (see CLAUDE.md). Relate validates the
+    # fields exist and are strings (tests/test_nodes.py) but not their content.
+    chapters = _chapters()
+    relationships = [{"from": "First", "to": "Second", "label": '<script>alert(1)</script>'}]
+
+    write_chapter_files(chapters, "myrepo", str(tmp_path), relationships)
+
+    first_html = (tmp_path / "01_first.html").read_text(encoding="utf-8")
+    assert "<script>alert(1)</script>" not in first_html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in first_html
+
+
+def test_build_related_links_caps_label_length():
+    filenames = {"First": "01_first.md", "Second": "02_second.md"}
+    relationships = [{"from": "First", "to": "Second", "label": "x" * 200}]
+
+    links = build_related_links("First", relationships, filenames)
+
+    assert len(links) == 1
+    assert "x" * 200 not in links[0]
+    assert "x" * 60 in links[0]
+
+
+def test_write_chapter_files_skips_relationship_referencing_unknown_abstraction(tmp_path):
+    chapters = _chapters()
+    relationships = [{"from": "First", "to": "Missing", "label": "uses"}]
+
+    # Should not raise even though "Missing" has no chapter/filename.
+    write_chapter_files(chapters, "myrepo", str(tmp_path), relationships)
+
+    first_html = (tmp_path / "01_first.html").read_text(encoding="utf-8")
+    assert "Missing" not in first_html
 
 
 def test_write_index_md_lists_chapters_and_mermaid(tmp_path):

@@ -161,8 +161,29 @@ def write_text(path, content):
         f.write(content)
 
 
-def write_chapter_files(chapters, repo_name, out):
-    """Write each chapter's .md and .html, with prev/next links between them."""
+def build_related_links(chapter_name, relationships, filenames):
+    """Related-chapter links for one chapter, both directions of the Relationship graph.
+
+    Relate validates every edge has a from/to/label string before it reaches shared
+    state (workflow/nodes.py), but an edge naming an abstraction dropped from
+    `filenames` by a codebase-budget cut is still possible, so that case is skipped
+    rather than raised.
+    """
+    links = []
+    for r in relationships:
+        from_name, to_name, label = r["from"], r["to"], html.escape(r["label"][:60])
+        if from_name == chapter_name and to_name in filenames:
+            href = chapter_html_name(filenames[to_name])
+            links.append(f'<li>&rarr; {label} &rarr; <a href="{href}">{html.escape(to_name)}</a></li>')
+        elif to_name == chapter_name and from_name in filenames:
+            href = chapter_html_name(filenames[from_name])
+            links.append(f'<li>&larr; {label} &larr; <a href="{href}">{html.escape(from_name)}</a></li>')
+    return links
+
+
+def write_chapter_files(chapters, repo_name, out, relationships):
+    """Write each chapter's .md and .html, with prev/next links and a Related section."""
+    filenames = {ch["name"]: ch["filename"] for ch in chapters}
     for i, ch in enumerate(chapters):
         write_text(os.path.join(out, ch["filename"]), ch["content"])
 
@@ -182,12 +203,16 @@ def write_chapter_files(chapters, repo_name, out):
             lambda m: f']({m.group(1)}.html)',
             ch["content"],
         )
+        related_links = build_related_links(ch["name"], relationships, filenames)
+        related_html = (
+            f'<h2>Related</h2>\n<ul>\n{"".join(related_links)}\n</ul>\n' if related_links else ""
+        )
         chapter_html = CHAPTER_HTML_TEMPLATE.format(
             title=f'{html.escape(ch["name"])} — {html.escape(repo_name)}',
             shared_style=SHARED_STYLE,
             mermaid_script=MERMAID_SCRIPT,
             repo_name=html.escape(repo_name),
-            body_html=md_to_html(body_md),
+            body_html=md_to_html(body_md) + related_html,
             prev_link=prev_link,
             next_link=next_link,
         )
@@ -282,7 +307,7 @@ def main():
     chapters = shared["chapters"]
     mermaid = build_mermaid(shared["abstractions"], shared["relationships"])
 
-    write_chapter_files(chapters, name, out)
+    write_chapter_files(chapters, name, out, shared["relationships"])
     write_index_md(chapters, name, args.instructions, shared["summary"], mermaid, out)
     write_index_html(
         chapters, name, args.instructions, shared["summary"], mermaid,

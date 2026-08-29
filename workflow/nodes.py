@@ -206,7 +206,15 @@ class Relate(Node):
         )
 
     def exec(self, prompt):
-        return yaml_call(prompt, lambda result: result["relationships"])
+        def normalize(result):
+            relationships = result["relationships"]
+            for r in relationships:
+                for field in ("from", "to", "label"):
+                    assert isinstance(r.get(field), str) and r[field], \
+                        f"relationship missing/invalid {field!r}: {r!r}"
+            return relationships
+
+        return yaml_call(prompt, normalize)
 
     def post(self, shared: PipelineState, prep_res, exec_res):
         shared["relationships"] = exec_res
