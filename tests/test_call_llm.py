@@ -291,10 +291,12 @@ def test_cache_breakpoint_marker_is_stripped_for_gemini(monkeypatch):
     assert captured["contents"] == "stable stuffvolatile stuff"
 
 
-def test_disk_cache_key_is_unaffected_by_the_cache_breakpoint_split(monkeypatch, tmp_path):
-    # The disk cache (separate from Anthropic's own prompt cache) must key off
-    # the full, unsplit prompt -- hashing prefix/suffix separately would
-    # change the on-disk cache key and silently break hit rates.
+def test_disk_cache_key_matches_the_marker_stripped_text_actually_sent(monkeypatch, tmp_path):
+    # Every provider actually receives the marker stripped out (Anthropic as
+    # a split content list, others as one string), so the on-disk cache key
+    # must be derived from that same marker-stripped text -- keying on the
+    # raw template text (marker included) would miss cache hits for
+    # semantically identical requests.
     from coderay_utils.call_llm import CACHE_BREAKPOINT, _cache_path
 
     call_llm_module.CACHE_DIR = str(tmp_path)
@@ -303,5 +305,6 @@ def test_disk_cache_key_is_unaffected_by_the_cache_breakpoint_split(monkeypatch,
 
     call_llm(prompt)
 
-    expected_path = _cache_path("anthropic", "claude-sonnet-4-6", 16384, prompt)
+    expected_path = _cache_path("anthropic", "claude-sonnet-4-6", 16384, "stable stuffvolatile stuff")
     assert os.path.exists(expected_path)
+    assert not os.path.exists(_cache_path("anthropic", "claude-sonnet-4-6", 16384, prompt))

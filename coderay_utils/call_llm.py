@@ -103,10 +103,6 @@ def call_llm(prompt: str) -> str:
     model = _model_for(provider)
     max_out = int(os.environ.get("LLM_MAX_OUTPUT_TOKENS", "16384"))
 
-    cached = _cache_get(provider, model, max_out, prompt)
-    if cached is not None:
-        return cached
-
     # The real breakpoint is the last occurrence of the marker in the
     # *template* -- but write-chapter.md's volatile suffix includes
     # {prev_chapters}, LLM-generated text derived from untrusted repo
@@ -119,6 +115,13 @@ def call_llm(prompt: str) -> str:
     if sep and not (prefix and suffix):
         prefix, sep, suffix = "", "", prompt
     plain_prompt = prefix + suffix if sep else prompt
+
+    # Cache on plain_prompt (marker stripped) -- every provider actually
+    # receives that text (Anthropic as a split content list, others as a
+    # single string), so the key should match what was actually sent.
+    cached = _cache_get(provider, model, max_out, plain_prompt)
+    if cached is not None:
+        return cached
 
     if provider == "anthropic":
         from anthropic import Anthropic
@@ -169,7 +172,7 @@ def call_llm(prompt: str) -> str:
     if not text:
         raise RuntimeError(f"{provider} returned an empty response")
 
-    _cache_put(provider, model, max_out, prompt, text)
+    _cache_put(provider, model, max_out, plain_prompt, text)
     return text
 
 
