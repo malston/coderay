@@ -295,6 +295,7 @@ def test_format_dry_run_summary_shows_the_chapter_assumption_and_cost_range():
     assert "$0.0100 - $0.0500" in out
     assert "~1000 input tokens" in out
     assert "~5000 output tokens" in out
+    assert "does not account for prompt caching" in out
 
 
 def test_format_dry_run_summary_shows_unknown_for_an_unpriced_model():

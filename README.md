@@ -80,9 +80,14 @@ Estimated cost (dry run)
 Assumes ~8 chapters (actual count depends on the repo)
 Estimated cost:  $0.0123 - $0.1456
 Estimated usage: ~12345 input tokens, up to ~131072 output tokens
+Note: this estimate does not account for prompt caching -- a real run
+reuses the same codebase block across calls, so actual cost is often
+lower than the low end shown here.
 ```
 
 The low end assumes zero output tokens; the high end assumes every call hits the configured max-output cap, so treat it as a worst-case ceiling, not a typical cost. If the model has no pricing entry, the cost range shows `unknown (no pricing for this model)` instead.
+
+The estimate also can't see prompt caching, since it never makes a real call: a real run reuses the same codebase block across the Analyze/Relate/WriteChapters calls, so a chunk of what the estimate treats as full-price input actually lands as cheap cache reads. On a repo that gets strong cache reuse, the real `Session` summary's cost can come in below this estimate's low end.
 
 Every real run (not `--dry-run`) also prints a `Session` summary at the end with actual token counts and cost, based on the usage the LLM calls reported.
 

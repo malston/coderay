@@ -366,7 +366,10 @@ def format_dry_run_summary(estimate):
         f"Assumes ~{estimate['chapter_guess']} chapters (actual count depends on the repo)\n"
         f"Estimated cost:  {cost_line}\n"
         f"Estimated usage: ~{estimate['estimated_input_tokens']} input tokens, "
-        f"up to ~{estimate['estimated_output_tokens_worst_case']} output tokens"
+        f"up to ~{estimate['estimated_output_tokens_worst_case']} output tokens\n"
+        "Note: this estimate does not account for prompt caching -- a real run "
+        "reuses the same codebase block across calls, so actual cost is often "
+        "lower than the low end shown here."
     )
 
 
