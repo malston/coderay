@@ -21,9 +21,19 @@ from importlib.metadata import version
 
 from markdown_it import MarkdownIt
 
-from coderay_utils import cost_for, ensure_priced, get_usage, reset_usage, resolve_provider_and_model
+from coderay_utils import (
+    cost_for, ensure_priced, fill, get_usage, list_files,
+    read_prompt, reset_usage, resolve_provider_and_model, safe_read,
+)
 from workflow.flow import create_tour_flow
-from workflow.nodes import INSTRUCTIONS_DIR, PipelineState
+from workflow.nodes import (
+    CODEBASE_BUDGET,
+    INSTRUCTIONS_DIR,
+    PROMPTS_DIR,
+    PipelineState,
+    SmartCrawl,
+    load_instructions,
+)
 
 # CommonMark parser. Unlike python-markdown's fenced_code extension, this
 # correctly handles fenced code blocks indented inside list items.
@@ -282,6 +292,84 @@ def format_session_summary(usage_records, wall_seconds):
     )
 
 
+DRY_RUN_CHAPTER_GUESS = 8
+
+
+def _codebase_preview_text(repo_path, budget):
+    """Best-guess codebase text for dry-run sizing: the first files
+    list_files() returns, up to budget chars. Not the same files the real
+    SmartCrawl LLM call would pick, but close enough in total size to
+    estimate prompt length."""
+    parts = []
+    total = 0
+    for p in list_files(repo_path):
+        if total >= budget:
+            break
+        text = safe_read(p)
+        if text is None:
+            continue
+        parts.append(text)
+        total += len(text)
+    return "\n\n".join(parts)
+
+
+def estimate_dry_run_cost(repo_path, instructions, provider, model, chapter_guess=DRY_RUN_CHAPTER_GUESS):
+    """Estimate the cost of a real run without calling any LLM. Input tokens
+    use a chars/4 heuristic; output tokens assume every call hits the
+    configured max-output cap (a worst-case upper bound, not a typical case)."""
+    from coderay_utils.call_llm import DEFAULT_MAX_OUTPUT_TOKENS
+    max_out = int(os.environ.get("LLM_MAX_OUTPUT_TOKENS", str(DEFAULT_MAX_OUTPUT_TOKENS)))
+
+    # Reuses SmartCrawl's own prep() for the file-selection prompt instead of
+    # rebuilding its preview-manifest logic here -- one source of truth for
+    # what that prompt looks like.
+    select_prompt, _files, _root = SmartCrawl().prep({"repo_path": repo_path})
+
+    codebase = _codebase_preview_text(repo_path, CODEBASE_BUDGET)
+    analyze_prompt = fill(read_prompt(PROMPTS_DIR, "identify-abstractions.md"), codebase=codebase)
+    relate_prompt = fill(
+        read_prompt(PROMPTS_DIR, "analyze-relationships.md"),
+        abstractions="(estimated -- not yet known)", codebase=codebase,
+    )
+    chapter_prompt = fill(
+        read_prompt(PROMPTS_DIR, "write-chapter.md"),
+        name="(estimated)", description="(estimated)", chapter_num=1, total=chapter_guess,
+        prev_chapters="(estimated)", chapter_list="(estimated)", codebase=codebase,
+        instructions=load_instructions(instructions),
+    )
+
+    prompts = [select_prompt, analyze_prompt, relate_prompt] + [chapter_prompt] * chapter_guess
+    estimated_input_tokens = sum(len(p) // 4 for p in prompts)
+    estimated_output_tokens_worst_case = max_out * len(prompts)
+
+    low_usage = {"input_tokens": estimated_input_tokens, "output_tokens": 0,
+                 "cache_read_tokens": 0, "cache_write_tokens": 0}
+    high_usage = {"input_tokens": estimated_input_tokens, "output_tokens": estimated_output_tokens_worst_case,
+                  "cache_read_tokens": 0, "cache_write_tokens": 0}
+
+    return {
+        "provider": provider, "model": model, "chapter_guess": chapter_guess,
+        "estimated_input_tokens": estimated_input_tokens,
+        "estimated_output_tokens_worst_case": estimated_output_tokens_worst_case,
+        "cost_low": cost_for(provider, model, low_usage),
+        "cost_high": cost_for(provider, model, high_usage),
+    }
+
+
+def format_dry_run_summary(estimate):
+    if estimate["cost_low"] is None or estimate["cost_high"] is None:
+        cost_line = "unknown (no pricing for this model)"
+    else:
+        cost_line = f"${estimate['cost_low']:.4f} - ${estimate['cost_high']:.4f}"
+    return (
+        "Estimated cost (dry run)\n"
+        f"Assumes ~{estimate['chapter_guess']} chapters (actual count depends on the repo)\n"
+        f"Estimated cost:  {cost_line}\n"
+        f"Estimated usage: ~{estimate['estimated_input_tokens']} input tokens, "
+        f"up to ~{estimate['estimated_output_tokens_worst_case']} output tokens"
+    )
+
+
 def dump_run_state(shared: PipelineState, out):
     """Write whatever progress the pipeline made to a JSON file, for post-mortem
     on an unhandled failure deep into a run (e.g. the 3rd LLM retry still failing
@@ -312,6 +400,7 @@ def main():
     ap.add_argument("repo_path")
     ap.add_argument("--out", default=None)
     ap.add_argument("--instructions", default="beginner-tutorial", choices=available_lenses())
+    ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
     if not os.path.isdir(args.repo_path):
@@ -319,6 +408,10 @@ def main():
 
     provider, model = resolve_provider_and_model()
     ensure_priced(provider, model)
+
+    if args.dry_run:
+        print(format_dry_run_summary(estimate_dry_run_cost(args.repo_path, args.instructions, provider, model)))
+        return
 
     name = os.path.basename(os.path.abspath(args.repo_path))
     out = args.out or default_output_dir(args.repo_path, args.instructions)

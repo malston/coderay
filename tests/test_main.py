@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 from importlib.metadata import version
@@ -10,6 +11,8 @@ from workflow.__main__ import (
     build_related_links,
     default_output_dir,
     dump_run_state,
+    estimate_dry_run_cost,
+    format_dry_run_summary,
     format_session_summary,
     md_to_html,
     mermaid_label,
@@ -251,3 +254,73 @@ def test_dump_run_state_handles_empty_shared(tmp_path):
         "relationships": None,
         "chapters_completed": None,
     }
+
+
+def _make_repo_files(tmp_path, count, size=500):
+    for i in range(count):
+        (tmp_path / f"file_{i}.py").write_text("x" * size, encoding="utf-8")
+
+
+def test_estimate_dry_run_cost_returns_a_cost_range_for_a_priced_model(tmp_path):
+    _make_repo_files(tmp_path, count=5)
+
+    estimate = estimate_dry_run_cost(str(tmp_path), "beginner-tutorial", "anthropic", "claude-sonnet-5")
+
+    assert estimate["chapter_guess"] == 8
+    assert estimate["estimated_input_tokens"] > 0
+    assert estimate["estimated_output_tokens_worst_case"] > 0
+    assert estimate["cost_low"] is not None
+    assert estimate["cost_high"] is not None
+    assert estimate["cost_low"] <= estimate["cost_high"]
+
+
+def test_estimate_dry_run_cost_is_unpriced_for_an_unknown_model(tmp_path):
+    _make_repo_files(tmp_path, count=3)
+
+    estimate = estimate_dry_run_cost(str(tmp_path), "beginner-tutorial", "openai", "gpt-6-mystery")
+
+    assert estimate["cost_low"] is None
+    assert estimate["cost_high"] is None
+
+
+def test_format_dry_run_summary_shows_the_chapter_assumption_and_cost_range():
+    estimate = {
+        "provider": "anthropic", "model": "claude-sonnet-5", "chapter_guess": 8,
+        "estimated_input_tokens": 1000, "estimated_output_tokens_worst_case": 5000,
+        "cost_low": 0.01, "cost_high": 0.05,
+    }
+    out = format_dry_run_summary(estimate)
+    assert "Estimated cost (dry run)" in out
+    assert "Assumes ~8 chapters" in out
+    assert "$0.0100 - $0.0500" in out
+    assert "~1000 input tokens" in out
+    assert "~5000 output tokens" in out
+
+
+def test_format_dry_run_summary_shows_unknown_for_an_unpriced_model():
+    estimate = {
+        "provider": "openai", "model": "gpt-6-mystery", "chapter_guess": 8,
+        "estimated_input_tokens": 1000, "estimated_output_tokens_worst_case": 5000,
+        "cost_low": None, "cost_high": None,
+    }
+    out = format_dry_run_summary(estimate)
+    assert "unknown" in out
+
+
+def test_dry_run_flag_estimates_without_creating_the_output_directory(tmp_path, monkeypatch):
+    repo = tmp_path / "sample_repo"
+    repo.mkdir()
+    (repo / "main.py").write_text("print('hello')\n", encoding="utf-8")
+    out_dir = tmp_path / "out"
+
+    env = dict(os.environ, ANTHROPIC_API_KEY="test-key", XDG_CONFIG_HOME=str(tmp_path / "config"))
+    for var in ("OPENAI_API_KEY", "GEMINI_API_KEY", "LLM_PROVIDER"):
+        env.pop(var, None)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "workflow", str(repo), "--dry-run", "--out", str(out_dir)],
+        capture_output=True, text=True, env=env, check=True,
+    )
+
+    assert "Estimated cost (dry run)" in result.stdout
+    assert not out_dir.exists()
