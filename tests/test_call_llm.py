@@ -56,10 +56,17 @@ def _fake_anthropic_module(stop_reason, text="hi", block_type="text"):
             self.type = block_type
             self.text = text
 
+    class Usage:
+        input_tokens = 0
+        output_tokens = 0
+        cache_read_input_tokens = 0
+        cache_creation_input_tokens = 0
+
     class Resp:
         def __init__(self):
             self.stop_reason = stop_reason
             self.content = [Block()]
+            self.usage = Usage()
 
     class Messages:
         def create(self, **kwargs):
@@ -105,6 +112,7 @@ def _fake_anthropic_module_with_usage(input_tokens, output_tokens, cache_read, c
     fake.Anthropic = Anthropic
     return fake
 
+
 def test_anthropic_call_records_usage(monkeypatch):
     call_llm_module.reset_usage()
     monkeypatch.setitem(
@@ -125,6 +133,42 @@ def test_anthropic_call_records_usage(monkeypatch):
     assert record["cache_write_tokens"] == 5
     assert record["cached"] is False
     assert record["duration_s"] >= 0
+
+
+def _fake_anthropic_module_missing_usage(text="ok"):
+    fake = types.ModuleType("anthropic")
+    reply_text = text
+
+    class Block:
+        type = "text"
+        text = reply_text
+
+    class Resp:
+        stop_reason = "end_turn"
+        content = [Block()]
+        usage = None
+
+    class Messages:
+        def create(self, **kwargs):
+            return Resp()
+
+    class Anthropic:
+        def __init__(self, *a, **kw):
+            self.messages = Messages()
+
+    fake.Anthropic = Anthropic
+    return fake
+
+
+def test_anthropic_call_raises_when_usage_object_is_missing(monkeypatch):
+    call_llm_module.reset_usage()
+    monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module_missing_usage())
+
+    with pytest.raises(RuntimeError, match="missing usage data"):
+        call_llm("prompt")
+
+    assert call_llm_module.get_usage() == []
+
 
 def _fake_openai_module_with_usage(prompt_tokens, completion_tokens, text="ok"):
     fake = types.ModuleType("openai")
@@ -159,6 +203,7 @@ def _fake_openai_module_with_usage(prompt_tokens, completion_tokens, text="ok"):
     fake.OpenAI = OpenAI
     return fake
 
+
 def test_openai_call_records_usage_with_zero_cache_fields(monkeypatch):
     call_llm_module.reset_usage()
     monkeypatch.setenv("LLM_PROVIDER", "openai")
@@ -175,6 +220,47 @@ def test_openai_call_records_usage_with_zero_cache_fields(monkeypatch):
     assert record["output_tokens"] == 80
     assert record["cache_read_tokens"] == 0
     assert record["cache_write_tokens"] == 0
+
+
+def _fake_openai_module_missing_usage(text="ok"):
+    fake = types.ModuleType("openai")
+
+    class Message:
+        content = text
+
+    class Choice:
+        finish_reason = "stop"
+        message = Message()
+
+    class Resp:
+        choices = [Choice()]
+        usage = None
+
+    class Completions:
+        def create(self, **kwargs):
+            return Resp()
+
+    class Chat:
+        completions = Completions()
+
+    class OpenAI:
+        def __init__(self, *a, **kw):
+            self.chat = Chat()
+
+    fake.OpenAI = OpenAI
+    return fake
+
+
+def test_openai_call_raises_when_usage_object_is_missing(monkeypatch):
+    call_llm_module.reset_usage()
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setitem(sys.modules, "openai", _fake_openai_module_missing_usage())
+
+    with pytest.raises(RuntimeError, match="missing usage data"):
+        call_llm("prompt")
+
+    assert call_llm_module.get_usage() == []
+
 
 def _install_fake_gemini_module_with_usage(monkeypatch, prompt_tokens, candidates_tokens, cached_tokens, text="ok"):
     google = types.ModuleType("google")
@@ -217,6 +303,7 @@ def _install_fake_gemini_module_with_usage(monkeypatch, prompt_tokens, candidate
     monkeypatch.setitem(sys.modules, "google.genai", genai)
     monkeypatch.setitem(sys.modules, "google.genai.types", genai_types)
 
+
 def test_gemini_call_records_cached_content_as_cache_read(monkeypatch):
     call_llm_module.reset_usage()
     monkeypatch.setenv("LLM_PROVIDER", "gemini")
@@ -227,10 +314,62 @@ def test_gemini_call_records_cached_content_as_cache_read(monkeypatch):
 
     record = call_llm_module.get_usage()[0]
     assert record["provider"] == "gemini"
-    assert record["input_tokens"] == 300
+    # prompt_token_count (300) includes the cached tokens (40); input_tokens
+    # must exclude them so cached tokens aren't billed at both the input and
+    # cache-read rate.
+    assert record["input_tokens"] == 260
     assert record["output_tokens"] == 120
     assert record["cache_read_tokens"] == 40
     assert record["cache_write_tokens"] == 0
+
+
+def _install_fake_gemini_module_missing_usage(monkeypatch, text="ok"):
+    google = types.ModuleType("google")
+    genai = types.ModuleType("google.genai")
+    genai_types = types.ModuleType("google.genai.types")
+
+    class GenerateContentConfig:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class Candidate:
+        finish_reason = "STOP"
+
+    class Resp:
+        def __init__(self):
+            self.candidates = [Candidate()]
+            self.text = text
+            self.usage_metadata = None
+
+    class Models:
+        def generate_content(self, **kwargs):
+            return Resp()
+
+    class Client:
+        def __init__(self, *a, **kw):
+            self.models = Models()
+
+    genai_types.GenerateContentConfig = GenerateContentConfig
+    genai.types = genai_types
+    genai.Client = Client
+    google.genai = genai
+
+    monkeypatch.setitem(sys.modules, "google", google)
+    monkeypatch.setitem(sys.modules, "google.genai", genai)
+    monkeypatch.setitem(sys.modules, "google.genai.types", genai_types)
+
+
+def test_gemini_call_raises_when_usage_object_is_missing(monkeypatch):
+    call_llm_module.reset_usage()
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    _install_fake_gemini_module_missing_usage(monkeypatch)
+
+    with pytest.raises(RuntimeError, match="missing usage data"):
+        call_llm("prompt")
+
+    assert call_llm_module.get_usage() == []
+
 
 def test_cache_hit_records_a_zero_usage_entry(monkeypatch, tmp_path):
     call_llm_module.CACHE_DIR = str(tmp_path)
@@ -248,9 +387,11 @@ def test_cache_hit_records_a_zero_usage_entry(monkeypatch, tmp_path):
     assert hit_record["output_tokens"] == 0
     assert hit_record["duration_s"] == 0.0
 
+
 def test_resolve_provider_and_model_matches_call_llm_defaults():
     from coderay_utils.call_llm import resolve_provider_and_model
     assert resolve_provider_and_model() == ("anthropic", "claude-sonnet-5")
+
 
 def _fake_anthropic_module_truncated_with_usage(input_tokens, output_tokens):
     fake = types.ModuleType("anthropic")
@@ -283,6 +424,7 @@ def _fake_anthropic_module_truncated_with_usage(input_tokens, output_tokens):
 
     fake.Anthropic = Anthropic
     return fake
+
 
 def test_truncated_response_still_records_its_usage(monkeypatch):
     call_llm_module.reset_usage()
@@ -341,9 +483,16 @@ def _fake_anthropic_module_capturing_kwargs(captured, text="ok"):
         type = "text"
         text = reply_text
 
+    class Usage:
+        input_tokens = 0
+        output_tokens = 0
+        cache_read_input_tokens = 0
+        cache_creation_input_tokens = 0
+
     class Resp:
         stop_reason = "end_turn"
         content = [Block()]
+        usage = Usage()
 
     class Messages:
         def create(self, **kwargs):
@@ -434,8 +583,13 @@ def _fake_openai_module_capturing_kwargs(captured, text="ok"):
         finish_reason = "stop"
         message = Message()
 
+    class Usage:
+        prompt_tokens = 0
+        completion_tokens = 0
+
     class Resp:
         choices = [Choice()]
+        usage = Usage()
 
     class Completions:
         def create(self, **kwargs):
@@ -481,9 +635,15 @@ def _install_fake_gemini_module(monkeypatch, captured, text="ok"):
     class Candidate:
         finish_reason = "STOP"
 
+    class Usage:
+        prompt_token_count = 0
+        candidates_token_count = 0
+        cached_content_token_count = 0
+
     class Resp:
         candidates = [Candidate()]
         text = reply_text
+        usage_metadata = Usage()
 
     class Models:
         def generate_content(self, **kwargs):

@@ -31,14 +31,18 @@ BUILTIN_PRICES = {
 CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "coderay")
 OVERRIDE_FILE = os.path.join(CONFIG_DIR, "pricing.json")
 
+
 def _load_overrides():
     if not os.path.exists(OVERRIDE_FILE):
         return {}
     try:
         with open(OVERRIDE_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        print(f"Warning: couldn't read {OVERRIDE_FILE} ({e}); ignoring overrides", file=sys.stderr)
         return {}
+    return data if isinstance(data, dict) else {}
+
 
 def _save_override(provider, model, per_million):
     overrides = _load_overrides()
@@ -54,13 +58,16 @@ def get_price(provider, model):
     entry = overrides.get(f"{provider}:{model}")
     if entry is not None:
         try:
+            if not isinstance(entry, dict):
+                raise TypeError(f"override entry for {provider}:{model} is not an object")
             return {
                 field: float(entry.get(field, 0.0) or 0.0) / 1_000_000
                 for field in ("input", "output", "cache_read", "cache_write")
             }
-        except (TypeError, ValueError):
-            pass
+        except (TypeError, ValueError, AttributeError) as e:
+            print(f"Warning: ignoring malformed pricing override for {provider}:{model} ({e})", file=sys.stderr)
     return BUILTIN_PRICES.get((provider, model))
+
 
 def cost_for(provider, model, usage_record):
     """Dollar cost of one usage record, or None if the model isn't priced."""

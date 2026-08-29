@@ -37,18 +37,27 @@ DEFAULT_MAX_OUTPUT_TOKENS = 16384
 
 _usage_log = []
 
+
 def reset_usage():
     """Clear accumulated usage records. Call once before a pipeline run."""
     _usage_log.clear()
+
 
 def get_usage():
     """Every usage record accumulated since the last reset_usage()."""
     return list(_usage_log)
 
+
 def resolve_provider_and_model():
     """The (provider, model) pair call_llm() would use right now, without calling it."""
     provider = _pick()
     return provider, _model_for(provider)
+
+
+def max_output_tokens():
+    """The max-output-tokens cap call_llm() would use right now, without calling it."""
+    return int(os.environ.get("LLM_MAX_OUTPUT_TOKENS", str(DEFAULT_MAX_OUTPUT_TOKENS)))
+
 
 def _record_usage(provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, duration_s, cached):
     _usage_log.append({
@@ -127,7 +136,7 @@ def _cache_put(provider, model, max_out, prompt, response):
 def call_llm(prompt: str) -> str:
     provider = _pick()
     model = _model_for(provider)
-    max_out = int(os.environ.get("LLM_MAX_OUTPUT_TOKENS", str(DEFAULT_MAX_OUTPUT_TOKENS)))
+    max_out = max_output_tokens()
 
     # The real breakpoint is the last occurrence of the marker in the
     # *template* -- but write-chapter.md's volatile suffix includes
@@ -165,6 +174,8 @@ def call_llm(prompt: str) -> str:
         )
         duration_s = time.perf_counter() - start
         usage = getattr(resp, "usage", None)
+        if usage is None:
+            raise RuntimeError(f"{provider} response missing usage data")
         _record_usage(
             provider, model,
             getattr(usage, "input_tokens", 0) or 0,
@@ -190,6 +201,8 @@ def call_llm(prompt: str) -> str:
         )
         duration_s = time.perf_counter() - start
         usage = getattr(resp, "usage", None)
+        if usage is None:
+            raise RuntimeError(f"{provider} response missing usage data")
         _record_usage(
             provider, model,
             getattr(usage, "prompt_tokens", 0) or 0,
@@ -213,11 +226,15 @@ def call_llm(prompt: str) -> str:
         )
         duration_s = time.perf_counter() - start
         usage = getattr(resp, "usage_metadata", None)
+        if usage is None:
+            raise RuntimeError(f"{provider} response missing usage data")
+        cached = getattr(usage, "cached_content_token_count", 0) or 0
+        prompt_total = getattr(usage, "prompt_token_count", 0) or 0
         _record_usage(
             provider, model,
-            getattr(usage, "prompt_token_count", 0) or 0,
+            prompt_total - cached,
             getattr(usage, "candidates_token_count", 0) or 0,
-            getattr(usage, "cached_content_token_count", 0) or 0,
+            cached,
             0,
             duration_s, cached=False,
         )

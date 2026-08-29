@@ -324,3 +324,23 @@ def test_dry_run_flag_estimates_without_creating_the_output_directory(tmp_path, 
 
     assert "Estimated cost (dry run)" in result.stdout
     assert not out_dir.exists()
+
+
+def test_dry_run_flag_works_with_no_llm_key_configured(tmp_path):
+    # The spec requires --dry-run to need no API key at all -- it falls back
+    # to the anthropic default when resolve_provider_and_model() can't find one.
+    repo = tmp_path / "sample_repo"
+    repo.mkdir()
+    (repo / "main.py").write_text("print('hello')\n", encoding="utf-8")
+
+    env = dict(os.environ, XDG_CONFIG_HOME=str(tmp_path / "config"))
+    for var in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "LLM_PROVIDER"):
+        env.pop(var, None)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "workflow", str(repo), "--dry-run"],
+        capture_output=True, text=True, env=env,
+    )
+
+    assert result.returncode == 0
+    assert "Estimated cost (dry run)" in result.stdout

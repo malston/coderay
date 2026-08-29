@@ -22,7 +22,7 @@ from importlib.metadata import version
 from markdown_it import MarkdownIt
 
 from coderay_utils import (
-    cost_for, ensure_priced, fill, get_usage, list_files,
+    cost_for, ensure_priced, fill, get_usage, list_files, max_output_tokens,
     read_prompt, reset_usage, resolve_provider_and_model, safe_read,
 )
 from workflow.flow import create_tour_flow
@@ -317,8 +317,7 @@ def estimate_dry_run_cost(repo_path, instructions, provider, model, chapter_gues
     """Estimate the cost of a real run without calling any LLM. Input tokens
     use a chars/4 heuristic; output tokens assume every call hits the
     configured max-output cap (a worst-case upper bound, not a typical case)."""
-    from coderay_utils.call_llm import DEFAULT_MAX_OUTPUT_TOKENS
-    max_out = int(os.environ.get("LLM_MAX_OUTPUT_TOKENS", str(DEFAULT_MAX_OUTPUT_TOKENS)))
+    max_out = max_output_tokens()
 
     # Reuses SmartCrawl's own prep() for the file-selection prompt instead of
     # rebuilding its preview-manifest logic here -- one source of truth for
@@ -406,12 +405,16 @@ def main():
     if not os.path.isdir(args.repo_path):
         ap.error(f"{args.repo_path} is not a directory")
 
-    provider, model = resolve_provider_and_model()
-    ensure_priced(provider, model)
-
     if args.dry_run:
+        try:
+            provider, model = resolve_provider_and_model()
+        except RuntimeError:
+            provider, model = "anthropic", "claude-sonnet-5"
         print(format_dry_run_summary(estimate_dry_run_cost(args.repo_path, args.instructions, provider, model)))
         return
+
+    provider, model = resolve_provider_and_model()
+    ensure_priced(provider, model)
 
     name = os.path.basename(os.path.abspath(args.repo_path))
     out = args.out or default_output_dir(args.repo_path, args.instructions)
