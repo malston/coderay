@@ -93,6 +93,34 @@ not in the table returns `None` (not a raised error, not a guessed number) — t
 prints that entry's cost as `unknown` rather than a wrong number. A run using a `*_MODEL`
 override to a model outside this table still gets full token counts, just no dollar figure.
 
+#### User-editable pricing overrides
+
+A JSON file at `$XDG_CONFIG_HOME/coderay/pricing.json` (`~/.config/coderay/pricing.json` by
+default — the same `XDG_*`-with-fallback pattern `call_llm.py` already uses for `CACHE_DIR`),
+keyed by `"provider:model"`, values in $/1M tokens for `input`/`output`/`cache_read`/
+`cache_write`. Loaded once at startup and merged over the built-in table, with the override
+file winning on a collision — this also covers correcting a stale built-in price without a
+code change.
+
+Lookup order: override file -> built-in `pricing.py` table -> `None` (unknown).
+
+Both `main()` (actual run) and `--dry-run` resolve provider+model before any LLM call. If
+that pair is in neither table and `sys.stdin.isatty()` is true, prompt once:
+
+```text
+No pricing for openai/gpt-6. Enter $/1M tokens (blank to skip):
+  input:
+  output:
+  cache read:
+  cache write:
+```
+
+Any field left blank is stored as `0`. The answers are written to the override file
+immediately, so a later run (or a later call in the same run, if the same unpriced model
+comes up again) doesn't re-prompt. If stdin isn't a tty (CI, scripted invocation) or the user
+leaves everything blank, cost for that model stays `unknown`, exactly like today — this is
+strictly additive, not a required step.
+
 ### Actual-mode summary: `workflow/__main__.py`
 
 After `create_tour_flow().run(shared)` succeeds, `main()`:
@@ -165,6 +193,9 @@ Per repo convention, fakes go at the `call_llm` module boundary — no network, 
   sample repo for SmartCrawl tests).
 - A test that `main()` with `--dry-run` doesn't create the output directory and doesn't
   import/call anything under `coderay_utils.call_llm`'s SDK branches.
+- Tests for the override file: an override entry wins over a built-in one for the same
+  `(provider, model)`; a non-tty stdin skips the prompt and leaves cost `unknown`; a
+  tty-simulated prompt with fake input writes the expected JSON; blank fields store as `0`.
 
 ## Follow-up beads (file after this design is approved)
 
