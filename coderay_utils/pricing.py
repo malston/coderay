@@ -103,6 +103,9 @@ def prompt_for_pricing(provider, model):
     except (ValueError, EOFError):
         print("Skipping pricing entry.")
         return None
+    if not any(per_million.values()):
+        print("No pricing entered, skipping.")
+        return None
     _save_override(provider, model, per_million)
     return per_million
 

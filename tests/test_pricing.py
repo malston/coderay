@@ -146,17 +146,36 @@ def test_prompt_writes_entered_values_to_override_file(monkeypatch):
     assert price["cache_write"] == 0.0
 
 
-def test_prompt_stores_blank_fields_as_zero(monkeypatch):
+def test_prompt_with_every_field_blank_skips_without_saving(monkeypatch):
+    # All four fields blank means the user has no pricing to give -- saving a
+    # $0 override would make an unpriced model look like a free one instead of
+    # leaving cost "unknown", which is what the spec promises for this case.
     from coderay_utils.pricing import get_price, prompt_for_pricing
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     answers = iter(["", "", "", ""])
     monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
 
-    prompt_for_pricing("openai", "gpt-6-blank")
+    result = prompt_for_pricing("openai", "gpt-6-blank")
 
-    assert get_price("openai", "gpt-6-blank") == {
-        "input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_write": 0.0,
+    assert result is None
+    assert get_price("openai", "gpt-6-blank") is None
+
+
+def test_prompt_saves_partial_blank_fields_as_zero(monkeypatch):
+    # A blank field alongside real numbers is a legitimate "this field doesn't
+    # apply" (e.g. no separate cache-write rate), not a skip -- it still saves.
+    from coderay_utils.pricing import get_price, prompt_for_pricing
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    answers = iter(["1.5", "9.0", "", ""])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+
+    prompt_for_pricing("openai", "gpt-6-partial")
+
+    assert get_price("openai", "gpt-6-partial") == {
+        "input": 1.5 / 1_000_000, "output": 9.0 / 1_000_000,
+        "cache_read": 0.0, "cache_write": 0.0,
     }
 
 
