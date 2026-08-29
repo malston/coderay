@@ -107,10 +107,17 @@ def call_llm(prompt: str) -> str:
     if cached is not None:
         return cached
 
-    # The real breakpoint is always the last occurrence in a correctly-filled
-    # prompt (nothing legitimate follows it), so rpartition ignores a
-    # lookalike string planted earlier by untrusted repo content.
+    # The real breakpoint is the last occurrence of the marker in the
+    # *template* -- but write-chapter.md's volatile suffix includes
+    # {prev_chapters}, LLM-generated text derived from untrusted repo
+    # content. If a planted marker ever got echoed into a chapter, it would
+    # land after the real breakpoint and rpartition would split there
+    # instead, degrading to a cache miss at best and an empty content block
+    # at worst. Require both sides non-empty so a pathological split like
+    # that is ignored rather than sent to the provider.
     prefix, sep, suffix = prompt.rpartition(CACHE_BREAKPOINT)
+    if sep and not (prefix and suffix):
+        prefix, sep, suffix = "", "", prompt
     plain_prompt = prefix + suffix if sep else prompt
 
     if provider == "anthropic":

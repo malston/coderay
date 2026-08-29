@@ -179,6 +179,24 @@ def test_breakpoint_lookalike_in_untrusted_content_does_not_fool_the_split(monke
     ]
 
 
+def test_marker_with_empty_prefix_or_suffix_is_ignored_as_a_split_point(monkeypatch):
+    # A marker echoed into LLM-generated prev_chapters text (untrusted-repo-
+    # derived) could land right at the start or end of the prompt, producing
+    # an empty prefix or suffix. Splitting there would either send an empty
+    # content block to Anthropic or cache nothing useful -- both are worse
+    # than treating the prompt as unsplit.
+    from coderay_utils.call_llm import CACHE_BREAKPOINT
+
+    captured = {}
+    monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module_capturing_kwargs(captured))
+    call_llm(f"{CACHE_BREAKPOINT}everything after")
+    assert captured["messages"][0]["content"] == f"{CACHE_BREAKPOINT}everything after"
+
+    captured.clear()
+    call_llm(f"everything before{CACHE_BREAKPOINT}")
+    assert captured["messages"][0]["content"] == f"everything before{CACHE_BREAKPOINT}"
+
+
 def _fake_openai_module_capturing_kwargs(captured, text="ok"):
     fake = types.ModuleType("openai")
 
