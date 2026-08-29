@@ -220,3 +220,70 @@ def test_cache_breakpoint_marker_is_stripped_for_non_anthropic_providers(monkeyp
     sent_prompt = captured["messages"][0]["content"]
     assert CACHE_BREAKPOINT not in sent_prompt
     assert sent_prompt == "stable stuffvolatile stuff"
+
+
+def _install_fake_gemini_module(monkeypatch, captured, text="ok"):
+    google = types.ModuleType("google")
+    genai = types.ModuleType("google.genai")
+    genai_types = types.ModuleType("google.genai.types")
+
+    class GenerateContentConfig:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    reply_text = text
+
+    class Candidate:
+        finish_reason = "STOP"
+
+    class Resp:
+        candidates = [Candidate()]
+        text = reply_text
+
+    class Models:
+        def generate_content(self, **kwargs):
+            captured.update(kwargs)
+            return Resp()
+
+    class Client:
+        def __init__(self, *a, **kw):
+            self.models = Models()
+
+    genai_types.GenerateContentConfig = GenerateContentConfig
+    genai.types = genai_types
+    genai.Client = Client
+    google.genai = genai
+
+    monkeypatch.setitem(sys.modules, "google", google)
+    monkeypatch.setitem(sys.modules, "google.genai", genai)
+    monkeypatch.setitem(sys.modules, "google.genai.types", genai_types)
+
+
+def test_cache_breakpoint_marker_is_stripped_for_gemini(monkeypatch):
+    from coderay_utils.call_llm import CACHE_BREAKPOINT
+
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    captured = {}
+    _install_fake_gemini_module(monkeypatch, captured)
+
+    call_llm(f"stable stuff{CACHE_BREAKPOINT}volatile stuff")
+
+    assert CACHE_BREAKPOINT not in captured["contents"]
+    assert captured["contents"] == "stable stuffvolatile stuff"
+
+
+def test_disk_cache_key_is_unaffected_by_the_cache_breakpoint_split(monkeypatch, tmp_path):
+    # The disk cache (separate from Anthropic's own prompt cache) must key off
+    # the full, unsplit prompt -- hashing prefix/suffix separately would
+    # change the on-disk cache key and silently break hit rates.
+    from coderay_utils.call_llm import CACHE_BREAKPOINT, _cache_path
+
+    call_llm_module.CACHE_DIR = str(tmp_path)
+    prompt = f"stable stuff{CACHE_BREAKPOINT}volatile stuff"
+    monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module("end_turn", text="ok"))
+
+    call_llm(prompt)
+
+    expected_path = _cache_path("anthropic", "claude-sonnet-4-6", 16384, prompt)
+    assert os.path.exists(expected_path)
