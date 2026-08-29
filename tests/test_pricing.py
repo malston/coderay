@@ -1,4 +1,5 @@
 from coderay_utils.pricing import cost_for, get_price
+import pytest
 
 def test_get_price_returns_dollars_per_token_for_known_model():
     price = get_price("anthropic", "claude-sonnet-5")
@@ -24,3 +25,75 @@ def test_cost_for_unknown_model_returns_none():
         "cache_read_tokens": 0, "cache_write_tokens": 0,
     }
     assert cost_for("openai", "gpt-6-nonexistent", usage_record) is None
+
+@pytest.fixture(autouse=True)
+def isolated_pricing_config(tmp_path, monkeypatch):
+    import coderay_utils.pricing as pricing_module
+    monkeypatch.setattr(pricing_module, "CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(pricing_module, "OVERRIDE_FILE", str(tmp_path / "pricing.json"))
+    yield
+
+def test_override_file_wins_over_builtin_table():
+    from coderay_utils.pricing import _save_override, get_price
+
+    _save_override(
+        "anthropic", "claude-sonnet-5",
+        {"input": 99.0, "output": 99.0, "cache_read": 0.0, "cache_write": 0.0},
+    )
+
+    price = get_price("anthropic", "claude-sonnet-5")
+    assert price["input"] == 99.0 / 1_000_000
+
+def test_prompt_skips_on_non_tty_stdin(monkeypatch):
+    from coderay_utils.pricing import prompt_for_pricing
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    assert prompt_for_pricing("openai", "gpt-6-new") is None
+
+def test_prompt_writes_entered_values_to_override_file(monkeypatch):
+    from coderay_utils.pricing import get_price, prompt_for_pricing
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    answers = iter(["1.5", "9.0", "0.1", "0.0"])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+
+    prompt_for_pricing("openai", "gpt-6-new")
+
+    price = get_price("openai", "gpt-6-new")
+    assert price["input"] == 1.5 / 1_000_000
+    assert price["output"] == 9.0 / 1_000_000
+    assert price["cache_read"] == 0.1 / 1_000_000
+    assert price["cache_write"] == 0.0
+
+def test_prompt_stores_blank_fields_as_zero(monkeypatch):
+    from coderay_utils.pricing import get_price, prompt_for_pricing
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    answers = iter(["", "", "", ""])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+
+    prompt_for_pricing("openai", "gpt-6-blank")
+
+    assert get_price("openai", "gpt-6-blank") == {
+        "input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_write": 0.0,
+    }
+
+def test_ensure_priced_does_not_prompt_for_a_known_model(monkeypatch):
+    from coderay_utils.pricing import ensure_priced
+
+    def fail_if_called(prompt):
+        raise AssertionError("should not prompt for a priced model")
+
+    monkeypatch.setattr("builtins.input", fail_if_called)
+    ensure_priced("anthropic", "claude-sonnet-5")  # no exception
+
+def test_ensure_priced_prompts_for_an_unknown_model_on_a_tty(monkeypatch):
+    from coderay_utils.pricing import ensure_priced, get_price
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    answers = iter(["1.0", "2.0", "0.0", "0.0"])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+
+    ensure_priced("openai", "gpt-6-ensure")
+
+    assert get_price("openai", "gpt-6-ensure") is not None

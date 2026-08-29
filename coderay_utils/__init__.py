@@ -22,3 +22,8 @@ from .crawl import (  # noqa: F401
     DEFAULT_KEEP_NAMES,
     DEFAULT_MAX_FILE_BYTES,
 )
+from .pricing import (  # noqa: F401
+    cost_for,
+    ensure_priced,
+    get_price,
+)
