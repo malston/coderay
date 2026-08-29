@@ -1,7 +1,14 @@
 """Shared helpers for the pipeline's LLM-calling nodes: the LLM wrapper, the
 crawler, and the prompt/YAML plumbing in llm.py."""
 # Re-exported for `from coderay_utils import <name>`; not used inside this module.
-from .call_llm import call_llm  # noqa: F401
+from .call_llm import (  # noqa: F401
+    DEFAULT_MAX_OUTPUT_TOKENS,
+    call_llm,
+    get_usage,
+    max_output_tokens,
+    reset_usage,
+    resolve_provider_and_model,
+)
 from .llm import (  # noqa: F401
     read_prompt,
     fill,
@@ -15,4 +22,9 @@ from .crawl import (  # noqa: F401
     DEFAULT_SKIP_DIR,
     DEFAULT_KEEP_NAMES,
     DEFAULT_MAX_FILE_BYTES,
+)
+from .pricing import (  # noqa: F401
+    cost_for,
+    ensure_priced,
+    get_price,
 )

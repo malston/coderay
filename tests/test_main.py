@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 from importlib.metadata import version
@@ -10,6 +11,9 @@ from workflow.__main__ import (
     build_related_links,
     default_output_dir,
     dump_run_state,
+    estimate_dry_run_cost,
+    format_dry_run_summary,
+    format_session_summary,
     md_to_html,
     mermaid_label,
     write_chapter_files,
@@ -199,6 +203,47 @@ def test_dump_run_state_captures_partial_progress(tmp_path):
     assert state["chapters_completed"] is None
 
 
+def test_format_session_summary_reports_unknown_cost_for_an_unpriced_model():
+    usage = [{
+        "provider": "openai", "model": "gpt-6-mystery",
+        "input_tokens": 100, "output_tokens": 50,
+        "cache_read_tokens": 0, "cache_write_tokens": 0,
+        "duration_s": 1.5, "cached": False,
+    }]
+    out = format_session_summary(usage, wall_seconds=8.0)
+    assert "Session" in out
+    assert "Total cost:            unknown" in out
+    assert "Total duration (API):  2s" in out
+    assert "Total duration (wall): 8s" in out
+    assert "Usage:                 100 input, 50 output, 0 cache read, 0 cache write" in out
+
+
+def test_format_session_summary_sums_cost_across_records_for_a_priced_model():
+    usage = [
+        {
+            "provider": "anthropic", "model": "claude-sonnet-5",
+            "input_tokens": 1_000_000, "output_tokens": 0,
+            "cache_read_tokens": 0, "cache_write_tokens": 0,
+            "duration_s": 1.0, "cached": False,
+        },
+        {
+            "provider": "anthropic", "model": "claude-sonnet-5",
+            "input_tokens": 0, "output_tokens": 1_000_000,
+            "cache_read_tokens": 0, "cache_write_tokens": 0,
+            "duration_s": 2.0, "cached": False,
+        },
+    ]
+    out = format_session_summary(usage, wall_seconds=5.0)
+    assert "Total cost:            $12.0000" in out
+    assert "Total duration (API):  3s" in out
+
+
+def test_format_session_summary_handles_empty_usage():
+    out = format_session_summary([], wall_seconds=0.4)
+    assert "Total cost:            $0.0000" in out
+    assert "Usage:                 0 input, 0 output, 0 cache read, 0 cache write" in out
+
+
 def test_dump_run_state_handles_empty_shared(tmp_path):
     dump_run_state({}, str(tmp_path))
     state = json.loads((tmp_path / "run_state.json").read_text(encoding="utf-8"))
@@ -209,3 +254,94 @@ def test_dump_run_state_handles_empty_shared(tmp_path):
         "relationships": None,
         "chapters_completed": None,
     }
+
+
+def _make_repo_files(tmp_path, count, size=500):
+    for i in range(count):
+        (tmp_path / f"file_{i}.py").write_text("x" * size, encoding="utf-8")
+
+
+def test_estimate_dry_run_cost_returns_a_cost_range_for_a_priced_model(tmp_path):
+    _make_repo_files(tmp_path, count=5)
+
+    estimate = estimate_dry_run_cost(str(tmp_path), "beginner-tutorial", "anthropic", "claude-sonnet-5")
+
+    assert estimate["chapter_guess"] == 8
+    assert estimate["estimated_input_tokens"] > 0
+    assert estimate["estimated_output_tokens_worst_case"] > 0
+    assert estimate["cost_low"] is not None
+    assert estimate["cost_high"] is not None
+    assert estimate["cost_low"] <= estimate["cost_high"]
+
+
+def test_estimate_dry_run_cost_is_unpriced_for_an_unknown_model(tmp_path):
+    _make_repo_files(tmp_path, count=3)
+
+    estimate = estimate_dry_run_cost(str(tmp_path), "beginner-tutorial", "openai", "gpt-6-mystery")
+
+    assert estimate["cost_low"] is None
+    assert estimate["cost_high"] is None
+
+
+def test_format_dry_run_summary_shows_the_chapter_assumption_and_cost_range():
+    estimate = {
+        "provider": "anthropic", "model": "claude-sonnet-5", "chapter_guess": 8,
+        "estimated_input_tokens": 1000, "estimated_output_tokens_worst_case": 5000,
+        "cost_low": 0.01, "cost_high": 0.05,
+    }
+    out = format_dry_run_summary(estimate)
+    assert "Estimated cost (dry run)" in out
+    assert "Assumes ~8 chapters" in out
+    assert "$0.0100 - $0.0500" in out
+    assert "~1000 input tokens" in out
+    assert "~5000 output tokens" in out
+    assert "does not account for prompt caching" in out
+
+
+def test_format_dry_run_summary_shows_unknown_for_an_unpriced_model():
+    estimate = {
+        "provider": "openai", "model": "gpt-6-mystery", "chapter_guess": 8,
+        "estimated_input_tokens": 1000, "estimated_output_tokens_worst_case": 5000,
+        "cost_low": None, "cost_high": None,
+    }
+    out = format_dry_run_summary(estimate)
+    assert "unknown" in out
+
+
+def test_dry_run_flag_estimates_without_creating_the_output_directory(tmp_path, monkeypatch):
+    repo = tmp_path / "sample_repo"
+    repo.mkdir()
+    (repo / "main.py").write_text("print('hello')\n", encoding="utf-8")
+    out_dir = tmp_path / "out"
+
+    env = dict(os.environ, ANTHROPIC_API_KEY="test-key", XDG_CONFIG_HOME=str(tmp_path / "config"))
+    for var in ("OPENAI_API_KEY", "GEMINI_API_KEY", "LLM_PROVIDER"):
+        env.pop(var, None)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "workflow", str(repo), "--dry-run", "--out", str(out_dir)],
+        capture_output=True, text=True, env=env, check=True,
+    )
+
+    assert "Estimated cost (dry run)" in result.stdout
+    assert not out_dir.exists()
+
+
+def test_dry_run_flag_works_with_no_llm_key_configured(tmp_path):
+    # The spec requires --dry-run to need no API key at all -- it falls back
+    # to the anthropic default when resolve_provider_and_model() can't find one.
+    repo = tmp_path / "sample_repo"
+    repo.mkdir()
+    (repo / "main.py").write_text("print('hello')\n", encoding="utf-8")
+
+    env = dict(os.environ, XDG_CONFIG_HOME=str(tmp_path / "config"))
+    for var in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "LLM_PROVIDER"):
+        env.pop(var, None)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "workflow", str(repo), "--dry-run"],
+        capture_output=True, text=True, env=env,
+    )
+
+    assert result.returncode == 0
+    assert "Estimated cost (dry run)" in result.stdout

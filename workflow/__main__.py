@@ -16,12 +16,24 @@ import html
 import json
 import os
 import re
+import time
 from importlib.metadata import version
 
 from markdown_it import MarkdownIt
 
+from coderay_utils import (
+    cost_for, ensure_priced, fill, get_usage, list_files, max_output_tokens,
+    read_prompt, reset_usage, resolve_provider_and_model, safe_read,
+)
 from workflow.flow import create_tour_flow
-from workflow.nodes import INSTRUCTIONS_DIR, PipelineState
+from workflow.nodes import (
+    CODEBASE_BUDGET,
+    INSTRUCTIONS_DIR,
+    PROMPTS_DIR,
+    PipelineState,
+    SmartCrawl,
+    load_instructions,
+)
 
 # CommonMark parser. Unlike python-markdown's fenced_code extension, this
 # correctly handles fenced code blocks indented inside list items.
@@ -257,6 +269,110 @@ def write_index_html(chapters, repo_name, lens, summary, mermaid, selected_files
     write_text(os.path.join(out, "index.html"), rendered)
 
 
+def format_session_summary(usage_records, wall_seconds):
+    """Render the actual-run Session summary from call_llm.get_usage() records
+    and total wall-clock seconds. Cost prints as 'unknown' if any record's
+    (provider, model) has no pricing entry."""
+    total_input = sum(r["input_tokens"] for r in usage_records)
+    total_output = sum(r["output_tokens"] for r in usage_records)
+    total_cache_read = sum(r["cache_read_tokens"] for r in usage_records)
+    total_cache_write = sum(r["cache_write_tokens"] for r in usage_records)
+    total_api_duration = sum(r["duration_s"] for r in usage_records)
+
+    costs = [cost_for(r["provider"], r["model"], r) for r in usage_records]
+    cost_line = "unknown" if any(c is None for c in costs) else f"${sum(costs):.4f}"
+
+    return (
+        "Session\n"
+        f"Total cost:            {cost_line}\n"
+        f"Total duration (API):  {total_api_duration:.0f}s\n"
+        f"Total duration (wall): {wall_seconds:.0f}s\n"
+        f"Usage:                 {total_input} input, {total_output} output, "
+        f"{total_cache_read} cache read, {total_cache_write} cache write"
+    )
+
+
+# Midpoint of the 5-10 abstractions identify-abstractions.md asks the LLM to find.
+DRY_RUN_CHAPTER_GUESS = 8
+
+
+def _codebase_preview_text(repo_path, budget):
+    """Best-guess codebase text for dry-run sizing: the first files
+    list_files() returns, up to budget chars. Not the same files the real
+    SmartCrawl LLM call would pick, but close enough in total size to
+    estimate prompt length."""
+    parts = []
+    total = 0
+    for p in list_files(repo_path):
+        if total >= budget:
+            break
+        text = safe_read(p)
+        if text is None:
+            continue
+        parts.append(text)
+        total += len(text)
+    return "\n\n".join(parts)
+
+
+def estimate_dry_run_cost(repo_path, instructions, provider, model, chapter_guess=DRY_RUN_CHAPTER_GUESS):
+    """Estimate the cost of a real run without calling any LLM. Input tokens
+    use a chars/4 heuristic; output tokens assume every call hits the
+    configured max-output cap (a worst-case upper bound, not a typical case)."""
+    max_out = max_output_tokens()
+
+    # Reuses SmartCrawl's own prep() for the file-selection prompt instead of
+    # rebuilding its preview-manifest logic here -- one source of truth for
+    # what that prompt looks like.
+    select_prompt, _files, _root = SmartCrawl().prep({"repo_path": repo_path})
+
+    codebase = _codebase_preview_text(repo_path, CODEBASE_BUDGET)
+    analyze_prompt = fill(read_prompt(PROMPTS_DIR, "identify-abstractions.md"), codebase=codebase)
+    relate_prompt = fill(
+        read_prompt(PROMPTS_DIR, "analyze-relationships.md"),
+        abstractions="(estimated -- not yet known)", codebase=codebase,
+    )
+    chapter_prompt = fill(
+        read_prompt(PROMPTS_DIR, "write-chapter.md"),
+        name="(estimated)", description="(estimated)", chapter_num=1, total=chapter_guess,
+        prev_chapters="(estimated)", chapter_list="(estimated)", codebase=codebase,
+        instructions=load_instructions(instructions),
+    )
+
+    prompts = [select_prompt, analyze_prompt, relate_prompt] + [chapter_prompt] * chapter_guess
+    estimated_input_tokens = sum(len(p) // 4 for p in prompts)
+    estimated_output_tokens_worst_case = max_out * len(prompts)
+
+    low_usage = {"input_tokens": estimated_input_tokens, "output_tokens": 0,
+                 "cache_read_tokens": 0, "cache_write_tokens": 0}
+    high_usage = {"input_tokens": estimated_input_tokens, "output_tokens": estimated_output_tokens_worst_case,
+                  "cache_read_tokens": 0, "cache_write_tokens": 0}
+
+    return {
+        "provider": provider, "model": model, "chapter_guess": chapter_guess,
+        "estimated_input_tokens": estimated_input_tokens,
+        "estimated_output_tokens_worst_case": estimated_output_tokens_worst_case,
+        "cost_low": cost_for(provider, model, low_usage),
+        "cost_high": cost_for(provider, model, high_usage),
+    }
+
+
+def format_dry_run_summary(estimate):
+    if estimate["cost_low"] is None or estimate["cost_high"] is None:
+        cost_line = "unknown (no pricing for this model)"
+    else:
+        cost_line = f"${estimate['cost_low']:.4f} - ${estimate['cost_high']:.4f}"
+    return (
+        "Estimated cost (dry run)\n"
+        f"Assumes ~{estimate['chapter_guess']} chapters (actual count depends on the repo)\n"
+        f"Estimated cost:  {cost_line}\n"
+        f"Estimated usage: ~{estimate['estimated_input_tokens']} input tokens, "
+        f"up to ~{estimate['estimated_output_tokens_worst_case']} output tokens\n"
+        "Note: this estimate does not account for prompt caching -- a real run "
+        "reuses the same codebase block across calls, so actual cost is often "
+        "lower than the low end shown here."
+    )
+
+
 def dump_run_state(shared: PipelineState, out):
     """Write whatever progress the pipeline made to a JSON file, for post-mortem
     on an unhandled failure deep into a run (e.g. the 3rd LLM retry still failing
@@ -287,14 +403,29 @@ def main():
     ap.add_argument("repo_path")
     ap.add_argument("--out", default=None)
     ap.add_argument("--instructions", default="beginner-tutorial", choices=available_lenses())
+    ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
     if not os.path.isdir(args.repo_path):
         ap.error(f"{args.repo_path} is not a directory")
 
+    if args.dry_run:
+        try:
+            provider, model = resolve_provider_and_model()
+        except RuntimeError:
+            provider, model = "anthropic", "claude-sonnet-5"
+        print(format_dry_run_summary(estimate_dry_run_cost(args.repo_path, args.instructions, provider, model)))
+        return
+
+    provider, model = resolve_provider_and_model()
+    ensure_priced(provider, model)
+
     name = os.path.basename(os.path.abspath(args.repo_path))
     out = args.out or default_output_dir(args.repo_path, args.instructions)
     os.makedirs(out, exist_ok=True)
+
+    reset_usage()
+    wall_start = time.perf_counter()
 
     shared: PipelineState = {"repo_path": args.repo_path, "instructions": args.instructions}
     try:
@@ -303,6 +434,8 @@ def main():
         state_path = dump_run_state(shared, out)
         print(f"\nPipeline failed. Wrote partial run state to {state_path}")
         raise
+
+    wall_seconds = time.perf_counter() - wall_start
 
     chapters = shared["chapters"]
     mermaid = build_mermaid(shared["abstractions"], shared["relationships"])
@@ -316,6 +449,8 @@ def main():
 
     print(f"\nWrote tour to {out}/")
     print(f"  Open {out}/index.html in a browser")
+    print()
+    print(format_session_summary(get_usage(), wall_seconds))
 
 
 if __name__ == "__main__":

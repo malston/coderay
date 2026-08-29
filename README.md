@@ -67,6 +67,45 @@ python -m workflow path/to/repo --instructions onboarding-guide
 | `security-audit`              | Trust boundaries, validation gaps, blast radius                                           |
 | `onboarding-guide`            | First week TODO list, what to touch and avoid, real shell commands                        |
 
+## Estimate cost before you run it
+
+```bash
+python -m workflow path/to/repo --dry-run
+```
+
+No network call, no API key required, no output directory written. It sizes the prompts the real run would send (file selection, abstraction analysis, relationships, one chapter prompt repeated for an estimated chapter count) and prints a cost range:
+
+```text
+Estimated cost (dry run)
+Assumes ~8 chapters (actual count depends on the repo)
+Estimated cost:  $0.0123 - $0.1456
+Estimated usage: ~12345 input tokens, up to ~131072 output tokens
+Note: this estimate does not account for prompt caching -- a real run
+reuses the same codebase block across calls, so actual cost is often
+lower than the low end shown here.
+```
+
+The low end assumes zero output tokens; the high end assumes every call hits the configured max-output cap, so treat it as a worst-case ceiling, not a typical cost. If the model has no pricing entry, the cost range shows `unknown (no pricing for this model)` instead.
+
+The estimate also can't see prompt caching, since it never makes a real call: a real run reuses the same codebase block across the Analyze/Relate/WriteChapters calls, so a chunk of what the estimate treats as full-price input actually lands as cheap cache reads. On a repo that gets strong cache reuse, the real `Session` summary's cost can come in below this estimate's low end.
+
+Every real run (not `--dry-run`) also prints a `Session` summary at the end with actual token counts and cost, based on the usage the LLM calls reported.
+
+### Pricing overrides
+
+Built-in pricing covers the default model per provider. For any other model, coderay prompts you once (interactively) for $/1M token pricing and saves it to `~/.config/coderay/pricing.json`. That file is yours to hand-edit; an entry there always wins over the built-in table. Format:
+
+```json
+{
+  "openai:gpt-6-preview": {
+    "input": 3.0,
+    "output": 15.0,
+    "cache_read": 0.3,
+    "cache_write": 0.0
+  }
+}
+```
+
 ## How it works
 
 ```mermaid
