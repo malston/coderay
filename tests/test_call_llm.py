@@ -104,3 +104,52 @@ def test_provider_env_var_is_stripped_and_lowercased(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "  ANTHROPIC  ")
     monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module("end_turn", text="ok"))
     assert call_llm("prompt") == "ok"
+
+
+def _fake_anthropic_module_capturing_kwargs(captured, text="ok"):
+    fake = types.ModuleType("anthropic")
+    reply_text = text
+
+    class Block:
+        type = "text"
+        text = reply_text
+
+    class Resp:
+        stop_reason = "end_turn"
+        content = [Block()]
+
+    class Messages:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return Resp()
+
+    class Anthropic:
+        def __init__(self, *a, **kw):
+            self.messages = Messages()
+
+    fake.Anthropic = Anthropic
+    return fake
+
+
+def test_prompt_with_cache_breakpoint_sends_a_cached_prefix_block(monkeypatch):
+    from coderay_utils.call_llm import CACHE_BREAKPOINT
+
+    captured = {}
+    monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module_capturing_kwargs(captured))
+
+    call_llm(f"stable stuff{CACHE_BREAKPOINT}volatile stuff")
+
+    content = captured["messages"][0]["content"]
+    assert content == [
+        {"type": "text", "text": "stable stuff", "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": "volatile stuff"},
+    ]
+
+
+def test_prompt_without_cache_breakpoint_sends_a_plain_string(monkeypatch):
+    captured = {}
+    monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module_capturing_kwargs(captured))
+
+    call_llm("no breakpoint here")
+
+    assert captured["messages"][0]["content"] == "no breakpoint here"

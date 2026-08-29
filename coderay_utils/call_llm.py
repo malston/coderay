@@ -27,6 +27,11 @@ import tempfile
 
 CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "coderay")
 
+# A prompt may embed this literal marker to split a stable, cacheable prefix
+# (identical across calls, e.g. a repeated codebase block) from a volatile
+# suffix. Only the Anthropic path acts on it -- see coderay-dl8.
+CACHE_BREAKPOINT = "<<CODERAY_CACHE_BREAKPOINT>>"
+
 
 def _pick():
     p = os.environ.get("LLM_PROVIDER")
@@ -104,10 +109,18 @@ def call_llm(prompt: str) -> str:
 
     if provider == "anthropic":
         from anthropic import Anthropic
+        prefix, sep, suffix = prompt.partition(CACHE_BREAKPOINT)
+        if sep:
+            content = [
+                {"type": "text", "text": prefix, "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": suffix},
+            ]
+        else:
+            content = prompt
         resp = Anthropic().messages.create(
             model=model,
             max_tokens=max_out,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": content}],
         )
         if resp.stop_reason == "max_tokens":
             raise RuntimeError("Anthropic response truncated (stop_reason=max_tokens)")
