@@ -1,6 +1,6 @@
 # Agent Instructions
 
-Coderay is a PocketFlow pipeline that crawls a target repo, picks the files that matter, and writes a multi-chapter tutorial via LLM calls. See `CLAUDE.md` for build/test commands, architecture, and project conventions — read it before making changes.
+Coderay is a PocketFlow pipeline that crawls a target repo, picks the files that matter, and writes a multi-chapter tour via LLM calls. See `CLAUDE.md` for build/test commands, architecture, and project conventions — read it before making changes.
 
 This project uses **bd** (beads) for issue tracking; see the managed Beads sections below for commands and workflow. Run `bd prime` for full workflow context.
 

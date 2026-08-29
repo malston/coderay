@@ -1,6 +1,6 @@
 # Coderay
 
-> Point it at any repo. Get back a multi-chapter tutorial with diagrams, cross references, and a learning order.
+> Point it at any repo. Get back a multi-chapter tour with diagrams, cross references, and a learning order.
 
 ## What this ships
 
@@ -79,9 +79,9 @@ flowchart LR
 1. **SmartCrawl** (§3.2 of the book). Two phases. First filter by extension and skip the obvious noise (`tests/`, `docs/`, lock files, anything over 500 KB). Then build a preview manifest (first ~N chars of each remaining file) and ask the LLM to pick the 0.1 to 2 percent that actually matter. Uses the four selection rules from [`workflow/prompts/select-files.md`](workflow/prompts/select-files.md).
 2. **Analyze** (§3.3). One LLM call. Returns YAML: 5 to 10 abstractions with analogies, plus a learning order.
 3. **Relate** (§3.3). One LLM call. Returns edges between abstractions.
-4. **WriteChapters** (§3.3). NOT a batch. Loops through chapters in learning order, passing every previous chapter forward as context. That's what makes the output read like a tutorial instead of a pile of disconnected pages.
+4. **WriteChapters** (§3.3). NOT a batch. Loops through chapters in learning order, passing every previous chapter forward as context. That's what makes the output read like a narrative instead of a pile of disconnected pages.
 
-The chapter writing step is sequential on purpose. Parallel batching loses the cross references and analogy reuse that make the tutorial coherent.
+The chapter writing step is sequential on purpose. Parallel batching loses the narrative continuity that makes the tour coherent.
 
 ## Example output
 
