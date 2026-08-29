@@ -53,7 +53,13 @@ def get_price(provider, model):
     overrides = _load_overrides()
     entry = overrides.get(f"{provider}:{model}")
     if entry is not None:
-        return {field: dollars / 1_000_000 for field, dollars in entry.items()}
+        try:
+            return {
+                field: float(entry.get(field, 0.0) or 0.0) / 1_000_000
+                for field in ("input", "output", "cache_read", "cache_write")
+            }
+        except (TypeError, ValueError):
+            pass
     return BUILTIN_PRICES.get((provider, model))
 
 def cost_for(provider, model, usage_record):
@@ -76,9 +82,13 @@ def prompt_for_pricing(provider, model):
         return None
     print(f"No pricing for {provider}/{model}. Enter $/1M tokens (blank to skip):")
     per_million = {}
-    for field in ("input", "output", "cache_read", "cache_write"):
-        raw = input(f"  {field.replace('_', ' ')}: ").strip()
-        per_million[field] = float(raw) if raw else 0.0
+    try:
+        for field in ("input", "output", "cache_read", "cache_write"):
+            raw = input(f"  {field.replace('_', ' ')}: ").strip()
+            per_million[field] = float(raw) if raw else 0.0
+    except (ValueError, EOFError):
+        print("Skipping pricing entry.")
+        return None
     _save_override(provider, model, per_million)
     return per_million
 
