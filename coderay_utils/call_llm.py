@@ -17,6 +17,11 @@ Caching:
   Disable with LLM_CACHE=0.
   Clear with: rm -rf ~/.cache/coderay
 
+Usage tracking:
+  Every call_llm() call appends a token-usage record (reset_usage() to clear
+  it, get_usage() to read it back). resolve_provider_and_model() reports what
+  provider/model call_llm() would use without making a call.
+
 Smoke test:
   python -m coderay_utils.call_llm
 """

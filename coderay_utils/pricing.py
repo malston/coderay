@@ -12,14 +12,19 @@ import os
 import sys
 
 _PER_MILLION = {
+    # cache_read/cache_write are 0.1x/1.25x of input ($0.20 = 2.00*0.1, $2.50 =
+    # 2.00*1.25) -- if input ever changes, update these two together with it.
     ("anthropic", "claude-sonnet-5"): {
         "input": 2.00, "output": 10.00, "cache_read": 0.20, "cache_write": 2.50,
     },
     ("openai", "gpt-5.6-terra"): {
         "input": 2.00, "output": 12.00, "cache_read": 0.20, "cache_write": 0.0,
     },
+    # TODO(2026-12-31): promotional pricing expiry -- reverify against Google's
+    # published rates after this date.
     ("gemini", "gemini-3.7-flash"): {
-        "input": 0.75, "output": 3.75, "cache_read": 0.075, "cache_write": 0.0,
+        "input": 0.75, "output": 3.75, "cache_read": 0.075,
+        "cache_write": 0.0,  # not modeled: Gemini bills cache storage hourly, not per-token
     },
 }
 
@@ -51,6 +56,7 @@ def _save_override(provider, model, per_million):
     with open(OVERRIDE_FILE, "w", encoding="utf-8") as f:
         json.dump(overrides, f, indent=2)
 
+
 def get_price(provider, model):
     """$/token dict for (provider, model): the override file wins, then the
     built-in table, else None if unpriced."""
@@ -81,6 +87,7 @@ def cost_for(provider, model, usage_record):
         + usage_record["cache_write_tokens"] * price["cache_write"]
     )
 
+
 def prompt_for_pricing(provider, model):
     """Ask for $/1M pricing on an unpriced model and persist it to the
     override file. Returns the $/1M dict written, or None if skipped
@@ -98,6 +105,7 @@ def prompt_for_pricing(provider, model):
         return None
     _save_override(provider, model, per_million)
     return per_million
+
 
 def ensure_priced(provider, model):
     """Prompt for pricing if (provider, model) is unpriced and stdin is a

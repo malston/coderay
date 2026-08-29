@@ -292,6 +292,7 @@ def format_session_summary(usage_records, wall_seconds):
     )
 
 
+# Midpoint of the 5-10 abstractions identify-abstractions.md asks the LLM to find.
 DRY_RUN_CHAPTER_GUESS = 8
 
 
