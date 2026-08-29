@@ -1,15 +1,15 @@
 # Coderay
 
-> Point it at any repo. Get back a multi-chapter tour with diagrams, cross references, and a learning order.
+Coderay generates a multi-chapter tour of a codebase: a written walkthrough with diagrams, cross-references between chapters, and a suggested reading order. Point it at a repo and it produces a set of HTML/Markdown pages explaining how the code works.
 
 ## What this ships
 
-Packages a pipeline as a PocketFlow workflow so you get retry and clean node boundaries for free, but every node maps one to one to a function in the chapter.
+A four-stage pipeline, implemented as a [PocketFlow](https://github.com/The-Pocket/PocketFlow) workflow (retries and node isolation come from the framework; each node maps to one pipeline stage):
 
-- [`workflow/`](workflow/). Four nodes: smart crawl, analyze, relate, write chapters. The three that parse structured YAML retry bad output internally (`coderay_utils.yaml_call`); `WriteChapters` uses PocketFlow's `Node(max_retries=3)` since it calls the LLM directly.
-- [`workflow/prompts/`](workflow/prompts/). The four prompts the chapter teaches. One file each.
-- [`workflow/instructions/`](workflow/instructions/). Four swappable lenses (the chapter's punchline). Same pipeline, different output.
-- [`skill/CODEBASE-TOUR.md`](skill/CODEBASE-TOUR.md). The agent equivalent.
+- [`workflow/`](workflow/) — the four pipeline stages: SmartCrawl, Analyze, Relate, WriteChapters. SmartCrawl, Analyze, and Relate parse structured YAML output and retry on a bad response (`coderay_utils.yaml_call`); WriteChapters calls the LLM directly and retries via PocketFlow's own `Node(max_retries=3)`.
+- [`workflow/prompts/`](workflow/prompts/) — the prompt template each stage sends to the LLM, one file per stage.
+- [`workflow/instructions/`](workflow/instructions/) — four swappable output styles (see "Swap the output style" below). Same pipeline, different framing for the same chapters.
+- [`skill/CODEBASE-TOUR.md`](skill/CODEBASE-TOUR.md) — the same workflow packaged as an agent skill.
 
 ## Quickstart
 
@@ -21,9 +21,9 @@ export GEMINI_API_KEY=...   # or ANTHROPIC_API_KEY / OPENAI_API_KEY
 python -m workflow path/to/repo   # or just: coderay path/to/repo
 ```
 
-If the run fails partway through (a bad LLM response after retries, a network error), the files, abstractions, and chapters completed so far are written to `run_state.json` in the target output directory — useful for figuring out how far it got without rerunning the whole pipeline.
+If a run fails partway through (a bad LLM response after retries, a network error), the files, abstractions, and chapters completed so far are written to `run_state.json` in the target output directory, so you can see how far it got without rerunning the whole pipeline.
 
-Output:
+Example output:
 
 ```bash
   Selected 20 files (280,023 chars)
@@ -38,7 +38,7 @@ Wrote tour to ../output/nanochat-beginner-tutorial-tour/
   Open ../output/nanochat-beginner-tutorial-tour/index.html in a browser
 ```
 
-You get back (the directory name includes the lens, so running the same repo with a different `--instructions` writes to a separate directory instead of overwriting):
+The output directory name includes the repo name and the output style, so running the same repo with a different `--instructions` value writes to a separate directory instead of overwriting the previous run:
 
 ```text
 output/nanochat-beginner-tutorial-tour/
@@ -50,9 +50,9 @@ output/nanochat-beginner-tutorial-tour/
 └── ...
 ```
 
-## Swap the lens
+## Swap the output style
 
-Same pipeline. Same code. Different `workflow/instructions/` file. Different output entirely.
+Same pipeline and code, driven by a different file under `workflow/instructions/`. Set `--instructions` to change what the chapters focus on:
 
 ```bash
 python -m workflow path/to/repo --instructions architecture-review
@@ -60,12 +60,12 @@ python -m workflow path/to/repo --instructions security-audit
 python -m workflow path/to/repo --instructions onboarding-guide
 ```
 
-| Lens                          | What you get back                                                                         |
-| ----------------------------- | ----------------------------------------------------------------------------------------- |
-| `beginner-tutorial` (default) | Analogies, code blocks under 10 lines, "what happens when you close a tab" style openings |
-| `architecture-review`         | Design decisions, alternatives, what breaks under load, technical debt                    |
-| `security-audit`              | Trust boundaries, validation gaps, blast radius                                           |
-| `onboarding-guide`            | First week TODO list, what to touch and avoid, real shell commands                        |
+| Style                         | What you get                                                                     |
+| ----------------------------- | -------------------------------------------------------------------------------- |
+| `beginner-tutorial` (default) | Analogies, code blocks under 10 lines, plain explanations of what each part does |
+| `architecture-review`         | Design decisions, alternatives considered, failure modes, technical debt         |
+| `security-audit`              | Trust boundaries, input validation gaps, blast radius of a compromise            |
+| `onboarding-guide`            | A first-week checklist: what to touch, what to avoid, real shell commands        |
 
 ## Estimate cost before you run it
 
@@ -73,7 +73,7 @@ python -m workflow path/to/repo --instructions onboarding-guide
 python -m workflow path/to/repo --dry-run
 ```
 
-No network call, no API key required, no output directory written. It sizes the prompts the real run would send (file selection, abstraction analysis, relationships, one chapter prompt repeated for an estimated chapter count) and prints a cost range:
+`--dry-run` makes no network calls, needs no API key, and writes nothing to disk. It estimates the size of the prompts a real run would send (file selection, abstraction analysis, relationships, and one chapter prompt repeated for an estimated chapter count) and prints a cost range:
 
 ```text
 Estimated cost (dry run)
@@ -85,15 +85,15 @@ reuses the same codebase block across calls, so actual cost is often
 lower than the low end shown here.
 ```
 
-The low end assumes zero output tokens; the high end assumes every call hits the configured max-output cap, so treat it as a worst-case ceiling, not a typical cost. If the model has no pricing entry, the cost range shows `unknown (no pricing for this model)` instead.
+The low end of the range assumes zero output tokens; the high end assumes every call hits the configured max-output limit. Treat the high end as a worst case, not a typical cost. If the selected model has no pricing entry, the range shows `unknown (no pricing for this model)` instead of a number.
 
-The estimate also can't see prompt caching, since it never makes a real call: a real run reuses the same codebase block across the Analyze/Relate/WriteChapters calls, so a chunk of what the estimate treats as full-price input actually lands as cheap cache reads. On a repo that gets strong cache reuse, the real `Session` summary's cost can come in below this estimate's low end.
+The estimate also can't account for prompt caching, since it never makes a real LLM call. A real run reuses the same codebase text across the Analyze, Relate, and WriteChapters calls, so part of what the estimate treats as full-price input ends up billed as cheaper cache reads. On a repo where caching kicks in heavily, the actual cost reported after a real run can come in below this estimate's low end.
 
-Every real run (not `--dry-run`) also prints a `Session` summary at the end with actual token counts and cost, based on the usage the LLM calls reported.
+A real run (without `--dry-run`) prints a `Session` summary at the end with the actual token counts and cost, based on the usage each LLM call reported.
 
 ### Pricing overrides
 
-Built-in pricing covers the default model per provider. For any other model, coderay prompts you once (interactively) for $/1M token pricing and saves it to `~/.config/coderay/pricing.json`. That file is yours to hand-edit; an entry there always wins over the built-in table. Format:
+Built-in pricing covers the default model for each provider. For any other model, coderay prompts you once, interactively, for $/1M token pricing, and saves it to `~/.config/coderay/pricing.json`. That file is yours to edit directly; an entry there always takes priority over the built-in pricing table. Format:
 
 ```json
 {
@@ -115,22 +115,22 @@ flowchart LR
     relate --> write[WriteChapters]
 ```
 
-1. **SmartCrawl** (§3.2 of the book). Two phases. First filter by extension and skip the obvious noise (`tests/`, `docs/`, lock files, anything over 500 KB). Then build a preview manifest (first ~N chars of each remaining file) and ask the LLM to pick the 0.1 to 2 percent that actually matter. Uses the four selection rules from [`workflow/prompts/select-files.md`](workflow/prompts/select-files.md).
-2. **Analyze** (§3.3). One LLM call. Returns YAML: 5 to 10 abstractions with analogies, plus a learning order.
-3. **Relate** (§3.3). One LLM call. Returns edges between abstractions.
-4. **WriteChapters** (§3.3). NOT a batch. Loops through chapters in learning order, passing every previous chapter forward as context. That's what makes the output read like a narrative instead of a pile of disconnected pages.
+1. **SmartCrawl.** Two phases. First, filter files by extension and skip obvious noise (`tests/`, `docs/`, lock files, anything over 500 KB). Then build a preview manifest — the first few hundred characters of each remaining file — and ask the LLM to select the roughly 0.1-2% of files that matter most, using the selection rules in [`workflow/prompts/select-files.md`](workflow/prompts/select-files.md).
+2. **Analyze.** One LLM call. Returns a YAML list of 5-10 abstractions, each with a short description, plus a suggested learning order.
+3. **Relate.** One LLM call. Returns the relationships (edges) between those abstractions.
+4. **WriteChapters.** Not batched. Writes chapters one at a time, in learning order, passing every previously written chapter forward as context. This keeps the chapters consistent with each other instead of reading like unrelated pages.
 
-The chapter writing step is sequential on purpose. Parallel batching loses the narrative continuity that makes the tour coherent.
+WriteChapters runs sequentially on purpose: running it in parallel would lose the cross-chapter context that keeps the tour coherent.
 
 ## Example output
 
-One real tour, generated end to end against [karpathy/micrograd](https://github.com/karpathy/micrograd) (`output/` is gitignored, so this isn't checked in — run the quickstart above to get your own):
+One real tour, generated end to end against [karpathy/micrograd](https://github.com/karpathy/micrograd) (`output/` is gitignored, so this isn't checked in — run the quickstart above to generate your own):
 
 | Tour             | Files selected | Chars selected | Abstractions | Relationships | Chapters |
 | ---------------- | -------------- | -------------- | ------------ | ------------- | -------- |
 | `micrograd-tour` | 3              | 7,784          | 10           | 12            | 10       |
 
-Each tour contains one markdown and one HTML file per abstraction, plus an `index.html` with the mermaid architecture diagram and chapter list. The chapter HTML files render code blocks, tables, and mermaid sequence diagrams cleanly.
+Each tour contains one Markdown and one HTML file per abstraction, plus an `index.html` with the architecture diagram and chapter list. The chapter HTML pages render code blocks, tables, and Mermaid diagrams.
 
 ## Development
 
@@ -139,4 +139,4 @@ pip install -e .
 python -m pytest tests/ -v
 ```
 
-CI (`.github/workflows/tests.yml`) runs the same suite on every push and PR.
+CI (`.github/workflows/tests.yml`) runs the same test suite on every push and pull request.
