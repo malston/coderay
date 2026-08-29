@@ -1,7 +1,7 @@
 import pytest
 
 import coderay_utils.llm as llm_module
-from workflow.nodes import Analyze, PipelineState, SmartCrawl
+from workflow.nodes import Analyze, PipelineState, Relate, SmartCrawl
 
 
 def test_pipeline_state_documents_every_key_the_nodes_use():
@@ -100,3 +100,47 @@ def test_analyze_accepts_matching_names_and_order(monkeypatch):
     monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
     result = Analyze().exec("prompt")
     assert {a["name"] for a in result["abstractions"]} == {"Foo", "Bar"}
+
+
+def test_relate_rejects_edge_missing_a_required_field(monkeypatch):
+    # relationships is LLM output (coderay-o41 review): an edge missing from/to/label
+    # must fail here, at the point the data enters the pipeline, not crash a
+    # downstream renderer that assumes every edge is well-formed.
+    yaml_text = (
+        "```yaml\n"
+        "relationships:\n"
+        "  - from: Foo\n"
+        "    to: Bar\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    with pytest.raises(AssertionError, match="label"):
+        Relate().exec("prompt")
+
+
+def test_relate_rejects_non_string_label(monkeypatch):
+    yaml_text = (
+        "```yaml\n"
+        "relationships:\n"
+        "  - from: Foo\n"
+        "    to: Bar\n"
+        "    label: 5\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    with pytest.raises(AssertionError, match="label"):
+        Relate().exec("prompt")
+
+
+def test_relate_accepts_well_formed_relationships(monkeypatch):
+    yaml_text = (
+        "```yaml\n"
+        "relationships:\n"
+        "  - from: Foo\n"
+        "    to: Bar\n"
+        "    label: uses\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    result = Relate().exec("prompt")
+    assert result == [{"from": "Foo", "to": "Bar", "label": "uses"}]

@@ -164,16 +164,14 @@ def write_text(path, content):
 def build_related_links(chapter_name, relationships, filenames):
     """Related-chapter links for one chapter, both directions of the Relationship graph.
 
-    relationships is LLM output, YAML-parsed but not schema-validated -- an edge
-    missing a required key is skipped rather than raised, matching mermaid_label's
-    truncation of oversized labels below.
+    Relate validates every edge has a from/to/label string before it reaches shared
+    state (workflow/nodes.py), but an edge naming an abstraction dropped from
+    `filenames` by a codebase-budget cut is still possible, so that case is skipped
+    rather than raised.
     """
     links = []
     for r in relationships:
-        from_name, to_name, label = r.get("from"), r.get("to"), r.get("label")
-        if from_name is None or to_name is None or label is None:
-            continue
-        label = html.escape(label[:60])
+        from_name, to_name, label = r["from"], r["to"], html.escape(r["label"][:60])
         if from_name == chapter_name and to_name in filenames:
             href = chapter_html_name(filenames[to_name])
             links.append(f'<li>&rarr; {label} &rarr; <a href="{href}">{html.escape(to_name)}</a></li>')
@@ -183,8 +181,9 @@ def build_related_links(chapter_name, relationships, filenames):
     return links
 
 
-def write_chapter_files(chapters, repo_name, out, relationships, filenames):
+def write_chapter_files(chapters, repo_name, out, relationships):
     """Write each chapter's .md and .html, with prev/next links and a Related section."""
+    filenames = {ch["name"]: ch["filename"] for ch in chapters}
     for i, ch in enumerate(chapters):
         write_text(os.path.join(out, ch["filename"]), ch["content"])
 
@@ -308,7 +307,7 @@ def main():
     chapters = shared["chapters"]
     mermaid = build_mermaid(shared["abstractions"], shared["relationships"])
 
-    write_chapter_files(chapters, name, out, shared["relationships"], shared["filenames"])
+    write_chapter_files(chapters, name, out, shared["relationships"])
     write_index_md(chapters, name, args.instructions, shared["summary"], mermaid, out)
     write_index_html(
         chapters, name, args.instructions, shared["summary"], mermaid,
