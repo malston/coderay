@@ -162,15 +162,24 @@ def write_text(path, content):
 
 
 def build_related_links(chapter_name, relationships, filenames):
-    """Related-chapter links for one chapter, both directions of the Relationship graph."""
+    """Related-chapter links for one chapter, both directions of the Relationship graph.
+
+    relationships is LLM output, YAML-parsed but not schema-validated -- an edge
+    missing a required key is skipped rather than raised, matching mermaid_label's
+    truncation of oversized labels below.
+    """
     links = []
     for r in relationships:
-        if r["from"] == chapter_name and r["to"] in filenames:
-            href = chapter_html_name(filenames[r["to"]])
-            links.append(f'<li>&rarr; {html.escape(r["label"])} &rarr; <a href="{href}">{html.escape(r["to"])}</a></li>')
-        elif r["to"] == chapter_name and r["from"] in filenames:
-            href = chapter_html_name(filenames[r["from"]])
-            links.append(f'<li>&larr; {html.escape(r["label"])} &larr; <a href="{href}">{html.escape(r["from"])}</a></li>')
+        from_name, to_name, label = r.get("from"), r.get("to"), r.get("label")
+        if from_name is None or to_name is None or label is None:
+            continue
+        label = html.escape(label[:60])
+        if from_name == chapter_name and to_name in filenames:
+            href = chapter_html_name(filenames[to_name])
+            links.append(f'<li>&rarr; {label} &rarr; <a href="{href}">{html.escape(to_name)}</a></li>')
+        elif to_name == chapter_name and from_name in filenames:
+            href = chapter_html_name(filenames[from_name])
+            links.append(f'<li>&larr; {label} &larr; <a href="{href}">{html.escape(from_name)}</a></li>')
     return links
 
 

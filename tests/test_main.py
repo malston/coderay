@@ -7,6 +7,7 @@ from workflow.__main__ import (
     MERMAID_SCRIPT,
     available_lenses,
     build_mermaid,
+    build_related_links,
     default_output_dir,
     dump_run_state,
     md_to_html,
@@ -143,6 +144,28 @@ def test_write_chapter_files_escapes_relationship_label_and_names(tmp_path):
     first_html = (tmp_path / "01_first.html").read_text(encoding="utf-8")
     assert "<script>alert(1)</script>" not in first_html
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in first_html
+
+
+def test_build_related_links_skips_edge_missing_required_key():
+    # relationships is LLM-derived and only YAML-parsed, not schema-validated
+    # (coderay-o41 review): a malformed edge must not crash HTML generation.
+    filenames = {"First": "01_first.md", "Second": "02_second.md"}
+    relationships = [{"from": "First", "to": "Second"}]  # missing "label"
+
+    links = build_related_links("First", relationships, filenames)
+
+    assert links == []
+
+
+def test_build_related_links_caps_label_length():
+    filenames = {"First": "01_first.md", "Second": "02_second.md"}
+    relationships = [{"from": "First", "to": "Second", "label": "x" * 200}]
+
+    links = build_related_links("First", relationships, filenames)
+
+    assert len(links) == 1
+    assert "x" * 200 not in links[0]
+    assert "x" * 60 in links[0]
 
 
 def test_write_chapter_files_skips_relationship_referencing_unknown_abstraction(tmp_path):
