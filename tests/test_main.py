@@ -10,6 +10,7 @@ from workflow.__main__ import (
     build_related_links,
     default_output_dir,
     dump_run_state,
+    format_session_summary,
     md_to_html,
     mermaid_label,
     write_chapter_files,
@@ -197,6 +198,47 @@ def test_dump_run_state_captures_partial_progress(tmp_path):
     assert state["selected_files"] == ["a.py", "b.py"]
     assert state["abstractions"] == ["Foo", "Bar"]
     assert state["chapters_completed"] is None
+
+
+def test_format_session_summary_reports_unknown_cost_for_an_unpriced_model():
+    usage = [{
+        "provider": "openai", "model": "gpt-6-mystery",
+        "input_tokens": 100, "output_tokens": 50,
+        "cache_read_tokens": 0, "cache_write_tokens": 0,
+        "duration_s": 1.5, "cached": False,
+    }]
+    out = format_session_summary(usage, wall_seconds=8.0)
+    assert "Session" in out
+    assert "Total cost:            unknown" in out
+    assert "Total duration (API):  2s" in out
+    assert "Total duration (wall): 8s" in out
+    assert "Usage:                 100 input, 50 output, 0 cache read, 0 cache write" in out
+
+
+def test_format_session_summary_sums_cost_across_records_for_a_priced_model():
+    usage = [
+        {
+            "provider": "anthropic", "model": "claude-sonnet-5",
+            "input_tokens": 1_000_000, "output_tokens": 0,
+            "cache_read_tokens": 0, "cache_write_tokens": 0,
+            "duration_s": 1.0, "cached": False,
+        },
+        {
+            "provider": "anthropic", "model": "claude-sonnet-5",
+            "input_tokens": 0, "output_tokens": 1_000_000,
+            "cache_read_tokens": 0, "cache_write_tokens": 0,
+            "duration_s": 2.0, "cached": False,
+        },
+    ]
+    out = format_session_summary(usage, wall_seconds=5.0)
+    assert "Total cost:            $12.0000" in out
+    assert "Total duration (API):  3s" in out
+
+
+def test_format_session_summary_handles_empty_usage():
+    out = format_session_summary([], wall_seconds=0.4)
+    assert "Total cost:            $0.0000" in out
+    assert "Usage:                 0 input, 0 output, 0 cache read, 0 cache write" in out
 
 
 def test_dump_run_state_handles_empty_shared(tmp_path):

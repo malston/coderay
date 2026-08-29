@@ -16,10 +16,12 @@ import html
 import json
 import os
 import re
+import time
 from importlib.metadata import version
 
 from markdown_it import MarkdownIt
 
+from coderay_utils import cost_for, ensure_priced, get_usage, reset_usage, resolve_provider_and_model
 from workflow.flow import create_tour_flow
 from workflow.nodes import INSTRUCTIONS_DIR, PipelineState
 
@@ -257,6 +259,29 @@ def write_index_html(chapters, repo_name, lens, summary, mermaid, selected_files
     write_text(os.path.join(out, "index.html"), rendered)
 
 
+def format_session_summary(usage_records, wall_seconds):
+    """Render the actual-run Session summary from call_llm.get_usage() records
+    and total wall-clock seconds. Cost prints as 'unknown' if any record's
+    (provider, model) has no pricing entry."""
+    total_input = sum(r["input_tokens"] for r in usage_records)
+    total_output = sum(r["output_tokens"] for r in usage_records)
+    total_cache_read = sum(r["cache_read_tokens"] for r in usage_records)
+    total_cache_write = sum(r["cache_write_tokens"] for r in usage_records)
+    total_api_duration = sum(r["duration_s"] for r in usage_records)
+
+    costs = [cost_for(r["provider"], r["model"], r) for r in usage_records]
+    cost_line = "unknown" if any(c is None for c in costs) else f"${sum(costs):.4f}"
+
+    return (
+        "Session\n"
+        f"Total cost:            {cost_line}\n"
+        f"Total duration (API):  {total_api_duration:.0f}s\n"
+        f"Total duration (wall): {wall_seconds:.0f}s\n"
+        f"Usage:                 {total_input} input, {total_output} output, "
+        f"{total_cache_read} cache read, {total_cache_write} cache write"
+    )
+
+
 def dump_run_state(shared: PipelineState, out):
     """Write whatever progress the pipeline made to a JSON file, for post-mortem
     on an unhandled failure deep into a run (e.g. the 3rd LLM retry still failing
@@ -292,9 +317,15 @@ def main():
     if not os.path.isdir(args.repo_path):
         ap.error(f"{args.repo_path} is not a directory")
 
+    provider, model = resolve_provider_and_model()
+    ensure_priced(provider, model)
+
     name = os.path.basename(os.path.abspath(args.repo_path))
     out = args.out or default_output_dir(args.repo_path, args.instructions)
     os.makedirs(out, exist_ok=True)
+
+    reset_usage()
+    wall_start = time.perf_counter()
 
     shared: PipelineState = {"repo_path": args.repo_path, "instructions": args.instructions}
     try:
@@ -303,6 +334,8 @@ def main():
         state_path = dump_run_state(shared, out)
         print(f"\nPipeline failed. Wrote partial run state to {state_path}")
         raise
+
+    wall_seconds = time.perf_counter() - wall_start
 
     chapters = shared["chapters"]
     mermaid = build_mermaid(shared["abstractions"], shared["relationships"])
@@ -316,6 +349,8 @@ def main():
 
     print(f"\nWrote tour to {out}/")
     print(f"  Open {out}/index.html in a browser")
+    print()
+    print(format_session_summary(get_usage(), wall_seconds))
 
 
 if __name__ == "__main__":
