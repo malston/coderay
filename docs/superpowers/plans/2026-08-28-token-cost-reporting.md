@@ -933,7 +933,7 @@ whenever any call used an unpriced model."
 
 **Interfaces:**
 
-- Consumes: `cost_for` (Task 2), `resolve_provider_and_model`/`ensure_priced` already wired into `main()` (Task 4), `PREVIEW_CHARS_PER_FILE`/`CODEBASE_BUDGET`/`PROMPTS_DIR`/`load_instructions` from `workflow.nodes`, `fill`/`list_files`/`safe_read`/`read_prompt` from `coderay_utils`.
+- Consumes: `cost_for` (Task 2), `resolve_provider_and_model`/`ensure_priced` already wired into `main()` (Task 4), `CODEBASE_BUDGET`/`PROMPTS_DIR`/`SmartCrawl`/`load_instructions` from `workflow.nodes`, `fill`/`list_files`/`safe_read`/`read_prompt` from `coderay_utils`.
 - Produces: `estimate_dry_run_cost(repo_path, instructions, provider, model, chapter_guess=8) -> dict`, `format_dry_run_summary(estimate) -> str`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -1021,9 +1021,9 @@ In `workflow/__main__.py`, extend the `from workflow.nodes import ...` line to:
 from workflow.nodes import (
     CODEBASE_BUDGET,
     INSTRUCTIONS_DIR,
-    PREVIEW_CHARS_PER_FILE,
     PROMPTS_DIR,
     PipelineState,
+    SmartCrawl,
     load_instructions,
 )
 ```
@@ -1068,17 +1068,10 @@ def estimate_dry_run_cost(repo_path, instructions, provider, model, chapter_gues
     from coderay_utils.call_llm import DEFAULT_MAX_OUTPUT_TOKENS
     max_out = int(os.environ.get("LLM_MAX_OUTPUT_TOKENS", str(DEFAULT_MAX_OUTPUT_TOKENS)))
 
-    files = list_files(repo_path)
-    manifest_parts = []
-    for i, path in enumerate(files):
-        preview = safe_read(path, max_chars=PREVIEW_CHARS_PER_FILE) or ""
-        manifest_parts.append(f"  [{i}] {os.path.relpath(path, repo_path)}\n{preview}\n")
-    manifest = "\n".join(manifest_parts)
-    target = min(50, max(20, len(files) // 20))
-    select_prompt = fill(
-        read_prompt(PROMPTS_DIR, "select-files.md"),
-        manifest=manifest, chars_per_file=PREVIEW_CHARS_PER_FILE, target_count=target,
-    )
+    # Reuses SmartCrawl's own prep() for the file-selection prompt instead of
+    # rebuilding its preview-manifest logic here -- one source of truth for
+    # what that prompt looks like.
+    select_prompt, _files, _root = SmartCrawl().prep({"repo_path": repo_path})
 
     codebase = _codebase_preview_text(repo_path, CODEBASE_BUDGET)
     analyze_prompt = fill(read_prompt(PROMPTS_DIR, "identify-abstractions.md"), codebase=codebase)
