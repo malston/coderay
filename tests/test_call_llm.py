@@ -305,6 +305,6 @@ def test_disk_cache_key_matches_the_marker_stripped_text_actually_sent(monkeypat
 
     call_llm(prompt)
 
-    expected_path = _cache_path("anthropic", "claude-sonnet-4-6", 16384, "stable stuffvolatile stuff")
+    expected_path = _cache_path("anthropic", "claude-sonnet-5", 16384, "stable stuffvolatile stuff")
     assert os.path.exists(expected_path)
-    assert not os.path.exists(_cache_path("anthropic", "claude-sonnet-4-6", 16384, prompt))
+    assert not os.path.exists(_cache_path("anthropic", "claude-sonnet-5", 16384, prompt))

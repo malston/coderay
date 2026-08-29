@@ -1,9 +1,9 @@
 """Shared LLM wrapper used by every node in the pipeline.
 
 Picks the provider based on which env var is set:
-  ANTHROPIC_API_KEY  -> Claude (claude-sonnet-4-6)
-  OPENAI_API_KEY     -> OpenAI (gpt-4o)
-  GEMINI_API_KEY     -> Gemini (gemini-2.5-flash)
+  ANTHROPIC_API_KEY  -> Claude (claude-sonnet-5)
+  OPENAI_API_KEY     -> OpenAI (gpt-5.6-terra)
+  GEMINI_API_KEY     -> Gemini (gemini-3.7-flash)
 
 Override the auto pick with LLM_PROVIDER=anthropic|openai|gemini.
 Override the model with ANTHROPIC_MODEL / OPENAI_MODEL / GEMINI_MODEL.
@@ -55,9 +55,9 @@ def _model_for(provider):
     #
     # Override per call with ANTHROPIC_MODEL / OPENAI_MODEL / GEMINI_MODEL.
     models = {
-        "anthropic": os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
-        "openai":    os.environ.get("OPENAI_MODEL", "gpt-5.1"),
-        "gemini":    os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
+        "anthropic": os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5"),
+        "openai":    os.environ.get("OPENAI_MODEL", "gpt-5.6-terra"),
+        "gemini":    os.environ.get("GEMINI_MODEL", "gemini-3.7-flash"),
     }
     if provider not in models:
         raise RuntimeError(f"Unknown LLM_PROVIDER={provider!r}")

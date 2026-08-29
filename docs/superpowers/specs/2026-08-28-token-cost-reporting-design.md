@@ -72,17 +72,21 @@ A dict keyed by `(provider, model)` to a `$/token` (not $/1M) record for `input`
 `cache_read`, `cache_write`. Populated only for the models coderay actually defaults to,
 verified against official sources on 2026-08-28:
 
-| Provider  | Model               | Input    | Output    | Cache read             | Cache write                                             |
-| --------- | ------------------- | -------- | --------- | ---------------------- | ------------------------------------------------------- |
-| Anthropic | `claude-sonnet-4-6` | $3.00/1M | $15.00/1M | ~$0.30/1M (0.1x input) | ~$3.75/1M (1.25x input)                                 |
-| OpenAI    | `gpt-5.1`           | $1.25/1M | $10.00/1M | $0.125/1M              | n/a (0, no separate write cost)                         |
-| Gemini    | `gemini-2.5-flash`  | $0.30/1M | $2.50/1M  | $0.03/1M               | n/a (0; caching also bills hourly storage, not modeled) |
+| Provider  | Model              | Input    | Output    | Cache read             | Cache write                                             |
+| --------- | ------------------ | -------- | --------- | ---------------------- | ------------------------------------------------------- |
+| Anthropic | `claude-sonnet-5`  | $2.00/1M | $10.00/1M | ~$0.20/1M (0.1x input) | ~$2.50/1M (1.25x input)                                 |
+| OpenAI    | `gpt-5.6-terra`    | $2.00/1M | $12.00/1M | $0.20/1M               | n/a (0, no separate write cost)                         |
+| Gemini    | `gemini-3.7-flash` | $0.75/1M | $3.75/1M  | $0.075/1M              | n/a (0; caching also bills hourly storage, not modeled) |
 
-Anthropic's cache read/write figures use the standard 0.1x/1.25x-of-input formula (documented
-in Anthropic's own docs) rather than a per-model line item — confirm the exact rate against
-the live Anthropic pricing page before relying on this for a real invoice. OpenAI and Gemini
-numbers are read directly from `developers.openai.com/api/docs/pricing` and
-`ai.google.dev/gemini-api/docs/pricing` respectively.
+These are coderay's current defaults (`coderay_utils/call_llm.py`'s `_model_for()`), not the
+models named in the original bead — model lineups moved since the bead was filed, and the
+table tracks whatever `_model_for()` actually defaults to. Anthropic's cache read/write
+figures use the standard 0.1x/1.25x-of-input formula (documented in Anthropic's own docs)
+rather than a per-model line item — confirm the exact rate against the live Anthropic
+pricing page before relying on this for a real invoice. OpenAI and Gemini numbers are read
+directly from `developers.openai.com/api/docs/pricing` and `ai.google.dev/gemini-api/docs/pricing`
+respectively. Gemini's input/output prices shown are promotional through 2026-12-31 (rising
+to $1.50/$7.50 in 2027) — the pricing table should be revisited then.
 
 A `cost_for(provider, model, usage_record)` function looks up the table; a `(provider, model)`
 not in the table returns `None` (not a raised error, not a guessed number) — the summary
