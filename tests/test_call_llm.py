@@ -73,6 +73,233 @@ def _fake_anthropic_module(stop_reason, text="hi", block_type="text"):
     return fake
 
 
+def _fake_anthropic_module_with_usage(input_tokens, output_tokens, cache_read, cache_write, text="ok"):
+    fake = types.ModuleType("anthropic")
+
+    class Usage:
+        def __init__(self):
+            self.input_tokens = input_tokens
+            self.output_tokens = output_tokens
+            self.cache_read_input_tokens = cache_read
+            self.cache_creation_input_tokens = cache_write
+
+    class Block:
+        def __init__(self):
+            self.type = "text"
+            self.text = text
+
+    class Resp:
+        def __init__(self):
+            self.stop_reason = "end_turn"
+            self.content = [Block()]
+            self.usage = Usage()
+
+    class Messages:
+        def create(self, **kwargs):
+            return Resp()
+
+    class Anthropic:
+        def __init__(self, *a, **kw):
+            self.messages = Messages()
+
+    fake.Anthropic = Anthropic
+    return fake
+
+def test_anthropic_call_records_usage(monkeypatch):
+    call_llm_module.reset_usage()
+    monkeypatch.setitem(
+        sys.modules, "anthropic",
+        _fake_anthropic_module_with_usage(input_tokens=100, output_tokens=50, cache_read=10, cache_write=5),
+    )
+
+    call_llm("prompt")
+
+    usage = call_llm_module.get_usage()
+    assert len(usage) == 1
+    record = usage[0]
+    assert record["provider"] == "anthropic"
+    assert record["model"] == "claude-sonnet-5"
+    assert record["input_tokens"] == 100
+    assert record["output_tokens"] == 50
+    assert record["cache_read_tokens"] == 10
+    assert record["cache_write_tokens"] == 5
+    assert record["cached"] is False
+    assert record["duration_s"] >= 0
+
+def _fake_openai_module_with_usage(prompt_tokens, completion_tokens, text="ok"):
+    fake = types.ModuleType("openai")
+
+    class Usage:
+        def __init__(self):
+            self.prompt_tokens = prompt_tokens
+            self.completion_tokens = completion_tokens
+
+    class Message:
+        content = text
+
+    class Choice:
+        finish_reason = "stop"
+        message = Message()
+
+    class Resp:
+        choices = [Choice()]
+        usage = Usage()
+
+    class Completions:
+        def create(self, **kwargs):
+            return Resp()
+
+    class Chat:
+        completions = Completions()
+
+    class OpenAI:
+        def __init__(self, *a, **kw):
+            self.chat = Chat()
+
+    fake.OpenAI = OpenAI
+    return fake
+
+def test_openai_call_records_usage_with_zero_cache_fields(monkeypatch):
+    call_llm_module.reset_usage()
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setitem(
+        sys.modules, "openai",
+        _fake_openai_module_with_usage(prompt_tokens=200, completion_tokens=80),
+    )
+
+    call_llm("prompt")
+
+    record = call_llm_module.get_usage()[0]
+    assert record["provider"] == "openai"
+    assert record["input_tokens"] == 200
+    assert record["output_tokens"] == 80
+    assert record["cache_read_tokens"] == 0
+    assert record["cache_write_tokens"] == 0
+
+def _install_fake_gemini_module_with_usage(monkeypatch, prompt_tokens, candidates_tokens, cached_tokens, text="ok"):
+    google = types.ModuleType("google")
+    genai = types.ModuleType("google.genai")
+    genai_types = types.ModuleType("google.genai.types")
+
+    class GenerateContentConfig:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class Usage:
+        def __init__(self):
+            self.prompt_token_count = prompt_tokens
+            self.candidates_token_count = candidates_tokens
+            self.cached_content_token_count = cached_tokens
+
+    class Candidate:
+        finish_reason = "STOP"
+
+    class Resp:
+        def __init__(self):
+            self.candidates = [Candidate()]
+            self.text = text
+            self.usage_metadata = Usage()
+
+    class Models:
+        def generate_content(self, **kwargs):
+            return Resp()
+
+    class Client:
+        def __init__(self, *a, **kw):
+            self.models = Models()
+
+    genai_types.GenerateContentConfig = GenerateContentConfig
+    genai.types = genai_types
+    genai.Client = Client
+    google.genai = genai
+
+    monkeypatch.setitem(sys.modules, "google", google)
+    monkeypatch.setitem(sys.modules, "google.genai", genai)
+    monkeypatch.setitem(sys.modules, "google.genai.types", genai_types)
+
+def test_gemini_call_records_cached_content_as_cache_read(monkeypatch):
+    call_llm_module.reset_usage()
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    _install_fake_gemini_module_with_usage(monkeypatch, prompt_tokens=300, candidates_tokens=120, cached_tokens=40)
+
+    call_llm("prompt")
+
+    record = call_llm_module.get_usage()[0]
+    assert record["provider"] == "gemini"
+    assert record["input_tokens"] == 300
+    assert record["output_tokens"] == 120
+    assert record["cache_read_tokens"] == 40
+    assert record["cache_write_tokens"] == 0
+
+def test_cache_hit_records_a_zero_usage_entry(monkeypatch, tmp_path):
+    call_llm_module.CACHE_DIR = str(tmp_path)
+    call_llm_module.reset_usage()
+    monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module("end_turn", text="ok"))
+
+    call_llm("prompt")  # first call: real, populates the disk cache
+    call_llm("prompt")  # second call: cache hit
+
+    usage = call_llm_module.get_usage()
+    assert len(usage) == 2
+    hit_record = usage[1]
+    assert hit_record["cached"] is True
+    assert hit_record["input_tokens"] == 0
+    assert hit_record["output_tokens"] == 0
+    assert hit_record["duration_s"] == 0.0
+
+def test_resolve_provider_and_model_matches_call_llm_defaults():
+    from coderay_utils.call_llm import resolve_provider_and_model
+    assert resolve_provider_and_model() == ("anthropic", "claude-sonnet-5")
+
+def _fake_anthropic_module_truncated_with_usage(input_tokens, output_tokens):
+    fake = types.ModuleType("anthropic")
+
+    class Usage:
+        def __init__(self):
+            self.input_tokens = input_tokens
+            self.output_tokens = output_tokens
+            self.cache_read_input_tokens = 0
+            self.cache_creation_input_tokens = 0
+
+    class Block:
+        def __init__(self):
+            self.type = "text"
+            self.text = "partial"
+
+    class Resp:
+        def __init__(self):
+            self.stop_reason = "max_tokens"
+            self.content = [Block()]
+            self.usage = Usage()
+
+    class Messages:
+        def create(self, **kwargs):
+            return Resp()
+
+    class Anthropic:
+        def __init__(self, *a, **kw):
+            self.messages = Messages()
+
+    fake.Anthropic = Anthropic
+    return fake
+
+def test_truncated_response_still_records_its_usage(monkeypatch):
+    call_llm_module.reset_usage()
+    monkeypatch.setitem(
+        sys.modules, "anthropic",
+        _fake_anthropic_module_truncated_with_usage(input_tokens=500, output_tokens=16384),
+    )
+
+    with pytest.raises(RuntimeError, match="truncated"):
+        call_llm("prompt")
+
+    usage = call_llm_module.get_usage()
+    assert len(usage) == 1
+    assert usage[0]["input_tokens"] == 500
+    assert usage[0]["output_tokens"] == 16384
+
+
 def test_truncated_anthropic_response_raises(monkeypatch):
     monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module("max_tokens"))
     with pytest.raises(RuntimeError, match="truncated"):

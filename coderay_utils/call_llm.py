@@ -24,6 +24,7 @@ import hashlib
 import json
 import os
 import tempfile
+import time
 
 CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "coderay")
 
@@ -31,6 +32,31 @@ CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser(
 # (identical across calls, e.g. a repeated codebase block) from a volatile
 # suffix. Only the Anthropic path acts on it -- see coderay-dl8.
 CACHE_BREAKPOINT = "<<CODERAY_CACHE_BREAKPOINT>>"
+
+DEFAULT_MAX_OUTPUT_TOKENS = 16384
+
+_usage_log = []
+
+def reset_usage():
+    """Clear accumulated usage records. Call once before a pipeline run."""
+    _usage_log.clear()
+
+def get_usage():
+    """Every usage record accumulated since the last reset_usage()."""
+    return list(_usage_log)
+
+def resolve_provider_and_model():
+    """The (provider, model) pair call_llm() would use right now, without calling it."""
+    provider = _pick()
+    return provider, _model_for(provider)
+
+def _record_usage(provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, duration_s, cached):
+    _usage_log.append({
+        "provider": provider, "model": model,
+        "input_tokens": input_tokens, "output_tokens": output_tokens,
+        "cache_read_tokens": cache_read_tokens, "cache_write_tokens": cache_write_tokens,
+        "duration_s": duration_s, "cached": cached,
+    })
 
 
 def _pick():
@@ -101,7 +127,7 @@ def _cache_put(provider, model, max_out, prompt, response):
 def call_llm(prompt: str) -> str:
     provider = _pick()
     model = _model_for(provider)
-    max_out = int(os.environ.get("LLM_MAX_OUTPUT_TOKENS", "16384"))
+    max_out = int(os.environ.get("LLM_MAX_OUTPUT_TOKENS", str(DEFAULT_MAX_OUTPUT_TOKENS)))
 
     # The real breakpoint is the last occurrence of the marker in the
     # *template* -- but write-chapter.md's volatile suffix includes
@@ -121,7 +147,10 @@ def call_llm(prompt: str) -> str:
     # single string), so the key should match what was actually sent.
     cached = _cache_get(provider, model, max_out, plain_prompt)
     if cached is not None:
+        _record_usage(provider, model, 0, 0, 0, 0, 0.0, cached=True)
         return cached
+
+    start = time.perf_counter()
 
     if provider == "anthropic":
         from anthropic import Anthropic
@@ -133,6 +162,16 @@ def call_llm(prompt: str) -> str:
             model=model,
             max_tokens=max_out,
             messages=[{"role": "user", "content": content}],
+        )
+        duration_s = time.perf_counter() - start
+        usage = getattr(resp, "usage", None)
+        _record_usage(
+            provider, model,
+            getattr(usage, "input_tokens", 0) or 0,
+            getattr(usage, "output_tokens", 0) or 0,
+            getattr(usage, "cache_read_input_tokens", 0) or 0,
+            getattr(usage, "cache_creation_input_tokens", 0) or 0,
+            duration_s, cached=False,
         )
         if resp.stop_reason == "max_tokens":
             raise RuntimeError("Anthropic response truncated (stop_reason=max_tokens)")
@@ -149,6 +188,15 @@ def call_llm(prompt: str) -> str:
             max_completion_tokens=max_out,
             messages=[{"role": "user", "content": plain_prompt}],
         )
+        duration_s = time.perf_counter() - start
+        usage = getattr(resp, "usage", None)
+        _record_usage(
+            provider, model,
+            getattr(usage, "prompt_tokens", 0) or 0,
+            getattr(usage, "completion_tokens", 0) or 0,
+            0, 0,
+            duration_s, cached=False,
+        )
         choice = resp.choices[0]
         if choice.finish_reason == "length":
             raise RuntimeError("OpenAI response truncated (finish_reason=length)")
@@ -162,6 +210,16 @@ def call_llm(prompt: str) -> str:
             model=model,
             contents=plain_prompt,
             config=types.GenerateContentConfig(max_output_tokens=max_out),
+        )
+        duration_s = time.perf_counter() - start
+        usage = getattr(resp, "usage_metadata", None)
+        _record_usage(
+            provider, model,
+            getattr(usage, "prompt_token_count", 0) or 0,
+            getattr(usage, "candidates_token_count", 0) or 0,
+            getattr(usage, "cached_content_token_count", 0) or 0,
+            0,
+            duration_s, cached=False,
         )
         candidate = resp.candidates[0] if resp.candidates else None
         finish_reason = str(getattr(candidate, "finish_reason", "") or "")
