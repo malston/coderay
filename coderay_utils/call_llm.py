@@ -27,6 +27,11 @@ import tempfile
 
 CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "coderay")
 
+# A prompt may embed this literal marker to split a stable, cacheable prefix
+# (identical across calls, e.g. a repeated codebase block) from a volatile
+# suffix. Only the Anthropic path acts on it -- see coderay-dl8.
+CACHE_BREAKPOINT = "<<CODERAY_CACHE_BREAKPOINT>>"
+
 
 def _pick():
     p = os.environ.get("LLM_PROVIDER")
@@ -98,16 +103,36 @@ def call_llm(prompt: str) -> str:
     model = _model_for(provider)
     max_out = int(os.environ.get("LLM_MAX_OUTPUT_TOKENS", "16384"))
 
-    cached = _cache_get(provider, model, max_out, prompt)
+    # The real breakpoint is the last occurrence of the marker in the
+    # *template* -- but write-chapter.md's volatile suffix includes
+    # {prev_chapters}, LLM-generated text derived from untrusted repo
+    # content. If a planted marker ever got echoed into a chapter, it would
+    # land after the real breakpoint and rpartition would split there
+    # instead, degrading to a cache miss at best and an empty content block
+    # at worst. Require both sides non-empty so a pathological split like
+    # that is ignored rather than sent to the provider.
+    prefix, sep, suffix = prompt.rpartition(CACHE_BREAKPOINT)
+    if sep and not (prefix and suffix):
+        prefix, sep, suffix = "", "", prompt
+    plain_prompt = prefix + suffix if sep else prompt
+
+    # Cache on plain_prompt (marker stripped) -- every provider actually
+    # receives that text (Anthropic as a split content list, others as a
+    # single string), so the key should match what was actually sent.
+    cached = _cache_get(provider, model, max_out, plain_prompt)
     if cached is not None:
         return cached
 
     if provider == "anthropic":
         from anthropic import Anthropic
+        content = [
+            {"type": "text", "text": prefix, "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": suffix},
+        ] if sep else prompt
         resp = Anthropic().messages.create(
             model=model,
             max_tokens=max_out,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": content}],
         )
         if resp.stop_reason == "max_tokens":
             raise RuntimeError("Anthropic response truncated (stop_reason=max_tokens)")
@@ -122,7 +147,7 @@ def call_llm(prompt: str) -> str:
         resp = OpenAI().chat.completions.create(
             model=model,
             max_completion_tokens=max_out,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": plain_prompt}],
         )
         choice = resp.choices[0]
         if choice.finish_reason == "length":
@@ -135,7 +160,7 @@ def call_llm(prompt: str) -> str:
         client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
         resp = client.models.generate_content(
             model=model,
-            contents=prompt,
+            contents=plain_prompt,
             config=types.GenerateContentConfig(max_output_tokens=max_out),
         )
         candidate = resp.candidates[0] if resp.candidates else None
@@ -147,7 +172,7 @@ def call_llm(prompt: str) -> str:
     if not text:
         raise RuntimeError(f"{provider} returned an empty response")
 
-    _cache_put(provider, model, max_out, prompt, text)
+    _cache_put(provider, model, max_out, plain_prompt, text)
     return text
 
 

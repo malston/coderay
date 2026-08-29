@@ -16,6 +16,23 @@ def test_every_prompt_wraps_untrusted_repo_content_in_a_boundary():
         assert "<untrusted_" in template
 
 
+def test_write_chapter_prompt_puts_stable_blocks_before_the_cache_breakpoint():
+    # The codebase block (identical every call in a tour, up to CODEBASE_BUDGET
+    # chars) must sit before the cache breakpoint so Anthropic's prefix-based
+    # caching can reuse it across chapters -- see coderay-dl8.
+    from coderay_utils.call_llm import CACHE_BREAKPOINT
+
+    path = os.path.join(PROMPTS_DIR, "write-chapter.md")
+    template = open(path).read()
+    assert CACHE_BREAKPOINT in template
+
+    prefix, _, suffix = template.partition(CACHE_BREAKPOINT)
+    for stable in ("{chapter_list}", "{codebase}", "{instructions}"):
+        assert stable in prefix, f"{stable} must be before the cache breakpoint"
+    for volatile in ("{chapter_num}", "{name}", "{description}", "{prev_chapters}"):
+        assert volatile in suffix, f"{volatile} must be after the cache breakpoint"
+
+
 def test_prompt_templates_still_render_with_dummy_args():
     # fill() does literal {key} replacement rather than str.format(), so a prompt
     # can safely contain literal JSON/Mermaid braces without breaking rendering.
