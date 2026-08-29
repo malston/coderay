@@ -161,8 +161,21 @@ def write_text(path, content):
         f.write(content)
 
 
-def write_chapter_files(chapters, repo_name, out):
-    """Write each chapter's .md and .html, with prev/next links between them."""
+def build_related_links(chapter_name, relationships, filenames):
+    """Related-chapter links for one chapter, both directions of the Relationship graph."""
+    links = []
+    for r in relationships:
+        if r["from"] == chapter_name and r["to"] in filenames:
+            href = chapter_html_name(filenames[r["to"]])
+            links.append(f'<li>&rarr; {html.escape(r["label"])} &rarr; <a href="{href}">{html.escape(r["to"])}</a></li>')
+        elif r["to"] == chapter_name and r["from"] in filenames:
+            href = chapter_html_name(filenames[r["from"]])
+            links.append(f'<li>&larr; {html.escape(r["label"])} &larr; <a href="{href}">{html.escape(r["from"])}</a></li>')
+    return links
+
+
+def write_chapter_files(chapters, repo_name, out, relationships, filenames):
+    """Write each chapter's .md and .html, with prev/next links and a Related section."""
     for i, ch in enumerate(chapters):
         write_text(os.path.join(out, ch["filename"]), ch["content"])
 
@@ -182,12 +195,16 @@ def write_chapter_files(chapters, repo_name, out):
             lambda m: f']({m.group(1)}.html)',
             ch["content"],
         )
+        related_links = build_related_links(ch["name"], relationships, filenames)
+        related_html = (
+            f'<h2>Related</h2>\n<ul>\n{"".join(related_links)}\n</ul>\n' if related_links else ""
+        )
         chapter_html = CHAPTER_HTML_TEMPLATE.format(
             title=f'{html.escape(ch["name"])} — {html.escape(repo_name)}',
             shared_style=SHARED_STYLE,
             mermaid_script=MERMAID_SCRIPT,
             repo_name=html.escape(repo_name),
-            body_html=md_to_html(body_md),
+            body_html=md_to_html(body_md) + related_html,
             prev_link=prev_link,
             next_link=next_link,
         )
@@ -282,7 +299,7 @@ def main():
     chapters = shared["chapters"]
     mermaid = build_mermaid(shared["abstractions"], shared["relationships"])
 
-    write_chapter_files(chapters, name, out)
+    write_chapter_files(chapters, name, out, shared["relationships"], shared["filenames"])
     write_index_md(chapters, name, args.instructions, shared["summary"], mermaid, out)
     write_index_html(
         chapters, name, args.instructions, shared["summary"], mermaid,
