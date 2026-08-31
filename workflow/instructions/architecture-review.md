@@ -10,7 +10,7 @@ Rules:
 
 4. **Where is the technical debt?** Surface places the code says one thing and does another. Inconsistent error handling, half migrated APIs, fixme comments older than 12 months.
 
-5. **No analogies.** No "like a bulletin board". Tech leads don't need them.
+5. **No analogies.** No "like a bulletin board". Tech leads don't need them. Use Simplified Technical English.
 
 6. **Cross reference other chapters** with the exact links from the chapter list above so the reviewer can navigate.
 
