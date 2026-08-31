@@ -1,7 +1,8 @@
 """Codebase Knowledge Builder nodes.
 
-Five steps from the book chapter:
+Five steps from the book chapter (plus a deterministic graph-extraction step):
   1. SmartCrawl    walk repo, then ask the LLM which files matter
+  1.5 ExtractGraph parse selected files for a deterministic import graph
   2. Analyze       extract 5-10 core abstractions as YAML
   3. Relate        map abstractions to each other as YAML edges
   4. WriteChapters one chapter per abstraction, with SEQUENTIAL CONTEXT
@@ -26,6 +27,7 @@ from typing import TypedDict
 from pocketflow import Node, BatchNode
 
 from coderay_utils import call_llm, fill, list_files, read_prompt, safe_read, yaml_call
+from workflow.graph.languages import REGISTRY
 
 PROMPTS_DIR = resources.files("workflow") / "prompts"
 INSTRUCTIONS_DIR = resources.files("workflow") / "instructions"
@@ -59,6 +61,9 @@ class PipelineState(TypedDict, total=False):
       selected_files           list[str]
       selection_reasoning      str
 
+    Written by ExtractGraph.post; read by Relate.prep:
+      symbol_graph            list[dict]
+
     Written by Analyze.post; read by Relate/WriteChapters.prep and
     workflow.__main__'s renderers:
       summary                  str
@@ -81,6 +86,7 @@ class PipelineState(TypedDict, total=False):
     codebase: str
     selected_files: list
     selection_reasoning: str
+    symbol_graph: list
     summary: str
     abstractions: list
     order: list
@@ -163,6 +169,49 @@ class SmartCrawl(Node):
         if dropped:
             print(f"  Dropped {dropped} files over codebase budget ({budget:,} chars)")
         print(f"  Selected {len(included)} files ({len(shared['codebase']):,} chars)")
+
+
+# Step 1.5. Extract a deterministic import graph as ground truth for Relate
+class ExtractGraph(Node):
+    """Parses each selected file with a per-extension tree-sitter extractor
+    (workflow/graph/languages/) and records import edges that land inside
+    selected_files. A file whose extension has no registered extractor
+    produces no edges -- Relate falls back to LLM-INFERRED only for
+    relationships that only touch it (imports-only, Python/JS/TS-only for
+    v1; see docs/superpowers/specs/2026-08-31-deterministic-import-graph-design.md)."""
+    def __init__(self):
+        super().__init__(max_retries=1)
+
+    def prep(self, shared: PipelineState):
+        return shared["repo_path"], shared["selected_files"]
+
+    def exec(self, inputs):
+        root, selected = inputs
+        selected_set = set(selected)
+        edges = []
+        covered = 0
+        for rel_path in selected:
+            extractor = REGISTRY.get(os.path.splitext(rel_path)[1])
+            if extractor is None:
+                continue
+            text = safe_read(os.path.join(root, rel_path))
+            if text is None:
+                continue
+            covered += 1
+            try:
+                targets = extractor.imports(rel_path, text, selected_set)
+            except Exception as e:
+                print(f"  Skipping {rel_path} for import graph: {e}")
+                continue
+            for target in targets:
+                edges.append({"from": rel_path, "to": target, "kind": "imports"})
+        return edges, covered
+
+    def post(self, shared: PipelineState, prep_res, exec_res):
+        edges, covered = exec_res
+        shared["symbol_graph"] = edges
+        total = len(prep_res[1])
+        print(f"  {covered}/{total} selected files covered by a deterministic import graph")
 
 
 # Step 2. Identify the abstractions

@@ -1,7 +1,7 @@
 import pytest
 
 import coderay_utils.llm as llm_module
-from workflow.nodes import Analyze, PipelineState, Relate, SmartCrawl
+from workflow.nodes import Analyze, ExtractGraph, PipelineState, Relate, SmartCrawl
 
 
 def test_pipeline_state_documents_every_key_the_nodes_use():
@@ -9,11 +9,38 @@ def test_pipeline_state_documents_every_key_the_nodes_use():
         "repo_path", "instructions",
         "preview_budget", "target_files", "codebase_budget", "chapter_context_window",
         "codebase", "selected_files", "selection_reasoning",
+        "symbol_graph",
         "summary", "abstractions", "order",
         "relationships",
         "chapters", "filenames",
     }
     assert set(PipelineState.__annotations__) == expected
+
+
+def test_extract_graph_builds_edges_for_known_extensions(tmp_path):
+    (tmp_path / "main.py").write_text("from pkg.helper import go\n")
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "helper.py").write_text("def go(): pass\n")
+    shared = {
+        "repo_path": str(tmp_path),
+        "selected_files": ["main.py", "pkg/helper.py"],
+    }
+    prep_res = ExtractGraph().prep(shared)
+    exec_res = ExtractGraph().exec(prep_res)
+    ExtractGraph().post(shared, prep_res, exec_res)
+    assert shared["symbol_graph"] == [{"from": "main.py", "to": "pkg/helper.py", "kind": "imports"}]
+
+
+def test_extract_graph_skips_files_with_no_registered_extractor(tmp_path):
+    (tmp_path / "main.unknownlang").write_text("whatever this language is\n")
+    shared = {
+        "repo_path": str(tmp_path),
+        "selected_files": ["main.unknownlang"],
+    }
+    prep_res = ExtractGraph().prep(shared)
+    exec_res = ExtractGraph().exec(prep_res)
+    ExtractGraph().post(shared, prep_res, exec_res)
+    assert shared["symbol_graph"] == []
 
 
 def _make_files(tmp_path, count, size=2000):
