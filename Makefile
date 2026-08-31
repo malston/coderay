@@ -10,6 +10,9 @@ install: ## Sync dependencies from uv.lock
 install-global: ## Install the coderay CLI onto your PATH via uv tool
 	uv tool install --editable .
 
+uninstall: ## Uninstall the coderay CLI
+	uv tool uninstall coderay
+
 test: ## Run the test suite
 	uv run pytest tests/ -q
 
