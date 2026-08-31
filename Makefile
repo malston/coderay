@@ -1,4 +1,4 @@
-.PHONY: help install install-global test build clean
+.PHONY: help install install-global uninstall test build clean
 .DEFAULT_GOAL := help
 
 help: ## Show this help
