@@ -99,7 +99,7 @@ def test_chapter_link_rewrite_matches_workflow_nodes_filename_convention(tmp_pat
     ]
     chapters[0]["content"] = f"See [{names[1]}]({filenames[names[1]]}) next."
 
-    write_chapter_files(chapters, "repo", str(tmp_path), [])
+    write_chapter_files(chapters, "repo", str(tmp_path), [], generated_at="2026-08-31")
 
     first_html = (tmp_path / chapters[0]["filename"].replace(".md", ".html")).read_text(encoding="utf-8")
     assert f"{filenames[names[1]][:-3]}.html" in first_html
@@ -108,7 +108,7 @@ def test_chapter_link_rewrite_matches_workflow_nodes_filename_convention(tmp_pat
 
 def test_write_chapter_files_writes_md_and_html_with_nav_links(tmp_path):
     chapters = _chapters()
-    write_chapter_files(chapters, "myrepo", str(tmp_path), [])
+    write_chapter_files(chapters, "myrepo", str(tmp_path), [], generated_at="2026-08-31")
 
     assert (tmp_path / "01_first.md").read_text(encoding="utf-8") == "# First\n\ncontent"
     html_out = (tmp_path / "02_second.html").read_text(encoding="utf-8")
@@ -121,7 +121,7 @@ def test_write_chapter_files_adds_related_section_for_outgoing_and_incoming_edge
     chapters = _chapters()
     relationships = [{"from": "First", "to": "Second", "label": "uses"}]
 
-    write_chapter_files(chapters, "myrepo", str(tmp_path), relationships)
+    write_chapter_files(chapters, "myrepo", str(tmp_path), relationships, generated_at="2026-08-31")
 
     first_html = (tmp_path / "01_first.html").read_text(encoding="utf-8")
     second_html = (tmp_path / "02_second.html").read_text(encoding="utf-8")
@@ -140,7 +140,7 @@ def test_write_chapter_files_escapes_relationship_label_and_names(tmp_path):
     chapters = _chapters()
     relationships = [{"from": "First", "to": "Second", "label": '<script>alert(1)</script>'}]
 
-    write_chapter_files(chapters, "myrepo", str(tmp_path), relationships)
+    write_chapter_files(chapters, "myrepo", str(tmp_path), relationships, generated_at="2026-08-31")
 
     first_html = (tmp_path / "01_first.html").read_text(encoding="utf-8")
     assert "<script>alert(1)</script>" not in first_html
@@ -163,14 +163,14 @@ def test_write_chapter_files_skips_relationship_referencing_unknown_abstraction(
     relationships = [{"from": "First", "to": "Missing", "label": "uses"}]
 
     # Should not raise even though "Missing" has no chapter/filename.
-    write_chapter_files(chapters, "myrepo", str(tmp_path), relationships)
+    write_chapter_files(chapters, "myrepo", str(tmp_path), relationships, generated_at="2026-08-31")
 
     first_html = (tmp_path / "01_first.html").read_text(encoding="utf-8")
     assert "Missing" not in first_html
 
 
 def test_write_index_md_lists_chapters_and_mermaid(tmp_path):
-    write_index_md(_chapters(), "myrepo", "beginner-tutorial", "a summary", "flowchart TD", str(tmp_path))
+    write_index_md(_chapters(), "myrepo", "beginner-tutorial", "a summary", "flowchart TD", str(tmp_path), generated_at="2026-08-31")
     out = (tmp_path / "index.md").read_text(encoding="utf-8")
     assert "# myrepo" in out
     assert "[First](01_first.md)" in out
@@ -181,11 +181,58 @@ def test_write_index_html_escapes_summary_and_lists_files(tmp_path):
     write_index_html(
         _chapters(), "myrepo", "beginner-tutorial", "a <script> summary",
         "flowchart TD", ["a.py", "b.py"], "because", str(tmp_path),
+        generated_at="2026-08-31",
     )
     out = (tmp_path / "index.html").read_text(encoding="utf-8")
     assert "<script> summary" not in out
     assert "&lt;script&gt; summary" in out
     assert "a.py" in out and "b.py" in out
+
+
+def test_write_index_html_includes_staleness_disclaimer(tmp_path):
+    write_index_html(
+        _chapters(), "myrepo", "beginner-tutorial", "a summary",
+        "flowchart TD", ["a.py"], "because", str(tmp_path),
+        generated_at="2026-08-31",
+    )
+    out = (tmp_path / "index.html").read_text(encoding="utf-8")
+    assert "2026-08-31" in out
+    assert "snapshot" in out.lower()
+
+
+def test_write_index_md_includes_staleness_disclaimer(tmp_path):
+    write_index_md(
+        _chapters(), "myrepo", "beginner-tutorial", "a summary", "flowchart TD",
+        str(tmp_path), generated_at="2026-08-31",
+    )
+    out = (tmp_path / "index.md").read_text(encoding="utf-8")
+    assert "2026-08-31" in out
+    assert "snapshot" in out.lower()
+
+
+def test_write_chapter_files_includes_staleness_disclaimer(tmp_path):
+    write_chapter_files(_chapters(), "myrepo", str(tmp_path), [], generated_at="2026-08-31")
+    out = (tmp_path / "01_first.html").read_text(encoding="utf-8")
+    assert "2026-08-31" in out
+    assert "snapshot" in out.lower()
+
+
+def test_write_chapter_files_escapes_staleness_disclaimer(tmp_path):
+    write_chapter_files(_chapters(), "myrepo", str(tmp_path), [], generated_at='<script>alert(1)</script>')
+    out = (tmp_path / "01_first.html").read_text(encoding="utf-8")
+    assert "<script>alert(1)</script>" not in out
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in out
+
+
+def test_write_index_html_escapes_staleness_disclaimer(tmp_path):
+    write_index_html(
+        _chapters(), "myrepo", "beginner-tutorial", "a summary",
+        "flowchart TD", ["a.py"], "because", str(tmp_path),
+        generated_at='<script>alert(1)</script>',
+    )
+    out = (tmp_path / "index.html").read_text(encoding="utf-8")
+    assert "<script>alert(1)</script>" not in out
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in out
 
 
 def test_dump_run_state_captures_partial_progress(tmp_path):

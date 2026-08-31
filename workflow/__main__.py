@@ -17,6 +17,7 @@ import json
 import os
 import re
 import time
+from datetime import date
 from importlib.metadata import version
 
 from markdown_it import MarkdownIt
@@ -92,7 +93,8 @@ SHARED_STYLE = """\
   th, td { border: 1px solid var(--rule); padding: 8px 10px; text-align: left; font-size: .92em; }
   th { background: var(--soft); }
   .lens { display: inline-block; padding: 2px 8px; background: var(--soft); border-radius: 4px; font-size: .85em; }
-  nav.chapter-nav { margin: 2em 0 0; padding: 1em 0; border-top: 1px solid var(--rule); display: flex; justify-content: space-between; font-size: .95em; }"""
+  nav.chapter-nav { margin: 2em 0 0; padding: 1em 0; border-top: 1px solid var(--rule); display: flex; justify-content: space-between; font-size: .95em; }
+  .staleness { font-size: .85em; }"""
 
 MERMAID_SCRIPT = """\
 <script
@@ -116,6 +118,7 @@ INDEX_HTML_TEMPLATE = """<!doctype html>
 <body>
   <h1>{repo_name}</h1>
   <p class="muted">Lens: <span class="lens">{lens}</span> &middot; {n_chapters} chapters &middot; {n_files} files analyzed</p>
+  <p class="muted staleness">{staleness}</p>
   <p>{summary}</p>
 
   <h2>Architecture map</h2>
@@ -150,6 +153,7 @@ CHAPTER_HTML_TEMPLATE = """<!doctype html>
 </head>
 <body>
   <p class="muted"><a href="index.html">&larr; {repo_name} tour</a></p>
+  <p class="muted staleness">{staleness}</p>
 {body_html}
   <nav class="chapter-nav">
     <span>{prev_link}</span>
@@ -158,6 +162,13 @@ CHAPTER_HTML_TEMPLATE = """<!doctype html>
 </body>
 </html>
 """
+
+
+def staleness_disclaimer(generated_at):
+    return (
+        f"Generated {generated_at} from a snapshot of the code. "
+        "May not reflect later changes."
+    )
 
 
 def chapter_html_name(md_name):
@@ -193,7 +204,7 @@ def build_related_links(chapter_name, relationships, filenames):
     return links
 
 
-def write_chapter_files(chapters, repo_name, out, relationships):
+def write_chapter_files(chapters, repo_name, out, relationships, generated_at):
     """Write each chapter's .md and .html, with prev/next links and a Related section."""
     filenames = {ch["name"]: ch["filename"] for ch in chapters}
     for i, ch in enumerate(chapters):
@@ -227,14 +238,16 @@ def write_chapter_files(chapters, repo_name, out, relationships):
             body_html=md_to_html(body_md) + related_html,
             prev_link=prev_link,
             next_link=next_link,
+            staleness=html.escape(staleness_disclaimer(generated_at)),
         )
         write_text(os.path.join(out, chapter_html_name(ch["filename"])), chapter_html)
 
 
-def write_index_md(chapters, repo_name, lens, summary, mermaid, out):
+def write_index_md(chapters, repo_name, lens, summary, mermaid, out, generated_at):
     index_md_parts = [
         f"# {repo_name}\n",
         f"_Lens: {lens}_\n",
+        f"_{staleness_disclaimer(generated_at)}_\n",
         f"{summary}\n",
         "## Architecture\n",
         f"```mermaid\n{mermaid}\n```\n",
@@ -245,7 +258,7 @@ def write_index_md(chapters, repo_name, lens, summary, mermaid, out):
     write_text(os.path.join(out, "index.md"), "\n".join(index_md_parts))
 
 
-def write_index_html(chapters, repo_name, lens, summary, mermaid, selected_files, selection_reasoning, out):
+def write_index_html(chapters, repo_name, lens, summary, mermaid, selected_files, selection_reasoning, out, generated_at):
     chapter_list_html = "\n".join(
         f'    <li><a href="{chapter_html_name(ch["filename"])}">{html.escape(ch["name"])}</a></li>'
         for ch in chapters
@@ -265,6 +278,7 @@ def write_index_html(chapters, repo_name, lens, summary, mermaid, selected_files
         reasoning_html=md_to_html(selection_reasoning),
         shared_style=SHARED_STYLE,
         mermaid_script=MERMAID_SCRIPT,
+        staleness=html.escape(staleness_disclaimer(generated_at)),
     )
     write_text(os.path.join(out, "index.html"), rendered)
 
@@ -440,11 +454,12 @@ def main():
     chapters = shared["chapters"]
     mermaid = build_mermaid(shared["abstractions"], shared["relationships"])
 
-    write_chapter_files(chapters, name, out, shared["relationships"])
-    write_index_md(chapters, name, args.instructions, shared["summary"], mermaid, out)
+    generated_at = date.today().isoformat()
+    write_chapter_files(chapters, name, out, shared["relationships"], generated_at)
+    write_index_md(chapters, name, args.instructions, shared["summary"], mermaid, out, generated_at)
     write_index_html(
         chapters, name, args.instructions, shared["summary"], mermaid,
-        shared["selected_files"], shared["selection_reasoning"], out,
+        shared["selected_files"], shared["selection_reasoning"], out, generated_at,
     )
 
     print(f"\nWrote tour to {out}/")
