@@ -238,7 +238,7 @@ def write_chapter_files(chapters, repo_name, out, relationships, generated_at):
             body_html=md_to_html(body_md) + related_html,
             prev_link=prev_link,
             next_link=next_link,
-            staleness=staleness_disclaimer(generated_at),
+            staleness=html.escape(staleness_disclaimer(generated_at)),
         )
         write_text(os.path.join(out, chapter_html_name(ch["filename"])), chapter_html)
 
@@ -278,7 +278,7 @@ def write_index_html(chapters, repo_name, lens, summary, mermaid, selected_files
         reasoning_html=md_to_html(selection_reasoning),
         shared_style=SHARED_STYLE,
         mermaid_script=MERMAID_SCRIPT,
-        staleness=staleness_disclaimer(generated_at),
+        staleness=html.escape(staleness_disclaimer(generated_at)),
     )
     write_text(os.path.join(out, "index.html"), rendered)
 

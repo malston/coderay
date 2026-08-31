@@ -217,6 +217,24 @@ def test_write_chapter_files_includes_staleness_disclaimer(tmp_path):
     assert "snapshot" in out.lower()
 
 
+def test_write_chapter_files_escapes_staleness_disclaimer(tmp_path):
+    write_chapter_files(_chapters(), "myrepo", str(tmp_path), [], generated_at='<script>alert(1)</script>')
+    out = (tmp_path / "01_first.html").read_text(encoding="utf-8")
+    assert "<script>alert(1)</script>" not in out
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in out
+
+
+def test_write_index_html_escapes_staleness_disclaimer(tmp_path):
+    write_index_html(
+        _chapters(), "myrepo", "beginner-tutorial", "a summary",
+        "flowchart TD", ["a.py"], "because", str(tmp_path),
+        generated_at='<script>alert(1)</script>',
+    )
+    out = (tmp_path / "index.html").read_text(encoding="utf-8")
+    assert "<script>alert(1)</script>" not in out
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in out
+
+
 def test_dump_run_state_captures_partial_progress(tmp_path):
     shared = {
         "selected_files": ["a.py", "b.py"],
