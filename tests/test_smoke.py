@@ -15,7 +15,7 @@ def test_crack_tour_runs_end_to_end(tmp_path):
     out_dir = str(tmp_path / "tour-output")
     result = subprocess.run(
         [sys.executable, "-m", "crack.cli", "tour", FIXTURE_REPO, "--out", out_dir],
-        capture_output=True, text=True,
+        capture_output=True, text=True, stdin=subprocess.DEVNULL,
     )
     assert result.returncode == 0, result.stderr
     assert os.path.isfile(os.path.join(out_dir, "index.md"))

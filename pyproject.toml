@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "crack"
 version = "0.1.0"
-description = "Crawls a repo, picks the files that matter, and writes a multi-chapter tutorial."
+description = "Crawls a repo, picks the files that matter, and writes a multi-chapter tour."
 requires-python = ">=3.10"
 dependencies = [
     "pocketflow>=0.0.3,<0.1",
