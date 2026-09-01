@@ -26,8 +26,8 @@ from crack.core import (
     cost_for, ensure_priced, fill, get_usage, list_files, max_output_tokens,
     read_prompt, reset_usage, resolve_provider_and_model, safe_read,
 )
-from workflow.flow import create_tour_flow
-from workflow.nodes import (
+from crack.analyses.tour.flow import create_tour_flow
+from crack.analyses.tour.nodes import (
     CODEBASE_BUDGET,
     INSTRUCTIONS_DIR,
     PROMPTS_DIR,

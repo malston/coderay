@@ -1,8 +1,8 @@
 import pytest
 
 import crack.core.llm as llm_module
-import workflow.nodes as nodes_module
-from workflow.nodes import Analyze, ExtractGraph, PipelineState, Relate, SmartCrawl
+import crack.analyses.tour.nodes as nodes_module
+from crack.analyses.tour.nodes import Analyze, ExtractGraph, PipelineState, Relate, SmartCrawl
 
 
 def test_pipeline_state_documents_every_key_the_nodes_use():

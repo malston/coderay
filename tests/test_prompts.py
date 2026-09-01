@@ -3,7 +3,7 @@ import os
 
 from crack.core import fill
 
-PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "workflow", "prompts")
+PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "src", "crack", "analyses", "tour", "prompts")
 
 
 def test_every_prompt_wraps_untrusted_repo_content_in_a_boundary():

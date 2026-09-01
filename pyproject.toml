@@ -38,4 +38,4 @@ packages = [
 ]
 
 [tool.setuptools.package-data]
-workflow = ["prompts/*.md", "instructions/*.md"]
+"crack.analyses.tour" = ["prompts/*.md", "instructions/*.md"]

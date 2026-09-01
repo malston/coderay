@@ -6,17 +6,17 @@ Five steps from the book chapter (plus a deterministic graph-extraction step):
   2. Analyze       extract 5-10 core abstractions as YAML
   3. Relate        map abstractions to each other as YAML edges
   4. WriteChapters one chapter per abstraction, with SEQUENTIAL CONTEXT
-  5. (rendering happens in workflow/__main__.py)
+  5. (rendering happens in crack/analyses/tour/render.py)
 
 Notes on reliability:
-  - SmartCrawl, Analyze, and Relate parse a ```yaml reply through coderay_utils.yaml_call,
+  - SmartCrawl, Analyze, and Relate parse a ```yaml reply through crack.core.yaml_call,
     which already retries (with a varied prompt tail) on bad output, so their
     Node max_retries stays at 1 -- a second retry layer on top would multiply
     LLM calls for a genuinely bad reply without adding anything.
   - WriteChapters doesn't parse structured output, so it keeps Node(max_retries=3,
     wait=2) as its only retry layer, for transient call_llm failures.
   - File reads in the main path raise. The only swallowed errors are per file decode
-    errors inside coderay_utils.safe_read(), which is correct: we don't want one binary blob
+    errors inside crack.core.safe_read(), which is correct: we don't want one binary blob
     to kill a walk over 10,000 files.
 """
 import os
@@ -29,8 +29,8 @@ from pocketflow import Node, BatchNode
 from crack.core import call_llm, fill, list_files, read_prompt, safe_read, yaml_call
 from crack.analyses.tour.graph.languages import REGISTRY
 
-PROMPTS_DIR = resources.files("workflow") / "prompts"
-INSTRUCTIONS_DIR = resources.files("workflow") / "instructions"
+PROMPTS_DIR = resources.files("crack.analyses.tour") / "prompts"
+INSTRUCTIONS_DIR = resources.files("crack.analyses.tour") / "instructions"
 
 PREVIEW_CHARS_PER_FILE = 800
 CODEBASE_BUDGET = 1_000_000

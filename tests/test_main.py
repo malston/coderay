@@ -20,7 +20,7 @@ from workflow.__main__ import (
     write_index_html,
     write_index_md,
 )
-from workflow.nodes import slug
+from crack.analyses.tour.nodes import slug
 
 
 def test_version_flag_prints_installed_package_version():
@@ -103,7 +103,7 @@ def _chapters():
 
 
 def test_chapter_link_rewrite_matches_workflow_nodes_filename_convention(tmp_path):
-    # Regression for coderay-e06: workflow.nodes generates chapter filenames via
+    # Regression for coderay-e06: crack.analyses.tour.nodes generates chapter filenames via
     # slug(), and write_chapter_files's link-rewrite regex has to recognize
     # whatever alphabet slug() produces, or generated links silently 404.
     names = ["Getting Started!", "API & Auth", "C++ Bindings"]
