@@ -5,8 +5,12 @@ For each abstraction:
 - `name`: a clear name (use the same casing the code uses)
 - `description`: a beginner friendly explanation with a simple analogy (~50 words)
 - `files`: the repo-relative paths from the list below that this abstraction covers. Use only
-  paths from this exact list, copied verbatim:
-  {selected_files}
+  paths from this exact list, copied verbatim -- exclude the leading "- " marker, it is not
+  part of the path:
+
+```text
+{selected_files}
+```
 
 Also provide:
 
