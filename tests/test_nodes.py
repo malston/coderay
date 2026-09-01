@@ -317,6 +317,24 @@ def test_relate_tags_extracted_when_edge_matches_direction(monkeypatch):
     assert result == [{"from": "Foo", "to": "Bar", "label": "uses", "source": "EXTRACTED"}]
 
 
+def test_relate_ignores_non_import_edge_kind(monkeypatch):
+    # symbol_graph only ever holds "imports" edges today, but the check must
+    # not silently trust a future edge kind (e.g. "calls") as EXTRACTED evidence.
+    yaml_text = (
+        "```yaml\n"
+        "relationships:\n"
+        "  - from: Foo\n"
+        "    to: Bar\n"
+        "    label: uses\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    abstractions = [{"name": "Foo", "files": ["foo.py"]}, {"name": "Bar", "files": ["bar.py"]}]
+    symbol_graph = [{"from": "foo.py", "to": "bar.py", "kind": "calls"}]
+    result = Relate().exec(("prompt", abstractions, symbol_graph))
+    assert result == [{"from": "Foo", "to": "Bar", "label": "uses", "source": "INFERRED"}]
+
+
 def test_relate_does_not_tag_extracted_for_reverse_direction_edge(monkeypatch):
     # bar.py imports foo.py is evidence for "Bar uses Foo", not "Foo uses Bar" --
     # tagging this EXTRACTED would be a wrong tag (post-review fix).

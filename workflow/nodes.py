@@ -288,7 +288,7 @@ class Relate(Node):
                 from_files = files_by_name.get(r["from"])
                 to_files = files_by_name.get(r["to"])
                 extracted = bool(from_files and to_files and any(
-                    edge["from"] in from_files and edge["to"] in to_files
+                    edge["kind"] == "imports" and edge["from"] in from_files and edge["to"] in to_files
                     for edge in symbol_graph
                 ))
                 r["source"] = "EXTRACTED" if extracted else "INFERRED"
