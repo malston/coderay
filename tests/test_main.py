@@ -102,7 +102,7 @@ def _chapters():
     ]
 
 
-def test_chapter_link_rewrite_matches_workflow_nodes_filename_convention(tmp_path):
+def test_chapter_link_rewrite_matches_crack_nodes_filename_convention(tmp_path):
     # Regression for coderay-e06: crack.analyses.tour.nodes generates chapter filenames via
     # slug(), and write_chapter_files's link-rewrite regex has to recognize
     # whatever alphabet slug() produces, or generated links silently 404.

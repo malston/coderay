@@ -76,10 +76,10 @@ CI runs `pytest` on every push/PR via `.github/workflows/tests.yml`. To cut a re
 
 ## Architecture Overview
 
-A PocketFlow pipeline with four sequential nodes (`src/crack/analyses/tour/nodes.py`, wired in `src/crack/analyses/tour/flow.py`):
+A PocketFlow pipeline with five sequential nodes (`src/crack/analyses/tour/nodes.py`, wired in `src/crack/analyses/tour/flow.py`):
 
 ```text
-SmartCrawl -> Analyze -> Relate -> WriteChapters
+SmartCrawl -> ExtractGraph -> Analyze -> Relate -> WriteChapters
 ```
 
 - **SmartCrawl** walks the target repo (`src/crack/core/crawl.py`), builds a preview manifest, and asks the LLM which ~0.1-2% of files matter. Enforces `preview_budget` and `codebase_budget` so large repos can't blow the LLM's context window.

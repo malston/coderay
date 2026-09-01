@@ -7,6 +7,7 @@ from datetime import date
 from crack.core import ensure_priced, get_usage, reset_usage, resolve_provider_and_model
 from crack.core.runner import run_flow
 from crack.analyses.tour.flow import create_tour_flow
+from crack.analyses.tour.nodes import PipelineState
 from crack.analyses.tour.render import (
     available_lenses,
     build_mermaid,
@@ -29,7 +30,7 @@ def add_arguments(parser) -> None:
     parser.add_argument("--instructions", default="beginner-tutorial", choices=available_lenses())
     parser.add_argument("--dry-run", action="store_true")
 
-def init_shared(args) -> dict:
+def init_shared(args) -> PipelineState:
     return {"repo_path": args.repo_path, "instructions": args.instructions}
 
 def run(args) -> None:
