@@ -26,7 +26,7 @@ from typing import TypedDict
 
 from pocketflow import Node, BatchNode
 
-from coderay_utils import call_llm, fill, list_files, read_prompt, safe_read, yaml_call
+from crack.core import call_llm, fill, list_files, read_prompt, safe_read, yaml_call
 from workflow.graph.languages import REGISTRY
 
 PROMPTS_DIR = resources.files("workflow") / "prompts"

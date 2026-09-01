@@ -1,6 +1,6 @@
 import pytest
 
-from coderay_utils.llm import parse_yaml
+from crack.core.llm import parse_yaml
 
 
 def test_parse_yaml_raises_value_error_on_missing_fence():

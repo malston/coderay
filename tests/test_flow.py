@@ -1,4 +1,4 @@
-import coderay_utils.llm as llm_module
+import crack.core.llm as llm_module
 import workflow.nodes as nodes_module
 from workflow.flow import create_tour_flow
 

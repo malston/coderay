@@ -22,7 +22,7 @@ from importlib.metadata import version
 
 from markdown_it import MarkdownIt
 
-from coderay_utils import (
+from crack.core import (
     cost_for, ensure_priced, fill, get_usage, list_files, max_output_tokens,
     read_prompt, reset_usage, resolve_provider_and_model, safe_read,
 )

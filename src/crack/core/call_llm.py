@@ -9,13 +9,13 @@ Override the auto pick with LLM_PROVIDER=anthropic|openai|gemini.
 Override the model with ANTHROPIC_MODEL / OPENAI_MODEL / GEMINI_MODEL.
 
 Caching:
-  Responses are cached on disk under ~/.cache/coderay/ (or $XDG_CACHE_HOME/coderay
+  Responses are cached on disk under ~/.cache/crack/ (or $XDG_CACHE_HOME/crack
   if set) keyed by sha256 of (provider + model + prompt). The cache survives
   across runs so iterating on downstream code (UI, post processing, README
   copy) costs nothing.
 
   Disable with LLM_CACHE=0.
-  Clear with: rm -rf ~/.cache/coderay
+  Clear with: rm -rf ~/.cache/crack
 
 Usage tracking:
   Every call_llm() call appends a token-usage record (reset_usage() to clear
@@ -23,7 +23,7 @@ Usage tracking:
   provider/model call_llm() would use without making a call.
 
 Smoke test:
-  python -m coderay_utils.call_llm
+  python -m crack.core.call_llm
 """
 import hashlib
 import json
@@ -31,7 +31,7 @@ import os
 import tempfile
 import time
 
-CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "coderay")
+CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "crack")
 
 # A prompt may embed this literal marker to split a stable, cacheable prefix
 # (identical across calls, e.g. a repeated codebase block) from a volatile
