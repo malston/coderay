@@ -1,32 +1,16 @@
-"""CLI for Chapter 3's Codebase Knowledge Builder.
-
-Usage:
-    python -m workflow.main path/to/repo
-    python -m workflow.main path/to/repo --out ../output/vscode-tour
-    python -m workflow.main path/to/repo --instructions architecture-review
-
-The --instructions flag swaps the lens (§3.4):
-    beginner-tutorial   (default)
-    architecture-review
-    security-audit
-    onboarding-guide
-"""
-import argparse
+"""Rendering, cost estimation, and session-summary formatting for the tour analysis."""
 import html
 import json
 import os
 import re
-import time
 from datetime import date
-from importlib.metadata import version
 
 from markdown_it import MarkdownIt
 
 from crack.core import (
-    cost_for, ensure_priced, fill, get_usage, list_files, max_output_tokens,
-    read_prompt, reset_usage, resolve_provider_and_model, safe_read,
+    cost_for, fill, list_files, max_output_tokens,
+    read_prompt, safe_read,
 )
-from crack.analyses.tour.flow import create_tour_flow
 from crack.analyses.tour.nodes import (
     CODEBASE_BUDGET,
     INSTRUCTIONS_DIR,
@@ -198,7 +182,7 @@ def build_related_links(chapter_name, relationships, filenames):
     """Related-chapter links for one chapter, both directions of the Relationship graph.
 
     Relate validates every edge has a from/to/label string before it reaches shared
-    state (workflow/nodes.py), but an edge naming an abstraction dropped from
+    state (crack/analyses/tour/nodes.py), but an edge naming an abstraction dropped from
     `filenames` by a codebase-budget cut is still possible, so that case is skipped
     rather than raised.
     """
@@ -421,67 +405,9 @@ def dump_run_state(shared: PipelineState, out):
 def default_output_dir(repo_path, instructions):
     """Keyed on both repo name and lens, so re-running with a different
     --instructions writes to a separate directory instead of colliding with
-    (and leaving orphaned chapter files from) a prior run's output."""
+    (and leaving orphaned chapter files from) a prior run's output. Anchored
+    on the current working directory, not this file's location, so it lands
+    in the same place whether crack is run from an editable checkout or
+    installed as a tool."""
     name = os.path.basename(os.path.abspath(repo_path))
-    return os.path.join(os.path.dirname(__file__), "..", "output", f"{name}-{instructions}-tour")
-
-
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--version", action="version", version=f"coderay {version('coderay')}")
-    ap.add_argument("repo_path")
-    ap.add_argument("--out", default=None)
-    ap.add_argument("--instructions", default="beginner-tutorial", choices=available_lenses())
-    ap.add_argument("--dry-run", action="store_true")
-    args = ap.parse_args()
-
-    if not os.path.isdir(args.repo_path):
-        ap.error(f"{args.repo_path} is not a directory")
-
-    if args.dry_run:
-        try:
-            provider, model = resolve_provider_and_model()
-        except RuntimeError:
-            provider, model = "anthropic", "claude-sonnet-5"
-        print(format_dry_run_summary(estimate_dry_run_cost(args.repo_path, args.instructions, provider, model)))
-        return
-
-    provider, model = resolve_provider_and_model()
-    ensure_priced(provider, model)
-
-    name = os.path.basename(os.path.abspath(args.repo_path))
-    out = args.out or default_output_dir(args.repo_path, args.instructions)
-    os.makedirs(out, exist_ok=True)
-
-    reset_usage()
-    wall_start = time.perf_counter()
-
-    shared: PipelineState = {"repo_path": args.repo_path, "instructions": args.instructions}
-    try:
-        create_tour_flow().run(shared)
-    except Exception:
-        state_path = dump_run_state(shared, out)
-        print(f"\nPipeline failed. Wrote partial run state to {state_path}")
-        raise
-
-    wall_seconds = time.perf_counter() - wall_start
-
-    chapters = shared["chapters"]
-    mermaid = build_mermaid(shared["abstractions"], shared["relationships"])
-
-    generated_at = date.today().isoformat()
-    write_chapter_files(chapters, name, out, shared["relationships"], generated_at)
-    write_index_md(chapters, name, args.instructions, shared["summary"], mermaid, out, generated_at)
-    write_index_html(
-        chapters, name, args.instructions, shared["summary"], mermaid,
-        shared["selected_files"], shared["selection_reasoning"], out, generated_at,
-    )
-
-    print(f"\nWrote tour to {out}/")
-    print(f"  Open {out}/index.html in a browser")
-    print()
-    print(format_session_summary(get_usage(), wall_seconds))
-
-
-if __name__ == "__main__":
-    main()
+    return os.path.join(os.getcwd(), "output", f"{name}-{instructions}-tour")

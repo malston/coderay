@@ -4,7 +4,7 @@ import subprocess
 import sys
 from importlib.metadata import version
 
-from workflow.__main__ import (
+from crack.analyses.tour.render import (
     MERMAID_SCRIPT,
     available_lenses,
     build_mermaid,
@@ -25,10 +25,10 @@ from crack.analyses.tour.nodes import slug
 
 def test_version_flag_prints_installed_package_version():
     result = subprocess.run(
-        [sys.executable, "-m", "workflow", "--version"],
+        [sys.executable, "-m", "crack.cli", "--version"],
         capture_output=True, text=True, check=True,
     )
-    assert result.stdout.strip() == f"coderay {version('coderay')}"
+    assert result.stdout.strip() == f"crack {version('crack')}"
 
 
 def test_default_output_dir_is_keyed_on_lens():
@@ -396,7 +396,7 @@ def test_dry_run_flag_estimates_without_creating_the_output_directory(tmp_path, 
         env.pop(var, None)
 
     result = subprocess.run(
-        [sys.executable, "-m", "workflow", str(repo), "--dry-run", "--out", str(out_dir)],
+        [sys.executable, "-m", "crack.cli", "tour", str(repo), "--dry-run", "--out", str(out_dir)],
         capture_output=True, text=True, env=env, check=True,
     )
 
@@ -416,7 +416,7 @@ def test_dry_run_flag_works_with_no_llm_key_configured(tmp_path):
         env.pop(var, None)
 
     result = subprocess.run(
-        [sys.executable, "-m", "workflow", str(repo), "--dry-run"],
+        [sys.executable, "-m", "crack.cli", "tour", str(repo), "--dry-run"],
         capture_output=True, text=True, env=env,
     )
 

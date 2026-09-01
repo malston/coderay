@@ -39,8 +39,8 @@ CHAPTER_CONTEXT_WINDOW = 3
 
 class PipelineState(TypedDict, total=False):
     """The dict threaded through create_tour_flow()'s nodes (SmartCrawl >>
-    ExtractGraph >> Analyze >> Relate >> WriteChapters), and read afterward by workflow.__main__'s
-    renderers. Not validated at runtime -- documents the contract each node's
+    ExtractGraph >> Analyze >> Relate >> WriteChapters), and read afterward by
+    crack.analyses.tour.render's renderers. Not validated at runtime -- documents the contract each node's
     untyped `shared[...]` subscripts rely on. Every key past instructions is
     optional at the type level since it's only present once the node that
     writes it has run.
@@ -56,7 +56,7 @@ class PipelineState(TypedDict, total=False):
       chapter_context_window   int   WriteChapters.prep: # of prior chapters kept as context
 
     Written by SmartCrawl.post; read by Analyze/Relate/WriteChapters.prep and
-    workflow.__main__'s renderers:
+    crack.analyses.tour.render's renderers:
       codebase                 str
       selected_files           list[str]
       selection_reasoning      str
@@ -65,15 +65,15 @@ class PipelineState(TypedDict, total=False):
       symbol_graph            list[dict]
 
     Written by Analyze.post; read by Relate/WriteChapters.prep and
-    workflow.__main__'s renderers:
+    crack.analyses.tour.render's renderers:
       summary                  str
       abstractions             list[dict]  # each with "files": list[str]
       order                    list[str]
 
-    Written by Relate.post; read by workflow.__main__.build_mermaid:
+    Written by Relate.post; read by crack.analyses.tour.render.build_mermaid:
       relationships            list[dict]  # each with "source": "EXTRACTED" | "INFERRED"
 
-    Written by WriteChapters.post; read by workflow.__main__'s renderers:
+    Written by WriteChapters.post; read by crack.analyses.tour.render's renderers:
       chapters                 list[dict]
       filenames                dict[str, str]
     """

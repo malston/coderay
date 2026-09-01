@@ -370,7 +370,7 @@ def test_relate_tags_inferred_when_no_matching_edge(monkeypatch):
 
 def test_relate_tags_inferred_when_relationship_names_unknown_abstraction(monkeypatch):
     # "Baz" isn't in abstractions -- build_mermaid already drops this edge downstream
-    # (workflow/__main__.py:68); the rollup has no file set to check, so INFERRED,
+    # (crack/analyses/tour/render.py:68); the rollup has no file set to check, so INFERRED,
     # not an assertion (post-review fix).
     yaml_text = (
         "```yaml\n"
