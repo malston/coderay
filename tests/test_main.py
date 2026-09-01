@@ -204,7 +204,7 @@ def test_write_index_html_includes_mermaid_legend(tmp_path):
         generated_at="2026-08-31",
     )
     out = (tmp_path / "index.html").read_text(encoding="utf-8")
-    assert "dashed arrows are the model's judgment" in out
+    assert "dashed arrows are the model&#x27;s judgment" in out
 
 
 def test_write_index_html_escapes_summary_and_lists_files(tmp_path):

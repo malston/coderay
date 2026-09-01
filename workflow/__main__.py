@@ -284,7 +284,7 @@ def write_index_html(chapters, repo_name, lens, summary, mermaid, selected_files
         n_files=len(selected_files),
         summary=html.escape(summary.strip().replace("\n", " ")),
         mermaid=mermaid,
-        mermaid_legend=MERMAID_LEGEND,
+        mermaid_legend=html.escape(MERMAID_LEGEND),
         chapter_list_html=chapter_list_html,
         files_list_html=files_list_html,
         reasoning_html=md_to_html(selection_reasoning),
