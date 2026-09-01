@@ -32,7 +32,7 @@ def test_extract_graph_builds_edges_for_known_extensions(tmp_path):
     assert shared["symbol_graph"] == [{"from": "main.py", "to": "pkg/helper.py", "kind": "imports"}]
 
 
-def test_extract_graph_skips_file_whose_extractor_raises(tmp_path, monkeypatch):
+def test_extract_graph_skips_file_whose_extractor_raises(tmp_path, monkeypatch, capsys):
     (tmp_path / "broken.py").write_text("this won't actually parse but that's fine\n")
     (tmp_path / "main.py").write_text("from pkg.helper import go\n")
     (tmp_path / "pkg").mkdir()
@@ -59,6 +59,7 @@ def test_extract_graph_skips_file_whose_extractor_raises(tmp_path, monkeypatch):
     assert shared["symbol_graph"] == [{"from": "main.py", "to": "pkg/helper.py", "kind": "imports"}]
     _, covered = exec_res
     assert covered == 2, "broken.py's parse failure must not count toward coverage"
+    assert "Skipping broken.py for import graph: simulated parse failure" in capsys.readouterr().out
 
 
 def test_extract_graph_skips_files_with_no_registered_extractor(tmp_path):
