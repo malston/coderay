@@ -1,4 +1,5 @@
 import coderay_utils.llm as llm_module
+import workflow.nodes as nodes_module
 from workflow.flow import create_tour_flow
 
 
@@ -37,7 +38,9 @@ def test_full_pipeline_tags_relationships(tmp_path, monkeypatch):
         "# Chapter 1: Helper\ncontent",
         "# Chapter 2: Main\ncontent",
     ])
-    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: next(responses))
+    fake_call_llm = lambda prompt: next(responses)
+    monkeypatch.setattr(llm_module, "call_llm", fake_call_llm)
+    monkeypatch.setattr(nodes_module, "call_llm", fake_call_llm)
 
     shared = {"repo_path": str(tmp_path), "instructions": "beginner-tutorial"}
     create_tour_flow().run(shared)
