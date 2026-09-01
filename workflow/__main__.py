@@ -66,7 +66,10 @@ def build_mermaid(abstractions, relationships):
         lines.append(f'    A{i}["{mermaid_label(a["name"])}"]')
     for r in relationships:
         if r["from"] in ids and r["to"] in ids:
-            lines.append(f'    {ids[r["from"]]} -- "{mermaid_label(r["label"][:30])}" --> {ids[r["to"]]}')
+            label = mermaid_label(r["label"][:30])
+            arrow = "--" if r.get("source") == "EXTRACTED" else "-."
+            head = "-->" if r.get("source") == "EXTRACTED" else ".->"
+            lines.append(f'    {ids[r["from"]]} {arrow} "{label}" {head} {ids[r["to"]]}')
     return "\n".join(lines)
 
 
