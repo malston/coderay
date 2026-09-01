@@ -197,12 +197,12 @@ class ExtractGraph(Node):
             text = safe_read(os.path.join(root, rel_path))
             if text is None:
                 continue
-            covered += 1
             try:
                 targets = extractor.imports(rel_path, text, selected_set)
             except Exception as e:
                 print(f"  Skipping {rel_path} for import graph: {e}")
                 continue
+            covered += 1
             for target in targets:
                 edges.append({"from": rel_path, "to": target, "kind": "imports"})
         return edges, covered
@@ -241,7 +241,8 @@ class Analyze(Node):
             assert sorted(names) == sorted(order), \
                 f"abstractions and learning_order disagree: {set(names) ^ set(order)}"
             for a in abstractions:
-                files = a.get("files", [])
+                assert "files" in a, f"{a['name']!r} is missing required field 'files'"
+                files = a["files"]
                 assert isinstance(files, list) and all(isinstance(f, str) for f in files), \
                     f"{a['name']!r} files must be a list of strings: {files!r}"
                 bad = [f for f in files if f not in selected_files]

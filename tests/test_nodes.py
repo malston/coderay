@@ -57,6 +57,8 @@ def test_extract_graph_skips_file_whose_extractor_raises(tmp_path, monkeypatch):
     exec_res = ExtractGraph().exec(prep_res)  # must not raise
     ExtractGraph().post(shared, prep_res, exec_res)
     assert shared["symbol_graph"] == [{"from": "main.py", "to": "pkg/helper.py", "kind": "imports"}]
+    _, covered = exec_res
+    assert covered == 2, "broken.py's parse failure must not count toward coverage"
 
 
 def test_extract_graph_skips_files_with_no_registered_extractor(tmp_path):
@@ -160,6 +162,22 @@ def test_analyze_rejects_non_list_files(monkeypatch):
     )
     monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
     with pytest.raises(AssertionError, match="must be a list of strings"):
+        Analyze().exec(("prompt", set()))
+
+
+def test_analyze_rejects_missing_files_key(monkeypatch):
+    yaml_text = (
+        "```yaml\n"
+        "summary: a codebase\n"
+        "abstractions:\n"
+        "  - name: Foo\n"
+        "    description: a\n"
+        "learning_order:\n"
+        "  - Foo\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    with pytest.raises(AssertionError, match="missing required field 'files'"):
         Analyze().exec(("prompt", set()))
 
 
