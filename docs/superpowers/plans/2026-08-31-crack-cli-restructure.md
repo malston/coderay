@@ -61,7 +61,7 @@ src/crack/
 tests/                                   # existing tests, import paths updated
 ```
 
-`coderay_utils/`, `workflow/`, and the top-level `utils/` all go away by the end of Task 6. (`utils/` does not currently exist in this worktree — confirmed empty and already removed — so Task 6 has nothing to delete there; the spec's mention of it is stale.)
+`coderay_utils/` goes away in Task 2, `workflow/` in Task 5 (its last file, `workflow/__main__.py`, is what that task splits apart — `workflow/__init__.py` goes with it, since an empty directory has no reason to survive), and the top-level `utils/` doesn't need removing at all (confirmed empty and already gone from this worktree — the spec's mention of it is stale). Task 6 is verification that all three are actually gone, not the task that removes them.
 
 ---
 
@@ -478,6 +478,9 @@ git commit -m "Move import-graph extractors to crack.analyses.tour.graph"
 - Modify: `src/crack/analyses/tour/flow.py` (import line only)
 - Modify: `workflow/__main__.py` (import lines only)
 - Modify: `tests/test_nodes.py`, `tests/test_flow.py` (import paths only)
+- Modify: `tests/test_main.py` line 23 — `from workflow.nodes import slug` must become `from crack.analyses.tour.nodes import slug` in this task, not Task 5. This line is separate from the `from workflow.__main__ import (...)` block Task 5 handles; `workflow/nodes.py` stops existing once this task moves it, so leaving this line untouched would break `tests/test_main.py` collection between this task and Task 5.
+- Modify: `tests/test_main.py` line 106 (comment only) — the regression-test comment says `workflow.nodes generates chapter filenames via slug()`; update the module reference to `crack.analyses.tour.nodes` so the comment doesn't describe a path that no longer exists. Leave the `coderay-e06` bead-ID reference alone — that's a historical identifier, not a path.
+- Modify: `src/crack/core/llm.py` line 14 (docstring only) — `read_prompt`'s docstring says `` `workflow/prompts/` stays the source of truth for every prompt.`` Update to `` `crack/analyses/tour/prompts/` stays the source of truth for every prompt.`` since this task is what moves that directory.
 
 **Interfaces:**
 
@@ -628,6 +631,39 @@ import crack.analyses.tour.nodes as nodes_module
 from crack.analyses.tour.flow import create_tour_flow
 ```
 
+`tests/test_main.py` line 23 (this line is separate from the `from workflow.__main__ import (...)` block that Task 5 updates — fix it here, since `workflow/nodes.py` stops existing once this task moves it):
+
+```python
+# before
+from workflow.nodes import slug
+# after
+from crack.analyses.tour.nodes import slug
+```
+
+`tests/test_main.py` line 106 (comment only, in `test_chapter_link_rewrite_matches_workflow_nodes_filename_convention`):
+
+```python
+# before
+    # Regression for coderay-e06: workflow.nodes generates chapter filenames via
+    # slug(), and write_chapter_files's link-rewrite regex has to recognize
+# after
+    # Regression for coderay-e06: crack.analyses.tour.nodes generates chapter filenames via
+    # slug(), and write_chapter_files's link-rewrite regex has to recognize
+```
+
+`src/crack/core/llm.py` line 14 (docstring only, in `read_prompt`):
+
+```python
+# before
+    """Read a prompt file from a directory (an importlib.resources Traversable
+    or a pathlib.Path). `workflow/prompts/` stays the source of truth for every
+    prompt."""
+# after
+    """Read a prompt file from a directory (an importlib.resources Traversable
+    or a pathlib.Path). `crack/analyses/tour/prompts/` stays the source of truth
+    for every prompt."""
+```
+
 - [ ] **Step 6: Update `pyproject.toml` package-data and packages**
 
 ```toml
@@ -670,6 +706,8 @@ git commit -m "Move pipeline nodes, flow, prompts, and instructions to crack.ana
 - Modify: `src/crack/analyses/tour/__init__.py` (was an empty placeholder from Task 1)
 - Modify: `src/crack/analyses/__init__.py` (was an empty placeholder from Task 1)
 - Modify: `tests/test_main.py` (imports + the `--version` subprocess test)
+- Modify: `src/crack/analyses/tour/nodes.py` (docstring text only — five `PipelineState` field docstrings name `workflow.__main__` as the reader of `selected_files`/`abstractions`/`order`/`relationships`/`chapters`; since this task is what replaces `workflow/__main__.py` with `render.py`, update each to say `crack.analyses.tour.render` instead. Flagged as a Minor finding by Task 4's reviewer — fixing it here since this task is what makes the old reference stale.)
+- Modify: `tests/test_nodes.py` line 373 (comment only) — `# (workflow/__main__.py:68); the rollup has no file set to check` names a line number in the file this task deletes; update the reference to `crack/analyses/tour/render.py` (the line number is approximate in the original comment already — keep it approximate, don't chase an exact new line number).
 - Delete: `workflow/__main__.py`
 
 **Interfaces:**
