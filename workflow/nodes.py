@@ -39,7 +39,7 @@ CHAPTER_CONTEXT_WINDOW = 3
 
 class PipelineState(TypedDict, total=False):
     """The dict threaded through create_tour_flow()'s nodes (SmartCrawl >>
-    Analyze >> Relate >> WriteChapters), and read afterward by workflow.__main__'s
+    ExtractGraph >> Analyze >> Relate >> WriteChapters), and read afterward by workflow.__main__'s
     renderers. Not validated at runtime -- documents the contract each node's
     untyped `shared[...]` subscripts rely on. Every key past instructions is
     optional at the type level since it's only present once the node that
