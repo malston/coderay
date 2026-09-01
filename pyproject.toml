@@ -30,7 +30,11 @@ dev = ["pytest>=9.1.1,<10"]
 coderay = "workflow.__main__:main"
 
 [tool.setuptools]
-packages = ["workflow", "coderay_utils", "workflow.graph", "workflow.graph.languages"]
+package-dir = {"" = "src", "workflow" = "workflow", "coderay_utils" = "coderay_utils"}
+packages = [
+    "workflow", "coderay_utils", "workflow.graph", "workflow.graph.languages",
+    "crack", "crack.core", "crack.analyses", "crack.analyses.tour",
+]
 
 [tool.setuptools.package-data]
 workflow = ["prompts/*.md", "instructions/*.md"]
