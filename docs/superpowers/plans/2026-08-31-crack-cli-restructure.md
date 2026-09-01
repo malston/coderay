@@ -1149,6 +1149,8 @@ git commit -m "Remove stray workflow/coderay_utils references"
 - Modify: `CLAUDE.md`
 - Modify: `AGENTS.md`
 - Modify: `Makefile`
+- Modify: `CONTEXT.md` — line 16 names `workflow/instructions/` as where lens files live.
+- Modify: `skill/CODEBASE-TOUR.md` — five relative markdown links point at `../workflow/prompts/*.md` and `../workflow/instructions/*.md` (now broken, those files moved), plus one `python -m workflow ...` invocation example.
 
 **Interfaces:** none — documentation only, no code interfaces.
 
@@ -1214,7 +1216,88 @@ Line 95: ``a bespoke `parse_yaml`/`.format()` combo in `workflow/nodes.py`... Re
 
 - [ ] **Step 4: Update `AGENTS.md`** — mirror any of the same coderay/workflow path references found in `CLAUDE.md` Step 3 that also appear in `AGENTS.md` (both files are kept in sync per the project's own convention noted at the bottom of `CLAUDE.md`). Re-run the grep from Task 6 Step 1 scoped to `AGENTS.md` to confirm parity after editing.
 
-- [ ] **Step 5: Update `Makefile`**
+- [ ] **Step 5: Update `CONTEXT.md`** line 16:
+
+```markdown
+# before
+
+One of `beginner-tutorial`, `architecture-review`, `security-audit`, `onboarding-guide` — a file in `workflow/instructions/`, selected with `--instructions`.
+
+# after
+
+One of `beginner-tutorial`, `architecture-review`, `security-audit`, `onboarding-guide` — a file in `src/crack/analyses/tour/instructions/`, selected with `--instructions`.
+```
+
+- [ ] **Step 6: Update `skill/CODEBASE-TOUR.md`** — five relative links and one invocation example:
+
+```markdown
+# before
+
+2. Apply the four file selection rules from [`../workflow/prompts/select-files.md`](../workflow/prompts/select-files.md):
+
+# after
+
+2. Apply the four file selection rules from [`../src/crack/analyses/tour/prompts/select-files.md`](../src/crack/analyses/tour/prompts/select-files.md):
+```
+
+```markdown
+# before
+
+Read the selected files. Output 5 to 10 abstractions following [`../workflow/prompts/identify-abstractions.md`](../workflow/prompts/identify-abstractions.md). Each one: name, ~50 word analogy. Plus a project summary and a learning order.
+
+# after
+
+Read the selected files. Output 5 to 10 abstractions following [`../src/crack/analyses/tour/prompts/identify-abstractions.md`](../src/crack/analyses/tour/prompts/identify-abstractions.md). Each one: name, ~50 word analogy. Plus a project summary and a learning order.
+```
+
+```markdown
+# before
+
+For each pair that interacts, write one edge: `<A> <verb> <B>`. Use [`../workflow/prompts/analyze-relationships.md`](../workflow/prompts/analyze-relationships.md).
+
+# after
+
+For each pair that interacts, write one edge: `<A> <verb> <B>`. Use [`../src/crack/analyses/tour/prompts/analyze-relationships.md`](../src/crack/analyses/tour/prompts/analyze-relationships.md).
+```
+
+```markdown
+# before
+
+Write one chapter per abstraction, in learning order. **Pass every previous chapter as context to the next one** so the tour reads as a narrative. Each chapter follows the rules in [`../workflow/prompts/write-chapter.md`](../workflow/prompts/write-chapter.md) and the lens you chose from [`../workflow/instructions/`](../workflow/instructions/).
+
+# after
+
+Write one chapter per abstraction, in learning order. **Pass every previous chapter as context to the next one** so the tour reads as a narrative. Each chapter follows the rules in [`../src/crack/analyses/tour/prompts/write-chapter.md`](../src/crack/analyses/tour/prompts/write-chapter.md) and the lens you chose from [`../src/crack/analyses/tour/instructions/`](../src/crack/analyses/tour/instructions/).
+```
+
+```markdown
+# before
+
+| [`beginner-tutorial.md`](../workflow/instructions/beginner-tutorial.md) | New developer onboarding |
+| [`architecture-review.md`](../workflow/instructions/architecture-review.md) | Tech lead evaluating technical debt |
+| [`security-audit.md`](../workflow/instructions/security-audit.md) | Security team during an audit |
+| [`onboarding-guide.md`](../workflow/instructions/onboarding-guide.md) | Engineering manager writing the first week guide |
+
+# after
+
+| [`beginner-tutorial.md`](../src/crack/analyses/tour/instructions/beginner-tutorial.md) | New developer onboarding |
+| [`architecture-review.md`](../src/crack/analyses/tour/instructions/architecture-review.md) | Tech lead evaluating technical debt |
+| [`security-audit.md`](../src/crack/analyses/tour/instructions/security-audit.md) | Security team during an audit |
+| [`onboarding-guide.md`](../src/crack/analyses/tour/instructions/onboarding-guide.md) | Engineering manager writing the first week guide |
+```
+
+```bash
+# before
+pip install -e .
+python -m workflow path/to/repo --instructions beginner-tutorial
+# after
+pip install -e .
+crack tour path/to/repo --instructions beginner-tutorial
+```
+
+(The prose "run the deterministic workflow" a few lines above that code block is generic English, not the package name — leave it as-is, only the code block's invocation changes.)
+
+- [ ] **Step 7: Update `Makefile`**
 
 ```makefile
 # before
@@ -1231,18 +1314,18 @@ uninstall: ## Uninstall the crack CLI
 	uv tool uninstall crack
 ```
 
-- [ ] **Step 6: Grep the whole repo (excluding `.git`, `.beads`, `docs/superpowers`, and this plan itself) for stray `coderay`/`workflow` mentions that should have been caught above**
+- [ ] **Step 8: Grep the whole repo (excluding `.git`, `.beads`, `docs/superpowers`, and this plan itself) for stray `coderay`/`workflow` mentions that should have been caught above**
 
-Run: `grep -rln "python -m workflow\|coderay_utils\|workflow/nodes\|workflow/__main__\|workflow/prompts\|workflow/instructions" --include="*.md" --include="Makefile" . | grep -v '.git/\|.beads/\|docs/superpowers/'`
+Run: `grep -rln "python -m workflow\|coderay_utils\|workflow/nodes\|workflow/__main__\|workflow/prompts\|workflow/instructions\|workflow/graph" --include="*.md" --include="Makefile" . | grep -v '.git/\|.beads/\|docs/superpowers/'`
 
 Expected: empty, or only files intentionally out of scope (e.g. `.full-review/*.md`, which documents a past review and is a historical record, not live documentation — leave it untouched).
 
 Already verified during planning: `.github/workflows/tests.yml` and `release.yml` are name-agnostic (`uv sync --locked`, `pytest tests/ -q`, `uv build` — no hardcoded `coderay`/`workflow` string anywhere), so neither needs an edit.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add README.md CONTRIBUTING.md CLAUDE.md AGENTS.md Makefile
+git add README.md CONTRIBUTING.md CLAUDE.md AGENTS.md Makefile CONTEXT.md skill/CODEBASE-TOUR.md
 git commit -m "Update docs and Makefile for the crack CLI and src/crack/ layout"
 ```
 
