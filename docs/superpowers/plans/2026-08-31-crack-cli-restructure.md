@@ -17,6 +17,8 @@
 - **GitHub repo rename is deferred.** Do not rename the repo, and do not assume the new clone URL anywhere in code, docs, or CI. Confirmed with Mark 2026-08-31: hold off.
 - **PR + Copilot review loop**, same as PR #23 — this lands as a reviewed PR, not a direct merge to `main`. Confirmed with Mark 2026-08-31.
 - **Config/cache paths rename `coderay` → `crack`**: `~/.config/coderay/` → `~/.config/crack/`, `~/.cache/coderay/` → `~/.cache/crack/`. Confirmed with Mark 2026-08-31 — this is a deliberate exception to "no behavior change," scoped to Task 2 only. Any existing `~/.config/coderay/pricing.json` or `~/.cache/coderay/` on a dev machine is orphaned, not migrated (nothing in either directory is precious: pricing overrides are a cache and the LLM cache is disposable).
+- **`default_output_dir` anchors on the current working directory, not `__file__`.** Today it resolves `os.path.dirname(__file__) / ".." / "output"`, which works only because `__main__.py` sits one level below the repo root (`workflow/__main__.py`). After the move, `render.py` sits four levels down (`src/crack/analyses/tour/render.py`), so the same expression would resolve to a directory buried inside the package instead of the repo's `output/` — silently different behavior. This is a deliberate exception to "no behavior change," scoped to Task 5: anchor on `os.getcwd()` instead, matching every documented usage pattern (README/CONTRIBUTING examples all run `crack tour` from the repo root, so `os.getcwd()` reproduces today's `output/` location in normal use) and staying correct for an installed (non-editable) `crack` too, where `__file__` would point into site-packages.
+- **`tour.run()` raises `SystemExit` with the same message `ap.error()` used, not the same exit semantics.** Today `ap.error(...)` (argparse) exits with code 2 and prints the parser's usage line first. `run(args)` doesn't have the parser in scope, so it can't reproduce that; it exits with code 1 and no usage line. Confirmed with Mark 2026-08-31 as a sanctioned exception, scoped to Task 5 — not worth threading the parser through the analysis interface for one validation message.
 - **`core/runner.py` stays narrow**: `flow.run(shared)`, plus a generic failure-dump hook the caller supplies (spec's Decisions section) — it must not know about tour-specific `PipelineState` keys.
 - **`graph/` stays under `analyses/tour/`**, not `core/`, until a second analysis needs import-graph extraction (tracked separately as coderay-wy9; out of scope here).
 - **No `crack all`** this iteration (spec Non-goals).
@@ -367,6 +369,7 @@ Expected: all 141 tests pass (same count as Task 1 — no new tests added, this 
 - [ ] **Step 9: Commit**
 
 ```bash
+git status --porcelain -uall  # confirm only expected files changed before sweeping them in
 git add -A
 git commit -m "Move coderay_utils to crack.core; rename config/cache dirs to crack"
 ```
@@ -449,6 +452,7 @@ Expected: all 141 tests pass
 - [ ] **Step 6: Commit**
 
 ```bash
+git status --porcelain -uall  # confirm only expected files changed before sweeping them in
 git add -A
 git commit -m "Move import-graph extractors to crack.analyses.tour.graph"
 ```
@@ -640,6 +644,7 @@ Expected: all 141 tests pass
 - [ ] **Step 8: Commit**
 
 ```bash
+git status --porcelain -uall  # confirm only expected files changed before sweeping them in
 git add -A
 git commit -m "Move pipeline nodes, flow, prompts, and instructions to crack.analyses.tour"
 ```
@@ -664,7 +669,7 @@ git commit -m "Move pipeline nodes, flow, prompts, and instructions to crack.ana
 - Produces:
   - `crack.core.runner.run_flow(flow, shared, out_dir, dump_state) -> None` — runs `flow.run(shared)`; on any exception, calls `dump_state(shared, out_dir)`, prints `f"\nPipeline failed. Wrote partial run state to {state_path}"`, and re-raises. Generic across any future analysis: it takes the dump callback as a parameter instead of knowing `PipelineState`'s shape.
   - `crack.analyses.tour.render` module exposing every function `workflow/__main__.py` had except `main()`: `md_to_html`, `mermaid_label`, `build_mermaid`, `staleness_disclaimer`, `chapter_html_name`, `available_lenses`, `write_text`, `build_related_links`, `write_chapter_files`, `write_index_md`, `write_index_html`, `format_session_summary`, `estimate_dry_run_cost`, `format_dry_run_summary`, `dump_run_state`, `default_output_dir`, plus the module-level constants `MERMAID_LEGEND`, `SHARED_STYLE`, `MERMAID_SCRIPT`, `INDEX_HTML_TEMPLATE`, `CHAPTER_HTML_TEMPLATE`, `DRY_RUN_CHAPTER_GUESS`.
-  - `crack.analyses.tour`: `NAME = "tour"`, `build_flow() -> Flow`, `add_arguments(parser) -> None`, `init_shared(args, out_dir) -> PipelineState`, `run(args) -> None` — consumed by `cli.py` and by `crack.analyses.ANALYSES`.
+  - `crack.analyses.tour`: `NAME = "tour"`, `build_flow() -> Flow`, `add_arguments(parser) -> None`, `init_shared(args) -> dict`, `run(args) -> None` — consumed by `cli.py` and by `crack.analyses.ANALYSES`. (The spec's sketch showed `init_shared(args, out_dir)`; tour's own pipeline never reads `out_dir` from `shared` — every render function that needs it takes `out` as an explicit argument — so the unused parameter is dropped here rather than carried as speculative scaffolding. Add it back if a future analysis genuinely needs `out_dir` inside `shared`.)
   - `crack.analyses.ANALYSES = {"tour": crack.analyses.tour}` — consumed by `cli.py`.
   - `crack.cli.main() -> None` — the new console-script entry point.
 
@@ -700,7 +705,7 @@ from datetime import date
 from markdown_it import MarkdownIt
 
 from crack.core import (
-    cost_for, fill, get_usage, list_files, max_output_tokens,
+    cost_for, fill, list_files, max_output_tokens,
     read_prompt, safe_read,
 )
 from crack.analyses.tour.nodes import (
@@ -717,7 +722,7 @@ from crack.analyses.tour.nodes import (
 _MD = MarkdownIt("commonmark", {"html": False, "linkify": True, "breaks": False}).enable(["table", "strikethrough"])
 ```
 
-(`get_usage` was imported in `__main__.py`'s `main()` for the session summary — it moves here since `format_session_summary`'s caller, `run()`, lives in `analyses/tour/__init__.py` and calls `get_usage()` itself; keep the import in `render.py` too since nothing else needs it there — actually: `get_usage()` is called by `main()`, not by any `render.py` function. Drop it from this import block; it belongs in `tour/__init__.py`'s `run()` instead (Step 4 below).)
+`get_usage` is not imported here: no function in `render.py` calls it. It's called by `tour/__init__.py`'s `run()` (Step 4 below), which imports it directly from `crack.core`. `read_prompt` stays because `estimate_dry_run_cost` uses it.
 
 Then append, verbatim (only the docstring path comment inside `build_related_links` needs a path update):
 
@@ -779,7 +784,19 @@ def dump_run_state(shared: PipelineState, out):
     return path
 ```
 
-`default_output_dir` (originally lines 421-426) moves unchanged, except the relative-path anchor comment stays correct since `os.path.dirname(__file__)` is still resolved at runtime relative to wherever `render.py` ends up on disk — no code change needed, just confirm it still reads `os.path.join(os.path.dirname(__file__), "..", "output", ...)`.
+`default_output_dir` (originally lines 421-426) changes its anchor — see the Global Constraints note on why `__file__` can't be reused after the move:
+
+```python
+def default_output_dir(repo_path, instructions):
+    """Keyed on both repo name and lens, so re-running with a different
+    --instructions writes to a separate directory instead of colliding with
+    (and leaving orphaned chapter files from) a prior run's output. Anchored
+    on the current working directory, not this file's location, so it lands
+    in the same place whether crack is run from an editable checkout or
+    installed as a tool."""
+    name = os.path.basename(os.path.abspath(repo_path))
+    return os.path.join(os.getcwd(), "output", f"{name}-{instructions}-tour")
+```
 
 - [ ] **Step 3: Run this task's first checkpoint test**
 
@@ -794,7 +811,6 @@ graph, identifies abstractions, relates them, and writes a multi-chapter tour.""
 import os
 import time
 from datetime import date
-from importlib.metadata import version
 
 from crack.core import ensure_priced, get_usage, reset_usage, resolve_provider_and_model
 from crack.core.runner import run_flow
@@ -821,10 +837,13 @@ def add_arguments(parser) -> None:
     parser.add_argument("--instructions", default="beginner-tutorial", choices=available_lenses())
     parser.add_argument("--dry-run", action="store_true")
 
-def init_shared(args, out_dir) -> dict:
+def init_shared(args) -> dict:
     return {"repo_path": args.repo_path, "instructions": args.instructions}
 
 def run(args) -> None:
+    # Exit code 1, no usage line -- not the same as argparse's ap.error() (code 2,
+    # usage printed), a sanctioned exception (see Global Constraints): run(args)
+    # has no parser in scope, and threading one through isn't worth it for one check.
     if not os.path.isdir(args.repo_path):
         raise SystemExit(f"{args.repo_path} is not a directory")
 
@@ -846,7 +865,7 @@ def run(args) -> None:
     reset_usage()
     wall_start = time.perf_counter()
 
-    shared = init_shared(args, out)
+    shared = init_shared(args)
     run_flow(build_flow(), shared, out, dump_run_state)
 
     wall_seconds = time.perf_counter() - wall_start
@@ -991,6 +1010,7 @@ Every other test in `tests/test_main.py` (the `build_mermaid`, `write_index_html
 crack = "crack.cli:main"
 
 [tool.setuptools]
+package-dir = {"" = "src"}
 packages = [
     "crack", "crack.core", "crack.analyses", "crack.analyses.tour",
     "crack.analyses.tour.graph", "crack.analyses.tour.graph.languages",
@@ -1000,7 +1020,7 @@ packages = [
 "crack.analyses.tour" = ["prompts/*.md", "instructions/*.md"]
 ```
 
-(`package-dir` is removed entirely now — everything lives under `src/`, so plain `[tool.setuptools] packages = [...]` with the default `src` auto-detection no longer needs the explicit root mapping. Since `workflow`/`coderay_utils` are gone, drop the `package-dir` key.)
+**Keep `package-dir = {"" = "src"}`.** setuptools' src-layout auto-discovery only activates when `packages` is _not_ set explicitly. This plan lists `packages` explicitly (so `pyproject.toml` stays an accurate map of what actually ships, matching the file's style since Task 1), which means the `"" = "src"` root mapping must stay too — drop it and setuptools looks for `crack/` at the repo root and the build fails. What actually goes away here is the _dual_ mapping from Task 1-4 (`"workflow" = "workflow"`, `"coderay_utils" = "coderay_utils"`), since those packages no longer exist.
 
 - [ ] **Step 10: Run the full suite**
 
@@ -1018,6 +1038,7 @@ Expected: shows `tour` as the only subcommand
 - [ ] **Step 12: Commit**
 
 ```bash
+git status --porcelain -uall  # confirm only expected files changed before sweeping them in
 git add -A
 git commit -m "Split workflow/__main__.py into cli.py, core/runner.py, and analyses/tour/render.py"
 ```
@@ -1060,6 +1081,7 @@ Expected: all 141 tests pass
 - [ ] **Step 5: Commit** (only if Step 1 found and fixed something; otherwise skip — nothing to commit)
 
 ```bash
+git status --porcelain -uall  # confirm only expected files changed before sweeping them in
 git add -A
 git commit -m "Remove stray workflow/coderay_utils references"
 ```
@@ -1162,6 +1184,8 @@ uninstall: ## Uninstall the crack CLI
 Run: `grep -rln "python -m workflow\|coderay_utils\|workflow/nodes\|workflow/__main__\|workflow/prompts\|workflow/instructions" --include="*.md" --include="Makefile" . | grep -v '.git/\|.beads/\|docs/superpowers/'`
 
 Expected: empty, or only files intentionally out of scope (e.g. `.full-review/*.md`, which documents a past review and is a historical record, not live documentation — leave it untouched).
+
+Already verified during planning: `.github/workflows/tests.yml` and `release.yml` are name-agnostic (`uv sync --locked`, `pytest tests/ -q`, `uv build` — no hardcoded `coderay`/`workflow` string anywhere), so neither needs an edit.
 
 - [ ] **Step 7: Commit**
 
