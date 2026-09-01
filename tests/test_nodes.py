@@ -101,8 +101,10 @@ def test_analyze_rejects_duplicate_abstraction_names(monkeypatch):
         "abstractions:\n"
         "  - name: Foo\n"
         "    description: a\n"
+        "    files: []\n"
         "  - name: Foo\n"
         "    description: b\n"
+        "    files: []\n"
         "learning_order:\n"
         "  - Foo\n"
         "  - Foo\n"
@@ -110,7 +112,43 @@ def test_analyze_rejects_duplicate_abstraction_names(monkeypatch):
     )
     monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
     with pytest.raises(AssertionError, match="duplicate abstraction names"):
-        Analyze().exec("prompt")
+        Analyze().exec(("prompt", set()))
+
+
+def test_analyze_rejects_abstraction_file_outside_selected_files(monkeypatch):
+    yaml_text = (
+        "```yaml\n"
+        "summary: a codebase\n"
+        "abstractions:\n"
+        "  - name: Foo\n"
+        "    description: a\n"
+        "    files:\n"
+        "      - not_selected.py\n"
+        "learning_order:\n"
+        "  - Foo\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    with pytest.raises(AssertionError, match="not_selected.py"):
+        Analyze().exec(("prompt", {"foo.py"}))
+
+
+def test_analyze_accepts_abstraction_files_within_selected_files(monkeypatch):
+    yaml_text = (
+        "```yaml\n"
+        "summary: a codebase\n"
+        "abstractions:\n"
+        "  - name: Foo\n"
+        "    description: a\n"
+        "    files:\n"
+        "      - foo.py\n"
+        "learning_order:\n"
+        "  - Foo\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    result = Analyze().exec(("prompt", {"foo.py"}))
+    assert result["abstractions"][0]["files"] == ["foo.py"]
 
 
 def test_analyze_retry_sends_a_different_prompt_each_time(monkeypatch, tmp_path):
@@ -132,7 +170,7 @@ def test_analyze_retry_sends_a_different_prompt_each_time(monkeypatch, tmp_path)
 
     monkeypatch.setattr(llm_module, "call_llm", fake_call_llm)
     with pytest.raises(AssertionError):
-        Analyze().exec("some prompt")
+        Analyze().exec(("some prompt", set()))
     assert len(prompts_seen) > 1
     assert len(set(prompts_seen)) == len(prompts_seen), \
         "retries sent an identical prompt -- cache would serve the stale bad response"
@@ -145,15 +183,17 @@ def test_analyze_accepts_matching_names_and_order(monkeypatch):
         "abstractions:\n"
         "  - name: Foo\n"
         "    description: a\n"
+        "    files: []\n"
         "  - name: Bar\n"
         "    description: b\n"
+        "    files: []\n"
         "learning_order:\n"
         "  - Bar\n"
         "  - Foo\n"
         "```"
     )
     monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
-    result = Analyze().exec("prompt")
+    result = Analyze().exec(("prompt", {"Foo.py", "Bar.py"}))
     assert {a["name"] for a in result["abstractions"]} == {"Foo", "Bar"}
 
 

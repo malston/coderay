@@ -340,7 +340,10 @@ def estimate_dry_run_cost(repo_path, instructions, provider, model, chapter_gues
     select_prompt, _files, _root = SmartCrawl().prep({"repo_path": repo_path})
 
     codebase = _codebase_preview_text(repo_path, CODEBASE_BUDGET)
-    analyze_prompt = fill(read_prompt(PROMPTS_DIR, "identify-abstractions.md"), codebase=codebase)
+    analyze_prompt = fill(
+        read_prompt(PROMPTS_DIR, "identify-abstractions.md"),
+        codebase=codebase, selected_files="(estimated -- not yet known)",
+    )
     relate_prompt = fill(
         read_prompt(PROMPTS_DIR, "analyze-relationships.md"),
         abstractions="(estimated -- not yet known)", codebase=codebase,

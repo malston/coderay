@@ -67,7 +67,7 @@ class PipelineState(TypedDict, total=False):
     Written by Analyze.post; read by Relate/WriteChapters.prep and
     workflow.__main__'s renderers:
       summary                  str
-      abstractions             list[dict]
+      abstractions             list[dict]  # each with "files": list[str]
       order                    list[str]
 
     Written by Relate.post; read by workflow.__main__.build_mermaid:
@@ -220,15 +220,28 @@ class Analyze(Node):
         super().__init__(max_retries=1)
 
     def prep(self, shared: PipelineState):
-        return fill(read_prompt(PROMPTS_DIR, "identify-abstractions.md"), codebase=shared["codebase"])
+        selected = shared["selected_files"]
+        files_list = "\n".join(f"- {f}" for f in selected)
+        prompt = fill(
+            read_prompt(PROMPTS_DIR, "identify-abstractions.md"),
+            codebase=shared["codebase"], selected_files=files_list,
+        )
+        return prompt, set(selected)
 
-    def exec(self, prompt):
+    def exec(self, inputs):
+        prompt, selected_files = inputs
+
         def normalize(result):
             names = [a["name"] for a in result["abstractions"]]
             order = result["learning_order"]
             assert len(names) == len(set(names)), f"duplicate abstraction names: {names}"
             assert sorted(names) == sorted(order), \
                 f"abstractions and learning_order disagree: {set(names) ^ set(order)}"
+            for a in result["abstractions"]:
+                files = a.get("files", [])
+                assert isinstance(files, list), f"{a['name']!r} files must be a list: {files!r}"
+                bad = [f for f in files if f not in selected_files]
+                assert not bad, f"{a['name']!r} files not in selected_files: {bad}"
             return result
 
         return yaml_call(prompt, normalize)
