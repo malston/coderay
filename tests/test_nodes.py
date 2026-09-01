@@ -133,6 +133,36 @@ def test_analyze_rejects_abstraction_file_outside_selected_files(monkeypatch):
         Analyze().exec(("prompt", {"foo.py"}))
 
 
+def test_analyze_rejects_non_list_abstractions(monkeypatch):
+    yaml_text = (
+        "```yaml\n"
+        "summary: a codebase\n"
+        "abstractions: not_a_list\n"
+        "learning_order: []\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    with pytest.raises(AssertionError, match="must be a list"):
+        Analyze().exec(("prompt", set()))
+
+
+def test_analyze_rejects_non_list_files(monkeypatch):
+    yaml_text = (
+        "```yaml\n"
+        "summary: a codebase\n"
+        "abstractions:\n"
+        "  - name: Foo\n"
+        "    description: a\n"
+        "    files: 5\n"
+        "learning_order:\n"
+        "  - Foo\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    with pytest.raises(AssertionError, match="must be a list of strings"):
+        Analyze().exec(("prompt", set()))
+
+
 def test_analyze_accepts_abstraction_files_within_selected_files(monkeypatch):
     yaml_text = (
         "```yaml\n"
@@ -195,6 +225,17 @@ def test_analyze_accepts_matching_names_and_order(monkeypatch):
     monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
     result = Analyze().exec(("prompt", {"Foo.py", "Bar.py"}))
     assert {a["name"] for a in result["abstractions"]} == {"Foo", "Bar"}
+
+
+def test_relate_rejects_non_list_relationships(monkeypatch):
+    yaml_text = (
+        "```yaml\n"
+        "relationships: not_a_list\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    with pytest.raises(AssertionError, match="must be a list"):
+        Relate().exec(("prompt", [], []))
 
 
 def test_relate_rejects_edge_missing_a_required_field(monkeypatch):

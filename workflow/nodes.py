@@ -232,14 +232,18 @@ class Analyze(Node):
         prompt, selected_files = inputs
 
         def normalize(result):
-            names = [a["name"] for a in result["abstractions"]]
+            abstractions = result["abstractions"]
+            assert isinstance(abstractions, list) and all(isinstance(a, dict) for a in abstractions), \
+                f"abstractions must be a list of objects: {abstractions!r}"
+            names = [a["name"] for a in abstractions]
             order = result["learning_order"]
             assert len(names) == len(set(names)), f"duplicate abstraction names: {names}"
             assert sorted(names) == sorted(order), \
                 f"abstractions and learning_order disagree: {set(names) ^ set(order)}"
-            for a in result["abstractions"]:
+            for a in abstractions:
                 files = a.get("files", [])
-                assert isinstance(files, list), f"{a['name']!r} files must be a list: {files!r}"
+                assert isinstance(files, list) and all(isinstance(f, str) for f in files), \
+                    f"{a['name']!r} files must be a list of strings: {files!r}"
                 bad = [f for f in files if f not in selected_files]
                 assert not bad, f"{a['name']!r} files not in selected_files: {bad}"
             return result
@@ -274,6 +278,8 @@ class Relate(Node):
 
         def normalize(result):
             relationships = result["relationships"]
+            assert isinstance(relationships, list) and all(isinstance(r, dict) for r in relationships), \
+                f"relationships must be a list of objects: {relationships!r}"
             for r in relationships:
                 for field in ("from", "to", "label"):
                     assert isinstance(r.get(field), str) and r[field], \
