@@ -1,6 +1,7 @@
 import pytest
 
 import coderay_utils.llm as llm_module
+import workflow.nodes as nodes_module
 from workflow.nodes import Analyze, ExtractGraph, PipelineState, Relate, SmartCrawl
 
 
@@ -27,6 +28,33 @@ def test_extract_graph_builds_edges_for_known_extensions(tmp_path):
     }
     prep_res = ExtractGraph().prep(shared)
     exec_res = ExtractGraph().exec(prep_res)
+    ExtractGraph().post(shared, prep_res, exec_res)
+    assert shared["symbol_graph"] == [{"from": "main.py", "to": "pkg/helper.py", "kind": "imports"}]
+
+
+def test_extract_graph_skips_file_whose_extractor_raises(tmp_path, monkeypatch):
+    (tmp_path / "broken.py").write_text("this won't actually parse but that's fine\n")
+    (tmp_path / "main.py").write_text("from pkg.helper import go\n")
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "helper.py").write_text("def go(): pass\n")
+
+    real_python_extractor = nodes_module.REGISTRY[".py"]
+
+    class RaisingExtractor:
+        @staticmethod
+        def imports(path, text, selected_files):
+            if path == "broken.py":
+                raise ValueError("simulated parse failure")
+            return real_python_extractor.imports(path, text, selected_files)
+
+    monkeypatch.setitem(nodes_module.REGISTRY, ".py", RaisingExtractor)
+
+    shared = {
+        "repo_path": str(tmp_path),
+        "selected_files": ["broken.py", "main.py", "pkg/helper.py"],
+    }
+    prep_res = ExtractGraph().prep(shared)
+    exec_res = ExtractGraph().exec(prep_res)  # must not raise
     ExtractGraph().post(shared, prep_res, exec_res)
     assert shared["symbol_graph"] == [{"from": "main.py", "to": "pkg/helper.py", "kind": "imports"}]
 
