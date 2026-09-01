@@ -6,7 +6,7 @@ Five steps from the book chapter (plus a deterministic graph-extraction step):
   2. Analyze       extract 5-10 core abstractions as YAML
   3. Relate        map abstractions to each other as YAML edges
   4. WriteChapters one chapter per abstraction, with SEQUENTIAL CONTEXT
-  5. (rendering happens in main.py)
+  5. (rendering happens in workflow/__main__.py)
 
 Notes on reliability:
   - SmartCrawl, Analyze, and Relate parse a ```yaml reply through coderay_utils.yaml_call,
