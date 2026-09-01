@@ -1,10 +1,10 @@
-# Coderay
+# Crack
 
-Coderay generates a multi-chapter tour of a codebase: a written walkthrough with diagrams, cross-references between chapters, and a suggested reading order. Point it at a repo and it produces a set of HTML/Markdown pages explaining how the code works.
+Crack generates a multi-chapter tour of a codebase: a written walkthrough with diagrams, cross-references between chapters, and a suggested reading order. Point it at a repo and it produces a set of HTML/Markdown pages explaining how the code works.
 
 ## What this ships
 
-A four-stage pipeline, implemented as a [PocketFlow](https://github.com/The-Pocket/PocketFlow) workflow (retries and node isolation come from the framework; each node maps to one pipeline stage):
+A five-stage pipeline, implemented as a [PocketFlow](https://github.com/The-Pocket/PocketFlow) workflow (retries and node isolation come from the framework; each node maps to one pipeline stage):
 
 - [`src/crack/analyses/tour/`](src/crack/analyses/tour/) — the `tour` analysis: SmartCrawl, ExtractGraph, Analyze, Relate, WriteChapters. SmartCrawl, Analyze, and Relate parse structured YAML output and retry on a bad response (`crack.core.yaml_call`); WriteChapters calls the LLM directly and retries via PocketFlow's own `Node(max_retries=3)`.
 - [`src/crack/analyses/tour/prompts/`](src/crack/analyses/tour/prompts/) — the prompt template each stage sends to the LLM, one file per stage.

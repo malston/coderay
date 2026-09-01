@@ -1,4 +1,4 @@
-# coderay
+# crack
 
 Crawls a target repo, extracts its core concepts via an LLM, and writes a Tour explaining them.
 
