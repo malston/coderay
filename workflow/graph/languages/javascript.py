@@ -19,7 +19,8 @@ _IMPORT_QUERY_SRC = """
   source: (string (string_fragment) @specifier))
 """
 
-_EXTENSIONLESS_CANDIDATES = (".js", ".jsx", ".mjs", ".cjs", "/index.js", "/index.jsx")
+_EXTENSIONLESS_CANDIDATES = (".js", ".jsx", ".mjs", ".cjs")
+_INDEX_CANDIDATES = (".js", ".jsx")
 
 
 def _candidates(specifier, importer_path, selected_files):
@@ -41,8 +42,14 @@ def _candidates(specifier, importer_path, selected_files):
     if os.path.splitext(resolved_base)[1]:
         return []  # specifier already carries an extension; no guessing
     out = []
-    for suffix in _EXTENSIONLESS_CANDIDATES:
-        candidate = resolved_base + suffix
+    for ext in _EXTENSIONLESS_CANDIDATES:
+        candidate = resolved_base + ext
+        if candidate in selected_files and candidate not in out:
+            out.append(candidate)
+    for ext in _INDEX_CANDIDATES:
+        # os.sep, not a hardcoded "/": selected_files is built from
+        # os.path.relpath, so its separator matches the running platform.
+        candidate = f"{resolved_base}{os.sep}index{ext}"
         if candidate in selected_files and candidate not in out:
             out.append(candidate)
     return out if len(out) <= 1 else []

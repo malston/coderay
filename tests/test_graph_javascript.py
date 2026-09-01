@@ -1,3 +1,4 @@
+import workflow.graph.languages.javascript as javascript_module
 from workflow.graph.languages.javascript import imports
 
 
@@ -37,3 +38,10 @@ def test_imports_resolves_explicit_extension_specifier_even_with_decoy_file():
     text = "import x from './x.js';\n"
     selected = {"x.js", "x.js.jsx", "main.js"}
     assert imports("main.js", text, selected) == ["x.js"]
+
+
+def test_imports_resolves_index_file_with_platform_separator(monkeypatch):
+    monkeypatch.setattr(javascript_module.os, "sep", "\\")
+    text = "import lib from './lib';\n"
+    selected = {"lib\\index.js"}
+    assert imports("main.js", text, selected) == ["lib\\index.js"]

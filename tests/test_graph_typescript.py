@@ -1,3 +1,4 @@
+import workflow.graph.languages.typescript as typescript_module
 from workflow.graph.languages.typescript import imports
 
 
@@ -31,3 +32,10 @@ def test_imports_resolves_explicit_extension_specifier_even_with_decoy_file():
     text = "import x from './x.ts';\n"
     selected = {"x.ts", "x.ts.tsx", "main.ts"}
     assert imports("main.ts", text, selected) == ["x.ts"]
+
+
+def test_imports_resolves_index_file_with_platform_separator(monkeypatch):
+    monkeypatch.setattr(typescript_module.os, "sep", "\\")
+    text = "import lib from './lib';\n"
+    selected = {"lib\\index.ts"}
+    assert imports("main.ts", text, selected) == ["lib\\index.ts"]
