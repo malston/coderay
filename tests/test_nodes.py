@@ -210,7 +210,7 @@ def test_relate_rejects_edge_missing_a_required_field(monkeypatch):
     )
     monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
     with pytest.raises(AssertionError, match="label"):
-        Relate().exec("prompt")
+        Relate().exec(("prompt", [], []))
 
 
 def test_relate_rejects_non_string_label(monkeypatch):
@@ -224,7 +224,7 @@ def test_relate_rejects_non_string_label(monkeypatch):
     )
     monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
     with pytest.raises(AssertionError, match="label"):
-        Relate().exec("prompt")
+        Relate().exec(("prompt", [], []))
 
 
 def test_relate_accepts_well_formed_relationships(monkeypatch):
@@ -237,5 +237,72 @@ def test_relate_accepts_well_formed_relationships(monkeypatch):
         "```"
     )
     monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
-    result = Relate().exec("prompt")
-    assert result == [{"from": "Foo", "to": "Bar", "label": "uses"}]
+    result = Relate().exec(("prompt", [], []))
+    assert result == [{"from": "Foo", "to": "Bar", "label": "uses", "source": "INFERRED"}]
+
+
+def test_relate_tags_extracted_when_edge_matches_direction(monkeypatch):
+    yaml_text = (
+        "```yaml\n"
+        "relationships:\n"
+        "  - from: Foo\n"
+        "    to: Bar\n"
+        "    label: uses\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    abstractions = [{"name": "Foo", "files": ["foo.py"]}, {"name": "Bar", "files": ["bar.py"]}]
+    symbol_graph = [{"from": "foo.py", "to": "bar.py", "kind": "imports"}]
+    result = Relate().exec(("prompt", abstractions, symbol_graph))
+    assert result == [{"from": "Foo", "to": "Bar", "label": "uses", "source": "EXTRACTED"}]
+
+
+def test_relate_does_not_tag_extracted_for_reverse_direction_edge(monkeypatch):
+    # bar.py imports foo.py is evidence for "Bar uses Foo", not "Foo uses Bar" --
+    # tagging this EXTRACTED would be a wrong tag (post-review fix).
+    yaml_text = (
+        "```yaml\n"
+        "relationships:\n"
+        "  - from: Foo\n"
+        "    to: Bar\n"
+        "    label: uses\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    abstractions = [{"name": "Foo", "files": ["foo.py"]}, {"name": "Bar", "files": ["bar.py"]}]
+    symbol_graph = [{"from": "bar.py", "to": "foo.py", "kind": "imports"}]  # reverse
+    result = Relate().exec(("prompt", abstractions, symbol_graph))
+    assert result == [{"from": "Foo", "to": "Bar", "label": "uses", "source": "INFERRED"}]
+
+
+def test_relate_tags_inferred_when_no_matching_edge(monkeypatch):
+    yaml_text = (
+        "```yaml\n"
+        "relationships:\n"
+        "  - from: Foo\n"
+        "    to: Bar\n"
+        "    label: uses\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    abstractions = [{"name": "Foo", "files": ["foo.py"]}, {"name": "Bar", "files": ["bar.py"]}]
+    result = Relate().exec(("prompt", abstractions, []))
+    assert result == [{"from": "Foo", "to": "Bar", "label": "uses", "source": "INFERRED"}]
+
+
+def test_relate_tags_inferred_when_relationship_names_unknown_abstraction(monkeypatch):
+    # "Baz" isn't in abstractions -- build_mermaid already drops this edge downstream
+    # (workflow/__main__.py:68); the rollup has no file set to check, so INFERRED,
+    # not an assertion (post-review fix).
+    yaml_text = (
+        "```yaml\n"
+        "relationships:\n"
+        "  - from: Foo\n"
+        "    to: Baz\n"
+        "    label: uses\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    abstractions = [{"name": "Foo", "files": ["foo.py"]}]
+    result = Relate().exec(("prompt", abstractions, []))
+    assert result == [{"from": "Foo", "to": "Baz", "label": "uses", "source": "INFERRED"}]

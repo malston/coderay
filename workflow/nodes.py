@@ -71,7 +71,7 @@ class PipelineState(TypedDict, total=False):
       order                    list[str]
 
     Written by Relate.post; read by workflow.__main__.build_mermaid:
-      relationships            list[dict]
+      relationships            list[dict]  # each with "source": "EXTRACTED" | "INFERRED"
 
     Written by WriteChapters.post; read by workflow.__main__'s renderers:
       chapters                 list[dict]
@@ -262,18 +262,29 @@ class Relate(Node):
         listing = "\n".join(
             f"- {a['name']}: {a['description'].strip()}" for a in shared["abstractions"]
         )
-        return fill(
+        prompt = fill(
             read_prompt(PROMPTS_DIR, "analyze-relationships.md"),
             abstractions=listing, codebase=shared["codebase"],
         )
+        return prompt, shared["abstractions"], shared.get("symbol_graph", [])
 
-    def exec(self, prompt):
+    def exec(self, inputs):
+        prompt, abstractions, symbol_graph = inputs
+        files_by_name = {a["name"]: set(a.get("files", [])) for a in abstractions}
+
         def normalize(result):
             relationships = result["relationships"]
             for r in relationships:
                 for field in ("from", "to", "label"):
                     assert isinstance(r.get(field), str) and r[field], \
                         f"relationship missing/invalid {field!r}: {r!r}"
+                from_files = files_by_name.get(r["from"])
+                to_files = files_by_name.get(r["to"])
+                extracted = bool(from_files and to_files and any(
+                    edge["from"] in from_files and edge["to"] in to_files
+                    for edge in symbol_graph
+                ))
+                r["source"] = "EXTRACTED" if extracted else "INFERRED"
             return relationships
 
         return yaml_call(prompt, normalize)
