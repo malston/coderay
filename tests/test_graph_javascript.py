@@ -23,3 +23,9 @@ def test_imports_handles_jsx_syntax():
     text = "import App from './App';\nconst el = <App />;\n"
     selected = {"App.jsx", "main.jsx"}
     assert imports("main.jsx", text, selected) == ["App.jsx"]
+
+
+def test_imports_drops_ambiguous_specifier_with_two_candidates():
+    text = "import foo from './foo';\n"  # matches both foo.js and foo.jsx -- ambiguous
+    selected = {"foo.js", "foo.jsx", "main.js"}
+    assert imports("main.js", text, selected) == []

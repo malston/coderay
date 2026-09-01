@@ -20,10 +20,12 @@ _IMPORT_QUERY_SRC = """
 
 
 def _candidates(module_dotted, selected_files):
-    """`foo.bar` -> the repo-relative paths it could resolve to: foo/bar.py or
-    foo/bar/__init__.py -- whichever is actually in selected_files."""
+    """`foo.bar` -> the repo-relative path it resolves to: foo/bar.py or
+    foo/bar/__init__.py -- whichever is actually in selected_files. If both are
+    present, the import is ambiguous, so the edge is dropped rather than guessed."""
     base = module_dotted.replace(".", "/")
-    return sorted({f"{base}.py", f"{base}/__init__.py"} & selected_files)
+    matches = sorted({f"{base}.py", f"{base}/__init__.py"} & selected_files)
+    return matches if len(matches) <= 1 else []
 
 
 def imports(path, text, selected_files):

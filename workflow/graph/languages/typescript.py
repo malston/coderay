@@ -27,6 +27,9 @@ def _language_for(path):
 
 
 def _candidates(specifier, importer_path, selected_files):
+    """Resolve a relative specifier to the repo-relative path it imports. If more
+    than one candidate matches selected_files, the import is ambiguous, so the
+    edge is dropped rather than guessed."""
     if not specifier.startswith("."):
         return []
     importer_dir = os.path.dirname(importer_path)
@@ -38,7 +41,7 @@ def _candidates(specifier, importer_path, selected_files):
         candidate = resolved_base + suffix if not resolved_base.endswith(suffix) else resolved_base
         if candidate in selected_files and candidate not in out:
             out.append(candidate)
-    return out
+    return out if len(out) <= 1 else []
 
 
 def imports(path, text, selected_files):

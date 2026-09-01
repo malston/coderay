@@ -59,6 +59,12 @@ def mermaid_label(s):
     return re.sub(r'[^\w .,:/()\[\]-]', '', s)[:60]
 
 
+MERMAID_LEGEND = (
+    "Solid arrows are backed by a real import between the files each abstraction claims; "
+    "dashed arrows are the model's judgment."
+)
+
+
 def build_mermaid(abstractions, relationships):
     ids = {a["name"]: f"A{i}" for i, a in enumerate(abstractions)}
     lines = ["flowchart TD"]
@@ -128,6 +134,7 @@ INDEX_HTML_TEMPLATE = """<!doctype html>
   <pre class="mermaid">
 {mermaid}
   </pre>
+  <p class="muted">{mermaid_legend}</p>
 
   <h2>Read in order</h2>
   <ol>
@@ -254,6 +261,7 @@ def write_index_md(chapters, repo_name, lens, summary, mermaid, out, generated_a
         f"{summary}\n",
         "## Architecture\n",
         f"```mermaid\n{mermaid}\n```\n",
+        f"_{MERMAID_LEGEND}_\n",
         "## Chapters\n",
     ]
     for ch in chapters:
@@ -276,6 +284,7 @@ def write_index_html(chapters, repo_name, lens, summary, mermaid, selected_files
         n_files=len(selected_files),
         summary=html.escape(summary.strip().replace("\n", " ")),
         mermaid=mermaid,
+        mermaid_legend=MERMAID_LEGEND,
         chapter_list_html=chapter_list_html,
         files_list_html=files_list_html,
         reasoning_html=md_to_html(selection_reasoning),

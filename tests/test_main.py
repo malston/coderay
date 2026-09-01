@@ -191,6 +191,22 @@ def test_write_index_md_lists_chapters_and_mermaid(tmp_path):
     assert "flowchart TD" in out
 
 
+def test_write_index_md_includes_mermaid_legend(tmp_path):
+    write_index_md(_chapters(), "myrepo", "beginner-tutorial", "a summary", "flowchart TD", str(tmp_path), generated_at="2026-08-31")
+    out = (tmp_path / "index.md").read_text(encoding="utf-8")
+    assert "dashed arrows are the model's judgment" in out
+
+
+def test_write_index_html_includes_mermaid_legend(tmp_path):
+    write_index_html(
+        _chapters(), "myrepo", "beginner-tutorial", "a summary",
+        "flowchart TD", ["a.py"], "because", str(tmp_path),
+        generated_at="2026-08-31",
+    )
+    out = (tmp_path / "index.html").read_text(encoding="utf-8")
+    assert "dashed arrows are the model's judgment" in out
+
+
 def test_write_index_html_escapes_summary_and_lists_files(tmp_path):
     write_index_html(
         _chapters(), "myrepo", "beginner-tutorial", "a <script> summary",

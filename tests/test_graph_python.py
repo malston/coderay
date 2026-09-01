@@ -21,3 +21,9 @@ def test_imports_drops_unresolvable_module():
 
 def test_imports_returns_empty_list_for_file_with_no_imports():
     assert imports("main.py", "x = 1\n", {"main.py"}) == []
+
+
+def test_imports_drops_ambiguous_module_with_two_candidates():
+    text = "import pkg.sub\n"  # could be pkg/sub.py or pkg/sub/__init__.py -- ambiguous
+    selected = {"pkg/sub.py", "pkg/sub/__init__.py", "main.py"}
+    assert imports("main.py", text, selected) == []

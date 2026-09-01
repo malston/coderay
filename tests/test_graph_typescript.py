@@ -17,3 +17,9 @@ def test_imports_drops_bare_package_specifier():
     text = "import { z } from 'zod';\n"
     selected = {"main.ts"}
     assert imports("main.ts", text, selected) == []
+
+
+def test_imports_drops_ambiguous_specifier_with_two_candidates():
+    text = "import foo from './foo';\n"  # matches both foo.ts and foo.tsx -- ambiguous
+    selected = {"foo.ts", "foo.tsx", "main.ts"}
+    assert imports("main.ts", text, selected) == []
