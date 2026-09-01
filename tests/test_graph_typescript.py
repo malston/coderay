@@ -1,5 +1,5 @@
-import workflow.graph.languages.typescript as typescript_module
-from workflow.graph.languages.typescript import imports
+import crack.analyses.tour.graph.languages.typescript as typescript_module
+from crack.analyses.tour.graph.languages.typescript import imports
 
 
 def test_imports_resolves_ts_relative_specifier():

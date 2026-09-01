@@ -27,7 +27,7 @@ from typing import TypedDict
 from pocketflow import Node, BatchNode
 
 from crack.core import call_llm, fill, list_files, read_prompt, safe_read, yaml_call
-from workflow.graph.languages import REGISTRY
+from crack.analyses.tour.graph.languages import REGISTRY
 
 PROMPTS_DIR = resources.files("workflow") / "prompts"
 INSTRUCTIONS_DIR = resources.files("workflow") / "instructions"
@@ -174,7 +174,7 @@ class SmartCrawl(Node):
 # Step 1.5. Extract a deterministic import graph as ground truth for Relate
 class ExtractGraph(Node):
     """Parses each selected file with a per-extension tree-sitter extractor
-    (workflow/graph/languages/) and records import edges that land inside
+    (src/crack/analyses/tour/graph/languages/) and records import edges that land inside
     selected_files. A file whose extension has no registered extractor
     produces no edges -- Relate falls back to LLM-INFERRED only for
     relationships that only touch it (imports-only, Python/JS/TS-only for

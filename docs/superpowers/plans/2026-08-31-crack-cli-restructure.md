@@ -111,11 +111,11 @@ touch src/crack/__init__.py src/crack/core/__init__.py \
       src/crack/analyses/__init__.py src/crack/analyses/tour/__init__.py
 ```
 
-- [ ] **Step 4: Update `pyproject.toml`** — change `name`, switch to `src` layout, add `crack` to the packages list alongside the still-present `workflow`/`coderay_utils` entries (both package trees coexist until Task 6):
+- [ ] **Step 4: Update `pyproject.toml`** — switch to `src` layout and add `crack` to the packages list alongside the still-present `workflow`/`coderay_utils` entries (both package trees coexist until Task 6). **Do not change `name` yet** — see the note below.
 
 ```toml
 [project]
-name = "crack"
+name = "coderay"
 version = "0.1.0"
 description = "Crawls a repo, picks the files that matter, and writes a multi-chapter tutorial."
 requires-python = ">=3.10"
@@ -125,6 +125,10 @@ dependencies = [
     "pathspec>=1.1.1,<2",
     "markdown-it-py>=4.2.0,<5",
     "anthropic>=1.0.0,<2",
+    "tree-sitter>=0.23,<0.26",
+    "tree-sitter-python>=0.23,<0.25",
+    "tree-sitter-javascript>=0.23,<0.25",
+    "tree-sitter-typescript>=0.23,<0.25",
 ]
 
 [project.optional-dependencies]
@@ -150,10 +154,12 @@ workflow = ["prompts/*.md", "instructions/*.md"]
 
 Note: `package-dir` maps the bare `""` root to `src/` (where `crack` lives) while pinning `workflow` and `coderay_utils` back to the repo root, since those two packages aren't moving until later tasks. This dual mapping is temporary scaffolding removed in Task 6 once `workflow`/`coderay_utils` are deleted.
 
+**`[project] name` stays `"coderay"` through Task 4.** `workflow/__main__.py`'s `--version` flag calls `importlib.metadata.version('coderay')` _eagerly_, at `argparse.add_argument()` time — every invocation of `main()`, not just `--version` itself, runs that lookup. If `name` flipped to `"crack"` here, that lookup would raise `PackageNotFoundError` and break `workflow/__main__.py` (and every test that calls its `main()`, including the dry-run tests) for the four tasks before `workflow/__main__.py` is replaced. One `[project] name` covers every package this distribution builds — `crack`, `workflow`, and `coderay_utils` all ship under it regardless of what the distribution itself is called — so nothing about building or importing `crack.*` here needs the rename yet. The rename happens in Task 5 Step 9, in the same step that deletes `workflow/__main__.py` and its `version('coderay')` call.
+
 - [ ] **Step 5: Regenerate the lockfile and sync**
 
 Run: `uv lock && uv sync`
-Expected: resolves cleanly, `crack==0.1.0` (editable) appears in `uv.lock` alongside `coderay`.
+Expected: resolves cleanly; `uv.lock` still shows the single `coderay==0.1.0` (editable) distribution, now building both the old `workflow`/`coderay_utils` packages and the new empty `crack` package tree.
 
 - [ ] **Step 6: Run test to verify it passes**
 
@@ -186,6 +192,7 @@ git commit -m "Add empty crack package skeleton alongside workflow/coderay_utils
 - Modify: `workflow/nodes.py` (import line only)
 - Modify: `workflow/__main__.py` (import line only)
 - Modify: `tests/test_call_llm.py`, `tests/test_crawl.py`, `tests/test_llm.py`, `tests/test_pricing.py`, `tests/test_prompts.py`, `tests/conftest.py` (import paths only)
+- Modify: `tests/test_nodes.py` line 3, `tests/test_flow.py` line 1 — both import `coderay_utils.llm as llm_module` on top of the `workflow.nodes`/`workflow.flow` imports Task 4 later updates; that one line must change here too, since `coderay_utils/` is deleted by the end of this task and Task 4 doesn't start until after this one lands green
 - Delete: `coderay_utils/` (whole directory, once nothing references it)
 
 **Interfaces:**
@@ -593,11 +600,13 @@ from crack.analyses.tour.nodes import (
 
 - [ ] **Step 5: Update test imports**
 
-`tests/test_nodes.py` lines 3-5:
+**Note:** `tests/test_nodes.py` and `tests/test_flow.py` each import `coderay_utils.llm` too (as `llm_module`), on top of the `workflow.nodes`/`workflow.flow` imports below. That line was already updated to `crack.core.llm` in Task 2 — `coderay_utils/` no longer exists by the time this task starts, so it couldn't still say `coderay_utils.llm` here. Only the `nodes_module`/`flow` lines below are this task's responsibility.
+
+`tests/test_nodes.py` lines 3-5 (line 3, `import crack.core.llm as llm_module`, is already correct from Task 2 — leave it):
 
 ```python
 # before
-import coderay_utils.llm as llm_module
+import crack.core.llm as llm_module
 import workflow.nodes as nodes_module
 from workflow.nodes import Analyze, ExtractGraph, PipelineState, Relate, SmartCrawl
 # after
@@ -606,11 +615,11 @@ import crack.analyses.tour.nodes as nodes_module
 from crack.analyses.tour.nodes import Analyze, ExtractGraph, PipelineState, Relate, SmartCrawl
 ```
 
-`tests/test_flow.py` lines 1-3:
+`tests/test_flow.py` lines 1-3 (line 1, same as above, is already correct from Task 2 — leave it):
 
 ```python
 # before
-import coderay_utils.llm as llm_module
+import crack.core.llm as llm_module
 import workflow.nodes as nodes_module
 from workflow.flow import create_tour_flow
 # after
@@ -1006,6 +1015,9 @@ Every other test in `tests/test_main.py` (the `build_mermaid`, `write_index_html
 - [ ] **Step 9: Update `pyproject.toml`**
 
 ```toml
+[project]
+name = "crack"
+
 [project.scripts]
 crack = "crack.cli:main"
 
@@ -1019,6 +1031,8 @@ packages = [
 [tool.setuptools.package-data]
 "crack.analyses.tour" = ["prompts/*.md", "instructions/*.md"]
 ```
+
+(The `[project]` table already exists in `pyproject.toml` from Task 1 with `name = "coderay"` — change just that one line to `"crack"` here, don't duplicate the table. This is the first point where the rename is safe: `workflow/__main__.py` and its `version('coderay')` call are deleted in this same task, in Step 7 below, so nothing left in the tree still depends on the old distribution name.)
 
 **Keep `package-dir = {"" = "src"}`.** setuptools' src-layout auto-discovery only activates when `packages` is _not_ set explicitly. This plan lists `packages` explicitly (so `pyproject.toml` stays an accurate map of what actually ships, matching the file's style since Task 1), which means the `"" = "src"` root mapping must stay too — drop it and setuptools looks for `crack/` at the repo root and the build fails. What actually goes away here is the _dual_ mapping from Task 1-4 (`"workflow" = "workflow"`, `"coderay_utils" = "coderay_utils"`), since those packages no longer exist.
 

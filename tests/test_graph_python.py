@@ -1,5 +1,5 @@
-import workflow.graph.languages.python as python_module
-from workflow.graph.languages.python import imports
+import crack.analyses.tour.graph.languages.python as python_module
+from crack.analyses.tour.graph.languages.python import imports
 
 
 def test_imports_resolves_dotted_module_to_file():

@@ -32,8 +32,9 @@ coderay = "workflow.__main__:main"
 [tool.setuptools]
 package-dir = {"" = "src", "workflow" = "workflow"}
 packages = [
-    "workflow", "workflow.graph", "workflow.graph.languages",
+    "workflow",
     "crack", "crack.core", "crack.analyses", "crack.analyses.tour",
+    "crack.analyses.tour.graph", "crack.analyses.tour.graph.languages",
 ]
 
 [tool.setuptools.package-data]
