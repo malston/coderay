@@ -3,9 +3,9 @@ requires = ["setuptools>=84.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "coderay"
+name = "crack"
 version = "0.1.0"
-description = "Crawls a repo, picks the files that matter, and writes a multi-chapter tutorial."
+description = "Crawls a repo, picks the files that matter, and writes a multi-chapter tour."
 requires-python = ">=3.10"
 dependencies = [
     "pocketflow>=0.0.3,<0.1",
@@ -27,10 +27,14 @@ gemini = ["google-genai>=2.19.0,<3"]
 dev = ["pytest>=9.1.1,<10"]
 
 [project.scripts]
-coderay = "workflow.__main__:main"
+crack = "crack.cli:main"
 
 [tool.setuptools]
-packages = ["workflow", "coderay_utils", "workflow.graph", "workflow.graph.languages"]
+package-dir = {"" = "src"}
+packages = [
+    "crack", "crack.core", "crack.analyses", "crack.analyses.tour",
+    "crack.analyses.tour.graph", "crack.analyses.tour.graph.languages",
+]
 
 [tool.setuptools.package-data]
-workflow = ["prompts/*.md", "instructions/*.md"]
+"crack.analyses.tour" = ["prompts/*.md", "instructions/*.md"]

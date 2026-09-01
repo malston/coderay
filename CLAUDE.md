@@ -65,33 +65,33 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 `make install`, `make test`, `make build`, and `make clean` cover the common dev loop via `uv`, matching CI (see `Makefile`). Equivalent raw commands, if you don't have `make`:
 
 ```bash
-pip install -e .              # install this package (workflow/ + coderay_utils/) in editable mode
+pip install -e .              # install this package (src/crack/) in editable mode
 pip install -e ".[openai,gemini]"  # add optional provider SDKs as needed
 
 python -m pytest tests/ -v    # run the test suite (no API key or network needed)
-python -m workflow path/to/repo   # run the pipeline end to end (needs an API key, see .env.example)
+crack tour path/to/repo   # run the tour analysis end to end (needs an API key, see .env.example)
 ```
 
 CI runs `pytest` on every push/PR via `.github/workflows/tests.yml`. To cut a release, bump `version` in `pyproject.toml`, tag it (e.g. `git tag v0.2.0 && git push origin v0.2.0`), and `.github/workflows/release.yml` builds the package and creates a GitHub Release with the sdist/wheel attached.
 
 ## Architecture Overview
 
-A PocketFlow pipeline with four sequential nodes (`workflow/nodes.py`, wired in `workflow/flow.py`):
+A PocketFlow pipeline with five sequential nodes (`src/crack/analyses/tour/nodes.py`, wired in `src/crack/analyses/tour/flow.py`):
 
 ```text
-SmartCrawl -> Analyze -> Relate -> WriteChapters
+SmartCrawl -> ExtractGraph -> Analyze -> Relate -> WriteChapters
 ```
 
-- **SmartCrawl** walks the target repo (`coderay_utils/crawl.py`), builds a preview manifest, and asks the LLM which ~0.1-2% of files matter. Enforces `preview_budget` and `codebase_budget` so large repos can't blow the LLM's context window.
-- **Analyze** / **Relate** / **WriteChapters** call the LLM via `coderay_utils.call_llm` and parse its YAML output via `coderay_utils.yaml_call`, which retries with a varied prompt on bad output (the retry-safe path — don't reintroduce a local prompt-parsing loop that bypasses it, see the Rules doc).
-- `workflow/__main__.py` renders the pipeline's output (`shared` dict, typed as `PipelineState` in `workflow/nodes.py`) to markdown + HTML.
-- `workflow/prompts/*.md` are the four LLM prompt templates; `workflow/instructions/*.md` are swappable output lenses (`--instructions <name>`), auto-discovered from the directory — adding a lens is just adding a file.
+- **SmartCrawl** walks the target repo (`src/crack/core/crawl.py`), builds a preview manifest, and asks the LLM which ~0.1-2% of files matter. Enforces `preview_budget` and `codebase_budget` so large repos can't blow the LLM's context window.
+- **Analyze** / **Relate** / **WriteChapters** call the LLM via `crack.core.call_llm` and parse its YAML output via `crack.core.yaml_call`, which retries with a varied prompt on bad output (the retry-safe path — don't reintroduce a local prompt-parsing loop that bypasses it, see the Rules doc).
+- `src/crack/analyses/tour/render.py` renders the analysis's output (`shared` dict, typed as `PipelineState` in `src/crack/analyses/tour/nodes.py`) to markdown + HTML.
+- `src/crack/analyses/tour/prompts/*.md` are the four LLM prompt templates; `src/crack/analyses/tour/instructions/*.md` are swappable output lenses (`--instructions <name>`), auto-discovered from the directory — adding a lens is just adding a file.
 
 Full architecture rationale and past review findings: `.full-review/*.md` (a comprehensive code review that produced the fixes now on `main`).
 
 ## Conventions & Patterns
 
-- Untrusted input (the target repo's own files, and anything the LLM echoes back from them) must be escaped before it reaches HTML/Mermaid output. This bit the project once (a confirmed stored-XSS bug); see `.full-review/02a-security.md` before touching `workflow/__main__.py`'s rendering code.
-- LLM YAML parsing goes through `coderay_utils.yaml_call`, not a bespoke `parse_yaml`/`.format()` combo in `workflow/nodes.py` — that duplication was a real bug (a cache/retry defect) fixed in a prior epic. Reuse `coderay_utils.yaml_call` and `coderay_utils.fill()` for new LLM-calling code.
+- Untrusted input (the target repo's own files, and anything the LLM echoes back from them) must be escaped before it reaches HTML/Mermaid output. This bit the project once (a confirmed stored-XSS bug); see `.full-review/02a-security.md` before touching `src/crack/analyses/tour/render.py`'s rendering code.
+- LLM YAML parsing goes through `crack.core.yaml_call`, not a bespoke `parse_yaml`/`.format()` combo in `src/crack/analyses/tour/nodes.py` — that duplication was a real bug (a cache/retry defect) fixed in a prior epic. Reuse `crack.core.yaml_call` and `crack.core.fill()` for new LLM-calling code.
 - Any file-content budget (`preview_budget`, `codebase_budget`) must be enforced by capping _how many files_ are included, not by raising a per-file floor — that inversion was the root cause of two Critical scalability bugs.
 - Tests live in `tests/`, run via plain `pytest`, no network/API key required — LLM calls are faked at the `call_llm`/`yaml_call` boundary, not mocked deeper in the call stack.

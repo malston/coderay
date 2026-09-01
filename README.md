@@ -1,15 +1,15 @@
-# Coderay
+# Crack
 
-Coderay generates a multi-chapter tour of a codebase: a written walkthrough with diagrams, cross-references between chapters, and a suggested reading order. Point it at a repo and it produces a set of HTML/Markdown pages explaining how the code works.
+Crack generates a multi-chapter tour of a codebase: a written walkthrough with diagrams, cross-references between chapters, and a suggested reading order. Point it at a repo and it produces a set of HTML/Markdown pages explaining how the code works.
 
 ## What this ships
 
-A four-stage pipeline, implemented as a [PocketFlow](https://github.com/The-Pocket/PocketFlow) workflow (retries and node isolation come from the framework; each node maps to one pipeline stage):
+A five-stage pipeline, implemented as a [PocketFlow](https://github.com/The-Pocket/PocketFlow) workflow (retries and node isolation come from the framework; each node maps to one pipeline stage):
 
-- [`workflow/`](workflow/) — the four pipeline stages: SmartCrawl, Analyze, Relate, WriteChapters. SmartCrawl, Analyze, and Relate parse structured YAML output and retry on a bad response (`coderay_utils.yaml_call`); WriteChapters calls the LLM directly and retries via PocketFlow's own `Node(max_retries=3)`.
-- [`workflow/prompts/`](workflow/prompts/) — the prompt template each stage sends to the LLM, one file per stage.
-- [`workflow/instructions/`](workflow/instructions/) — four swappable output styles (see "Swap the output style" below). Same pipeline, different framing for the same chapters.
-- [`skill/CODEBASE-TOUR.md`](skill/CODEBASE-TOUR.md) — the same workflow packaged as an agent skill.
+- [`src/crack/analyses/tour/`](src/crack/analyses/tour/) — the `tour` analysis: SmartCrawl, ExtractGraph, Analyze, Relate, WriteChapters. SmartCrawl, Analyze, and Relate parse structured YAML output and retry on a bad response (`crack.core.yaml_call`); WriteChapters calls the LLM directly and retries via PocketFlow's own `Node(max_retries=3)`.
+- [`src/crack/analyses/tour/prompts/`](src/crack/analyses/tour/prompts/) — the prompt template each stage sends to the LLM, one file per stage.
+- [`src/crack/analyses/tour/instructions/`](src/crack/analyses/tour/instructions/) — four swappable output styles (see "Swap the output style" below). Same pipeline, different framing for the same chapters.
+- [`skill/CODEBASE-TOUR.md`](skill/CODEBASE-TOUR.md) — the same analysis packaged as an agent skill.
 
 ## Quickstart
 
@@ -18,7 +18,7 @@ pip install -e .            # or: pip install -e ".[openai,gemini]" for those pr
 cp .env.example .env        # fill in the one key you need, see .env.example for all options
 export GEMINI_API_KEY=...   # or ANTHROPIC_API_KEY / OPENAI_API_KEY
 
-python -m workflow path/to/repo   # or just: coderay path/to/repo
+crack tour path/to/repo
 ```
 
 If a run fails partway through (a bad LLM response after retries, a network error), the files, abstractions, and chapters completed so far are written to `run_state.json` in the target output directory, so you can see how far it got without rerunning the whole pipeline.
@@ -52,12 +52,12 @@ output/nanochat-beginner-tutorial-tour/
 
 ## Swap the output style
 
-Same pipeline and code, driven by a different file under `workflow/instructions/`. Set `--instructions` to change what the chapters focus on:
+Same pipeline and code, driven by a different file under `src/crack/analyses/tour/instructions/`. Set `--instructions` to change what the chapters focus on:
 
 ```bash
-python -m workflow path/to/repo --instructions architecture-review
-python -m workflow path/to/repo --instructions security-audit
-python -m workflow path/to/repo --instructions onboarding-guide
+crack tour path/to/repo --instructions architecture-review
+crack tour path/to/repo --instructions security-audit
+crack tour path/to/repo --instructions onboarding-guide
 ```
 
 | Style                         | What you get                                                                     |
@@ -70,7 +70,7 @@ python -m workflow path/to/repo --instructions onboarding-guide
 ## Estimate cost before you run it
 
 ```bash
-python -m workflow path/to/repo --dry-run
+crack tour path/to/repo --dry-run
 ```
 
 `--dry-run` makes no network calls, needs no API key, and writes nothing to disk. It estimates the size of the prompts a real run would send (file selection, abstraction analysis, relationships, and one chapter prompt repeated for an estimated chapter count) and prints a cost range:
@@ -93,7 +93,7 @@ A real run (without `--dry-run`) prints a `Session` summary at the end with the 
 
 ### Pricing overrides
 
-Built-in pricing covers the default model for each provider. For any other model, coderay prompts you once, interactively, for $/1M token pricing, and saves it to `~/.config/coderay/pricing.json`. That file is yours to edit directly; an entry there always takes priority over the built-in pricing table. Format:
+Built-in pricing covers the default model for each provider. For any other model, crack prompts you once, interactively, for $/1M token pricing, and saves it to `~/.config/crack/pricing.json`. That file is yours to edit directly; an entry there always takes priority over the built-in pricing table. Format:
 
 ```json
 {
@@ -115,7 +115,7 @@ flowchart LR
     relate --> write[WriteChapters]
 ```
 
-1. **SmartCrawl.** Two phases. First, filter files by extension and skip obvious noise (`tests/`, `docs/`, lock files, anything over 500 KB). Then build a preview manifest — the first few hundred characters of each remaining file — and ask the LLM to select the roughly 0.1-2% of files that matter most, using the selection rules in [`workflow/prompts/select-files.md`](workflow/prompts/select-files.md).
+1. **SmartCrawl.** Two phases. First, filter files by extension and skip obvious noise (`tests/`, `docs/`, lock files, anything over 500 KB). Then build a preview manifest — the first few hundred characters of each remaining file — and ask the LLM to select the roughly 0.1-2% of files that matter most, using the selection rules in [`src/crack/analyses/tour/prompts/select-files.md`](src/crack/analyses/tour/prompts/select-files.md).
 2. **ExtractGraph.** No LLM call — deterministically parses each selected file's imports (Python/JS/TS) into `symbol_graph`, the edges Relate later checks against.
 3. **Analyze.** One LLM call. Returns a YAML list of 5-10 abstractions, each with a short description, plus a suggested learning order.
 4. **Relate.** One LLM call. Returns the relationships (edges) between those abstractions, each tagged `EXTRACTED` (backed by a real import edge between the abstractions' files, Python/JS/TS only) or `INFERRED` (LLM judgment). The mermaid diagram in `index.html` draws `EXTRACTED` edges solid, `INFERRED` edges dashed.

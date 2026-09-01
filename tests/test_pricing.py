@@ -1,4 +1,4 @@
-from coderay_utils.pricing import cost_for, get_price
+from crack.core.pricing import cost_for, get_price
 
 
 def test_get_price_returns_dollars_per_token_for_known_model():
@@ -31,7 +31,7 @@ def test_cost_for_unknown_model_returns_none():
 
 
 def test_override_file_wins_over_builtin_table():
-    from coderay_utils.pricing import _save_override, get_price
+    from crack.core.pricing import _save_override, get_price
 
     _save_override(
         "anthropic", "claude-sonnet-5",
@@ -43,7 +43,7 @@ def test_override_file_wins_over_builtin_table():
 
 
 def test_get_price_defaults_a_missing_override_field_to_zero():
-    from coderay_utils.pricing import _save_override, get_price
+    from crack.core.pricing import _save_override, get_price
 
     _save_override("anthropic", "claude-sonnet-5", {"input": 2.0})
 
@@ -55,7 +55,7 @@ def test_get_price_defaults_a_missing_override_field_to_zero():
 
 
 def test_get_price_falls_back_to_builtin_table_on_non_numeric_override_field():
-    from coderay_utils.pricing import _save_override, get_price
+    from crack.core.pricing import _save_override, get_price
 
     _save_override("anthropic", "claude-sonnet-5", {"input": "two"})
 
@@ -64,7 +64,7 @@ def test_get_price_falls_back_to_builtin_table_on_non_numeric_override_field():
 
 
 def test_get_price_falls_back_to_none_on_non_numeric_override_field_for_an_unpriced_model():
-    from coderay_utils.pricing import _save_override, get_price
+    from crack.core.pricing import _save_override, get_price
 
     _save_override("openai", "gpt-6-malformed", {"input": "two"})
 
@@ -72,7 +72,7 @@ def test_get_price_falls_back_to_none_on_non_numeric_override_field_for_an_unpri
 
 
 def test_get_price_falls_back_to_builtin_table_on_non_dict_override_entry():
-    from coderay_utils.pricing import _save_override, get_price
+    from crack.core.pricing import _save_override, get_price
 
     _save_override("anthropic", "claude-sonnet-5", [1, 2, 3])
 
@@ -81,8 +81,8 @@ def test_get_price_falls_back_to_builtin_table_on_non_dict_override_entry():
 
 
 def test_get_price_treats_non_dict_top_level_override_file_as_no_overrides(tmp_path):
-    import coderay_utils.pricing as pricing_module
-    from coderay_utils.pricing import get_price
+    import crack.core.pricing as pricing_module
+    from crack.core.pricing import get_price
 
     with open(pricing_module.OVERRIDE_FILE, "w", encoding="utf-8") as f:
         f.write("[1, 2, 3]")
@@ -93,8 +93,8 @@ def test_get_price_treats_non_dict_top_level_override_file_as_no_overrides(tmp_p
 
 
 def test_load_overrides_warns_on_corrupt_file_and_returns_empty(capsys):
-    import coderay_utils.pricing as pricing_module
-    from coderay_utils.pricing import _load_overrides
+    import crack.core.pricing as pricing_module
+    from crack.core.pricing import _load_overrides
 
     with open(pricing_module.OVERRIDE_FILE, "w", encoding="utf-8") as f:
         f.write("{not valid json")
@@ -106,7 +106,7 @@ def test_load_overrides_warns_on_corrupt_file_and_returns_empty(capsys):
 
 
 def test_load_overrides_does_not_warn_when_file_is_missing(capsys):
-    from coderay_utils.pricing import _load_overrides
+    from crack.core.pricing import _load_overrides
 
     assert _load_overrides() == {}
     captured = capsys.readouterr()
@@ -114,7 +114,7 @@ def test_load_overrides_does_not_warn_when_file_is_missing(capsys):
 
 
 def test_get_price_warns_on_malformed_override_entry(capsys):
-    from coderay_utils.pricing import _save_override, get_price
+    from crack.core.pricing import _save_override, get_price
 
     _save_override("anthropic", "claude-sonnet-5", {"input": "two"})
 
@@ -124,14 +124,14 @@ def test_get_price_warns_on_malformed_override_entry(capsys):
 
 
 def test_prompt_skips_on_non_tty_stdin(monkeypatch):
-    from coderay_utils.pricing import prompt_for_pricing
+    from crack.core.pricing import prompt_for_pricing
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     assert prompt_for_pricing("openai", "gpt-6-new") is None
 
 
 def test_prompt_writes_entered_values_to_override_file(monkeypatch):
-    from coderay_utils.pricing import get_price, prompt_for_pricing
+    from crack.core.pricing import get_price, prompt_for_pricing
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     answers = iter(["1.5", "9.0", "0.1", "0.0"])
@@ -150,7 +150,7 @@ def test_prompt_with_every_field_blank_skips_without_saving(monkeypatch):
     # All four fields blank means the user has no pricing to give -- saving a
     # $0 override would make an unpriced model look like a free one instead of
     # leaving cost "unknown", which is what the spec promises for this case.
-    from coderay_utils.pricing import get_price, prompt_for_pricing
+    from crack.core.pricing import get_price, prompt_for_pricing
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     answers = iter(["", "", "", ""])
@@ -165,7 +165,7 @@ def test_prompt_with_every_field_blank_skips_without_saving(monkeypatch):
 def test_prompt_saves_partial_blank_fields_as_zero(monkeypatch):
     # A blank field alongside real numbers is a legitimate "this field doesn't
     # apply" (e.g. no separate cache-write rate), not a skip -- it still saves.
-    from coderay_utils.pricing import get_price, prompt_for_pricing
+    from crack.core.pricing import get_price, prompt_for_pricing
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     answers = iter(["1.5", "9.0", "", ""])
@@ -180,7 +180,7 @@ def test_prompt_saves_partial_blank_fields_as_zero(monkeypatch):
 
 
 def test_prompt_returns_none_on_non_numeric_input_without_writing_override(monkeypatch):
-    from coderay_utils.pricing import get_price, prompt_for_pricing
+    from crack.core.pricing import get_price, prompt_for_pricing
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     answers = iter(["1.5", "not-a-number"])
@@ -191,7 +191,7 @@ def test_prompt_returns_none_on_non_numeric_input_without_writing_override(monke
 
 
 def test_prompt_returns_none_on_eof(monkeypatch):
-    from coderay_utils.pricing import get_price, prompt_for_pricing
+    from crack.core.pricing import get_price, prompt_for_pricing
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
 
@@ -205,7 +205,7 @@ def test_prompt_returns_none_on_eof(monkeypatch):
 
 
 def test_ensure_priced_does_not_prompt_for_a_known_model(monkeypatch):
-    from coderay_utils.pricing import ensure_priced
+    from crack.core.pricing import ensure_priced
 
     def fail_if_called(prompt):
         raise AssertionError("should not prompt for a priced model")
@@ -215,7 +215,7 @@ def test_ensure_priced_does_not_prompt_for_a_known_model(monkeypatch):
 
 
 def test_ensure_priced_prompts_for_an_unknown_model_on_a_tty(monkeypatch):
-    from coderay_utils.pricing import ensure_priced, get_price
+    from crack.core.pricing import ensure_priced, get_price
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     answers = iter(["1.0", "2.0", "0.0", "0.0"])

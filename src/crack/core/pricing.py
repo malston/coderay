@@ -1,4 +1,4 @@
-"""$/token pricing for the models coderay talks to.
+"""$/token pricing for the models crack talks to.
 
 Values are $/token (not $/1M) since usage records store raw token counts.
 Anthropic's cache read/write figures use the standard 0.1x/1.25x-of-input
@@ -33,7 +33,7 @@ BUILTIN_PRICES = {
     for key, prices in _PER_MILLION.items()
 }
 
-CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "coderay")
+CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "crack")
 OVERRIDE_FILE = os.path.join(CONFIG_DIR, "pricing.json")
 
 

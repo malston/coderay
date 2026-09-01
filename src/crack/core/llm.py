@@ -11,8 +11,8 @@ from .call_llm import call_llm
 
 def read_prompt(prompts_dir, name):
     """Read a prompt file from a directory (an importlib.resources Traversable
-    or a pathlib.Path). `workflow/prompts/` stays the source of truth for every
-    prompt."""
+    or a pathlib.Path). `crack/analyses/tour/prompts/` stays the source of truth
+    for every prompt."""
     return (prompts_dir / name).read_text(encoding="utf-8")
 
 

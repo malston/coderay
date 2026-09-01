@@ -1,9 +1,9 @@
 import glob
 import os
 
-from coderay_utils import fill
+from crack.core import fill
 
-PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "workflow", "prompts")
+PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "src", "crack", "analyses", "tour", "prompts")
 
 
 def test_every_prompt_wraps_untrusted_repo_content_in_a_boundary():
@@ -20,7 +20,7 @@ def test_write_chapter_prompt_puts_stable_blocks_before_the_cache_breakpoint():
     # The codebase block (identical every call in a tour, up to CODEBASE_BUDGET
     # chars) must sit before the cache breakpoint so Anthropic's prefix-based
     # caching can reuse it across chapters -- see coderay-dl8.
-    from coderay_utils.call_llm import CACHE_BREAKPOINT
+    from crack.core.call_llm import CACHE_BREAKPOINT
 
     path = os.path.join(PROMPTS_DIR, "write-chapter.md")
     template = open(path).read()
