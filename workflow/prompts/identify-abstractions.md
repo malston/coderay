@@ -27,7 +27,7 @@ abstractions:
     description: |
       What it does, with a simple analogy.
     files:
-      - "path/to/file.py"
+      - path/to/file.py
 learning_order:
   - "FoundationalConcept"
   - "BuildsOnThat"
