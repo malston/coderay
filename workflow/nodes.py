@@ -1,11 +1,12 @@
 """Codebase Knowledge Builder nodes.
 
-Five steps from the book chapter:
+Five steps from the book chapter (plus a deterministic graph-extraction step):
   1. SmartCrawl    walk repo, then ask the LLM which files matter
+  1.5 ExtractGraph parse selected files for a deterministic import graph
   2. Analyze       extract 5-10 core abstractions as YAML
   3. Relate        map abstractions to each other as YAML edges
   4. WriteChapters one chapter per abstraction, with SEQUENTIAL CONTEXT
-  5. (rendering happens in main.py)
+  5. (rendering happens in workflow/__main__.py)
 
 Notes on reliability:
   - SmartCrawl, Analyze, and Relate parse a ```yaml reply through coderay_utils.yaml_call,
@@ -26,6 +27,7 @@ from typing import TypedDict
 from pocketflow import Node, BatchNode
 
 from coderay_utils import call_llm, fill, list_files, read_prompt, safe_read, yaml_call
+from workflow.graph.languages import REGISTRY
 
 PROMPTS_DIR = resources.files("workflow") / "prompts"
 INSTRUCTIONS_DIR = resources.files("workflow") / "instructions"
@@ -37,7 +39,7 @@ CHAPTER_CONTEXT_WINDOW = 3
 
 class PipelineState(TypedDict, total=False):
     """The dict threaded through create_tour_flow()'s nodes (SmartCrawl >>
-    Analyze >> Relate >> WriteChapters), and read afterward by workflow.__main__'s
+    ExtractGraph >> Analyze >> Relate >> WriteChapters), and read afterward by workflow.__main__'s
     renderers. Not validated at runtime -- documents the contract each node's
     untyped `shared[...]` subscripts rely on. Every key past instructions is
     optional at the type level since it's only present once the node that
@@ -59,14 +61,17 @@ class PipelineState(TypedDict, total=False):
       selected_files           list[str]
       selection_reasoning      str
 
+    Written by ExtractGraph.post; read by Relate.prep:
+      symbol_graph            list[dict]
+
     Written by Analyze.post; read by Relate/WriteChapters.prep and
     workflow.__main__'s renderers:
       summary                  str
-      abstractions             list[dict]
+      abstractions             list[dict]  # each with "files": list[str]
       order                    list[str]
 
     Written by Relate.post; read by workflow.__main__.build_mermaid:
-      relationships            list[dict]
+      relationships            list[dict]  # each with "source": "EXTRACTED" | "INFERRED"
 
     Written by WriteChapters.post; read by workflow.__main__'s renderers:
       chapters                 list[dict]
@@ -81,6 +86,7 @@ class PipelineState(TypedDict, total=False):
     codebase: str
     selected_files: list
     selection_reasoning: str
+    symbol_graph: list
     summary: str
     abstractions: list
     order: list
@@ -165,21 +171,82 @@ class SmartCrawl(Node):
         print(f"  Selected {len(included)} files ({len(shared['codebase']):,} chars)")
 
 
+# Step 1.5. Extract a deterministic import graph as ground truth for Relate
+class ExtractGraph(Node):
+    """Parses each selected file with a per-extension tree-sitter extractor
+    (workflow/graph/languages/) and records import edges that land inside
+    selected_files. A file whose extension has no registered extractor
+    produces no edges -- Relate falls back to LLM-INFERRED only for
+    relationships that only touch it (imports-only, Python/JS/TS-only for
+    v1; see docs/superpowers/specs/2026-08-31-deterministic-import-graph-design.md)."""
+    def __init__(self):
+        super().__init__(max_retries=1)
+
+    def prep(self, shared: PipelineState):
+        return shared["repo_path"], shared["selected_files"]
+
+    def exec(self, inputs):
+        root, selected = inputs
+        selected_set = set(selected)
+        edges = []
+        covered = 0
+        for rel_path in selected:
+            extractor = REGISTRY.get(os.path.splitext(rel_path)[1])
+            if extractor is None:
+                continue
+            text = safe_read(os.path.join(root, rel_path))
+            if text is None:
+                continue
+            try:
+                targets = extractor.imports(rel_path, text, selected_set)
+            except Exception as e:
+                print(f"  Skipping {rel_path} for import graph: {e}")
+                continue
+            covered += 1
+            for target in targets:
+                edges.append({"from": rel_path, "to": target, "kind": "imports"})
+        return edges, covered
+
+    def post(self, shared: PipelineState, prep_res, exec_res):
+        edges, covered = exec_res
+        shared["symbol_graph"] = edges
+        total = len(prep_res[1])
+        print(f"  {covered}/{total} selected files covered by a deterministic import graph")
+
+
 # Step 2. Identify the abstractions
 class Analyze(Node):
     def __init__(self):
         super().__init__(max_retries=1)
 
     def prep(self, shared: PipelineState):
-        return fill(read_prompt(PROMPTS_DIR, "identify-abstractions.md"), codebase=shared["codebase"])
+        selected = shared["selected_files"]
+        files_list = "\n".join(f"- {f}" for f in selected)
+        prompt = fill(
+            read_prompt(PROMPTS_DIR, "identify-abstractions.md"),
+            codebase=shared["codebase"], selected_files=files_list,
+        )
+        return prompt, set(selected)
 
-    def exec(self, prompt):
+    def exec(self, inputs):
+        prompt, selected_files = inputs
+
         def normalize(result):
-            names = [a["name"] for a in result["abstractions"]]
+            abstractions = result["abstractions"]
+            assert isinstance(abstractions, list) and all(isinstance(a, dict) for a in abstractions), \
+                f"abstractions must be a list of objects: {abstractions!r}"
+            names = [a["name"] for a in abstractions]
             order = result["learning_order"]
             assert len(names) == len(set(names)), f"duplicate abstraction names: {names}"
             assert sorted(names) == sorted(order), \
                 f"abstractions and learning_order disagree: {set(names) ^ set(order)}"
+            for a in abstractions:
+                assert "files" in a, f"{a['name']!r} is missing required field 'files'"
+                files = a["files"]
+                assert isinstance(files, list) and all(isinstance(f, str) for f in files), \
+                    f"{a['name']!r} files must be a list of strings: {files!r}"
+                bad = [f for f in files if f not in selected_files]
+                assert not bad, f"{a['name']!r} files not in selected_files: {bad}"
             return result
 
         return yaml_call(prompt, normalize)
@@ -200,18 +267,31 @@ class Relate(Node):
         listing = "\n".join(
             f"- {a['name']}: {a['description'].strip()}" for a in shared["abstractions"]
         )
-        return fill(
+        prompt = fill(
             read_prompt(PROMPTS_DIR, "analyze-relationships.md"),
             abstractions=listing, codebase=shared["codebase"],
         )
+        return prompt, shared["abstractions"], shared.get("symbol_graph", [])
 
-    def exec(self, prompt):
+    def exec(self, inputs):
+        prompt, abstractions, symbol_graph = inputs
+        files_by_name = {a["name"]: set(a.get("files", [])) for a in abstractions}
+
         def normalize(result):
             relationships = result["relationships"]
+            assert isinstance(relationships, list) and all(isinstance(r, dict) for r in relationships), \
+                f"relationships must be a list of objects: {relationships!r}"
             for r in relationships:
                 for field in ("from", "to", "label"):
                     assert isinstance(r.get(field), str) and r[field], \
                         f"relationship missing/invalid {field!r}: {r!r}"
+                from_files = files_by_name.get(r["from"])
+                to_files = files_by_name.get(r["to"])
+                extracted = bool(from_files and to_files and any(
+                    edge["kind"] == "imports" and edge["from"] in from_files and edge["to"] in to_files
+                    for edge in symbol_graph
+                ))
+                r["source"] = "EXTRACTED" if extracted else "INFERRED"
             return relationships
 
         return yaml_call(prompt, normalize)

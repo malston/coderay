@@ -1,7 +1,8 @@
 import pytest
 
 import coderay_utils.llm as llm_module
-from workflow.nodes import Analyze, PipelineState, Relate, SmartCrawl
+import workflow.nodes as nodes_module
+from workflow.nodes import Analyze, ExtractGraph, PipelineState, Relate, SmartCrawl
 
 
 def test_pipeline_state_documents_every_key_the_nodes_use():
@@ -9,11 +10,68 @@ def test_pipeline_state_documents_every_key_the_nodes_use():
         "repo_path", "instructions",
         "preview_budget", "target_files", "codebase_budget", "chapter_context_window",
         "codebase", "selected_files", "selection_reasoning",
+        "symbol_graph",
         "summary", "abstractions", "order",
         "relationships",
         "chapters", "filenames",
     }
     assert set(PipelineState.__annotations__) == expected
+
+
+def test_extract_graph_builds_edges_for_known_extensions(tmp_path):
+    (tmp_path / "main.py").write_text("from pkg.helper import go\n")
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "helper.py").write_text("def go(): pass\n")
+    shared = {
+        "repo_path": str(tmp_path),
+        "selected_files": ["main.py", "pkg/helper.py"],
+    }
+    prep_res = ExtractGraph().prep(shared)
+    exec_res = ExtractGraph().exec(prep_res)
+    ExtractGraph().post(shared, prep_res, exec_res)
+    assert shared["symbol_graph"] == [{"from": "main.py", "to": "pkg/helper.py", "kind": "imports"}]
+
+
+def test_extract_graph_skips_file_whose_extractor_raises(tmp_path, monkeypatch, capsys):
+    (tmp_path / "broken.py").write_text("this won't actually parse but that's fine\n")
+    (tmp_path / "main.py").write_text("from pkg.helper import go\n")
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "helper.py").write_text("def go(): pass\n")
+
+    real_python_extractor = nodes_module.REGISTRY[".py"]
+
+    class RaisingExtractor:
+        @staticmethod
+        def imports(path, text, selected_files):
+            if path == "broken.py":
+                raise ValueError("simulated parse failure")
+            return real_python_extractor.imports(path, text, selected_files)
+
+    monkeypatch.setitem(nodes_module.REGISTRY, ".py", RaisingExtractor)
+
+    shared = {
+        "repo_path": str(tmp_path),
+        "selected_files": ["broken.py", "main.py", "pkg/helper.py"],
+    }
+    prep_res = ExtractGraph().prep(shared)
+    exec_res = ExtractGraph().exec(prep_res)  # must not raise
+    ExtractGraph().post(shared, prep_res, exec_res)
+    assert shared["symbol_graph"] == [{"from": "main.py", "to": "pkg/helper.py", "kind": "imports"}]
+    _, covered = exec_res
+    assert covered == 2, "broken.py's parse failure must not count toward coverage"
+    assert "Skipping broken.py for import graph: simulated parse failure" in capsys.readouterr().out
+
+
+def test_extract_graph_skips_files_with_no_registered_extractor(tmp_path):
+    (tmp_path / "main.unknownlang").write_text("whatever this language is\n")
+    shared = {
+        "repo_path": str(tmp_path),
+        "selected_files": ["main.unknownlang"],
+    }
+    prep_res = ExtractGraph().prep(shared)
+    exec_res = ExtractGraph().exec(prep_res)
+    ExtractGraph().post(shared, prep_res, exec_res)
+    assert shared["symbol_graph"] == []
 
 
 def _make_files(tmp_path, count, size=2000):
@@ -46,8 +104,10 @@ def test_analyze_rejects_duplicate_abstraction_names(monkeypatch):
         "abstractions:\n"
         "  - name: Foo\n"
         "    description: a\n"
+        "    files: []\n"
         "  - name: Foo\n"
         "    description: b\n"
+        "    files: []\n"
         "learning_order:\n"
         "  - Foo\n"
         "  - Foo\n"
@@ -55,7 +115,89 @@ def test_analyze_rejects_duplicate_abstraction_names(monkeypatch):
     )
     monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
     with pytest.raises(AssertionError, match="duplicate abstraction names"):
-        Analyze().exec("prompt")
+        Analyze().exec(("prompt", set()))
+
+
+def test_analyze_rejects_abstraction_file_outside_selected_files(monkeypatch):
+    yaml_text = (
+        "```yaml\n"
+        "summary: a codebase\n"
+        "abstractions:\n"
+        "  - name: Foo\n"
+        "    description: a\n"
+        "    files:\n"
+        "      - not_selected.py\n"
+        "learning_order:\n"
+        "  - Foo\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    with pytest.raises(AssertionError, match="not_selected.py"):
+        Analyze().exec(("prompt", {"foo.py"}))
+
+
+def test_analyze_rejects_non_list_abstractions(monkeypatch):
+    yaml_text = (
+        "```yaml\n"
+        "summary: a codebase\n"
+        "abstractions: not_a_list\n"
+        "learning_order: []\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    with pytest.raises(AssertionError, match="must be a list"):
+        Analyze().exec(("prompt", set()))
+
+
+def test_analyze_rejects_non_list_files(monkeypatch):
+    yaml_text = (
+        "```yaml\n"
+        "summary: a codebase\n"
+        "abstractions:\n"
+        "  - name: Foo\n"
+        "    description: a\n"
+        "    files: 5\n"
+        "learning_order:\n"
+        "  - Foo\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    with pytest.raises(AssertionError, match="must be a list of strings"):
+        Analyze().exec(("prompt", set()))
+
+
+def test_analyze_rejects_missing_files_key(monkeypatch):
+    yaml_text = (
+        "```yaml\n"
+        "summary: a codebase\n"
+        "abstractions:\n"
+        "  - name: Foo\n"
+        "    description: a\n"
+        "learning_order:\n"
+        "  - Foo\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    with pytest.raises(AssertionError, match="missing required field 'files'"):
+        Analyze().exec(("prompt", set()))
+
+
+def test_analyze_accepts_abstraction_files_within_selected_files(monkeypatch):
+    yaml_text = (
+        "```yaml\n"
+        "summary: a codebase\n"
+        "abstractions:\n"
+        "  - name: Foo\n"
+        "    description: a\n"
+        "    files:\n"
+        "      - foo.py\n"
+        "learning_order:\n"
+        "  - Foo\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    result = Analyze().exec(("prompt", {"foo.py"}))
+    assert result["abstractions"][0]["files"] == ["foo.py"]
 
 
 def test_analyze_retry_sends_a_different_prompt_each_time(monkeypatch, tmp_path):
@@ -77,7 +219,7 @@ def test_analyze_retry_sends_a_different_prompt_each_time(monkeypatch, tmp_path)
 
     monkeypatch.setattr(llm_module, "call_llm", fake_call_llm)
     with pytest.raises(AssertionError):
-        Analyze().exec("some prompt")
+        Analyze().exec(("some prompt", set()))
     assert len(prompts_seen) > 1
     assert len(set(prompts_seen)) == len(prompts_seen), \
         "retries sent an identical prompt -- cache would serve the stale bad response"
@@ -90,16 +232,29 @@ def test_analyze_accepts_matching_names_and_order(monkeypatch):
         "abstractions:\n"
         "  - name: Foo\n"
         "    description: a\n"
+        "    files: []\n"
         "  - name: Bar\n"
         "    description: b\n"
+        "    files: []\n"
         "learning_order:\n"
         "  - Bar\n"
         "  - Foo\n"
         "```"
     )
     monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
-    result = Analyze().exec("prompt")
+    result = Analyze().exec(("prompt", {"Foo.py", "Bar.py"}))
     assert {a["name"] for a in result["abstractions"]} == {"Foo", "Bar"}
+
+
+def test_relate_rejects_non_list_relationships(monkeypatch):
+    yaml_text = (
+        "```yaml\n"
+        "relationships: not_a_list\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    with pytest.raises(AssertionError, match="must be a list"):
+        Relate().exec(("prompt", [], []))
 
 
 def test_relate_rejects_edge_missing_a_required_field(monkeypatch):
@@ -115,7 +270,7 @@ def test_relate_rejects_edge_missing_a_required_field(monkeypatch):
     )
     monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
     with pytest.raises(AssertionError, match="label"):
-        Relate().exec("prompt")
+        Relate().exec(("prompt", [], []))
 
 
 def test_relate_rejects_non_string_label(monkeypatch):
@@ -129,7 +284,7 @@ def test_relate_rejects_non_string_label(monkeypatch):
     )
     monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
     with pytest.raises(AssertionError, match="label"):
-        Relate().exec("prompt")
+        Relate().exec(("prompt", [], []))
 
 
 def test_relate_accepts_well_formed_relationships(monkeypatch):
@@ -142,5 +297,90 @@ def test_relate_accepts_well_formed_relationships(monkeypatch):
         "```"
     )
     monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
-    result = Relate().exec("prompt")
-    assert result == [{"from": "Foo", "to": "Bar", "label": "uses"}]
+    result = Relate().exec(("prompt", [], []))
+    assert result == [{"from": "Foo", "to": "Bar", "label": "uses", "source": "INFERRED"}]
+
+
+def test_relate_tags_extracted_when_edge_matches_direction(monkeypatch):
+    yaml_text = (
+        "```yaml\n"
+        "relationships:\n"
+        "  - from: Foo\n"
+        "    to: Bar\n"
+        "    label: uses\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    abstractions = [{"name": "Foo", "files": ["foo.py"]}, {"name": "Bar", "files": ["bar.py"]}]
+    symbol_graph = [{"from": "foo.py", "to": "bar.py", "kind": "imports"}]
+    result = Relate().exec(("prompt", abstractions, symbol_graph))
+    assert result == [{"from": "Foo", "to": "Bar", "label": "uses", "source": "EXTRACTED"}]
+
+
+def test_relate_ignores_non_import_edge_kind(monkeypatch):
+    # symbol_graph only ever holds "imports" edges today, but the check must
+    # not silently trust a future edge kind (e.g. "calls") as EXTRACTED evidence.
+    yaml_text = (
+        "```yaml\n"
+        "relationships:\n"
+        "  - from: Foo\n"
+        "    to: Bar\n"
+        "    label: uses\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    abstractions = [{"name": "Foo", "files": ["foo.py"]}, {"name": "Bar", "files": ["bar.py"]}]
+    symbol_graph = [{"from": "foo.py", "to": "bar.py", "kind": "calls"}]
+    result = Relate().exec(("prompt", abstractions, symbol_graph))
+    assert result == [{"from": "Foo", "to": "Bar", "label": "uses", "source": "INFERRED"}]
+
+
+def test_relate_does_not_tag_extracted_for_reverse_direction_edge(monkeypatch):
+    # bar.py imports foo.py is evidence for "Bar uses Foo", not "Foo uses Bar" --
+    # tagging this EXTRACTED would be a wrong tag (post-review fix).
+    yaml_text = (
+        "```yaml\n"
+        "relationships:\n"
+        "  - from: Foo\n"
+        "    to: Bar\n"
+        "    label: uses\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    abstractions = [{"name": "Foo", "files": ["foo.py"]}, {"name": "Bar", "files": ["bar.py"]}]
+    symbol_graph = [{"from": "bar.py", "to": "foo.py", "kind": "imports"}]  # reverse
+    result = Relate().exec(("prompt", abstractions, symbol_graph))
+    assert result == [{"from": "Foo", "to": "Bar", "label": "uses", "source": "INFERRED"}]
+
+
+def test_relate_tags_inferred_when_no_matching_edge(monkeypatch):
+    yaml_text = (
+        "```yaml\n"
+        "relationships:\n"
+        "  - from: Foo\n"
+        "    to: Bar\n"
+        "    label: uses\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    abstractions = [{"name": "Foo", "files": ["foo.py"]}, {"name": "Bar", "files": ["bar.py"]}]
+    result = Relate().exec(("prompt", abstractions, []))
+    assert result == [{"from": "Foo", "to": "Bar", "label": "uses", "source": "INFERRED"}]
+
+
+def test_relate_tags_inferred_when_relationship_names_unknown_abstraction(monkeypatch):
+    # "Baz" isn't in abstractions -- build_mermaid already drops this edge downstream
+    # (workflow/__main__.py:68); the rollup has no file set to check, so INFERRED,
+    # not an assertion (post-review fix).
+    yaml_text = (
+        "```yaml\n"
+        "relationships:\n"
+        "  - from: Foo\n"
+        "    to: Baz\n"
+        "    label: uses\n"
+        "```"
+    )
+    monkeypatch.setattr(llm_module, "call_llm", lambda prompt: yaml_text)
+    abstractions = [{"name": "Foo", "files": ["foo.py"]}]
+    result = Relate().exec(("prompt", abstractions, []))
+    assert result == [{"from": "Foo", "to": "Baz", "label": "uses", "source": "INFERRED"}]

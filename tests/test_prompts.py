@@ -38,6 +38,7 @@ def test_prompt_templates_still_render_with_dummy_args():
     # can safely contain literal JSON/Mermaid braces without breaking rendering.
     dummy = {
         "chars_per_file": 1, "target_count": 1, "manifest": "", "codebase": "",
+        "selected_files": "",
         "abstractions": "", "name": "", "description": "", "chapter_num": 1,
         "total": 1, "prev_chapters": "", "chapter_list": "", "instructions": "",
     }

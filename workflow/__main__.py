@@ -59,6 +59,12 @@ def mermaid_label(s):
     return re.sub(r'[^\w .,:/()\[\]-]', '', s)[:60]
 
 
+MERMAID_LEGEND = (
+    "Solid arrows are backed by a real import between the files each abstraction claims; "
+    "dashed arrows are the model's judgment."
+)
+
+
 def build_mermaid(abstractions, relationships):
     ids = {a["name"]: f"A{i}" for i, a in enumerate(abstractions)}
     lines = ["flowchart TD"]
@@ -66,7 +72,10 @@ def build_mermaid(abstractions, relationships):
         lines.append(f'    A{i}["{mermaid_label(a["name"])}"]')
     for r in relationships:
         if r["from"] in ids and r["to"] in ids:
-            lines.append(f'    {ids[r["from"]]} -- "{mermaid_label(r["label"][:30])}" --> {ids[r["to"]]}')
+            label = mermaid_label(r["label"][:30])
+            arrow = "--" if r.get("source") == "EXTRACTED" else "-."
+            head = "-->" if r.get("source") == "EXTRACTED" else ".->"
+            lines.append(f'    {ids[r["from"]]} {arrow} "{label}" {head} {ids[r["to"]]}')
     return "\n".join(lines)
 
 
@@ -125,6 +134,7 @@ INDEX_HTML_TEMPLATE = """<!doctype html>
   <pre class="mermaid">
 {mermaid}
   </pre>
+  <p class="muted">{mermaid_legend}</p>
 
   <h2>Read in order</h2>
   <ol>
@@ -251,6 +261,7 @@ def write_index_md(chapters, repo_name, lens, summary, mermaid, out, generated_a
         f"{summary}\n",
         "## Architecture\n",
         f"```mermaid\n{mermaid}\n```\n",
+        f"_{MERMAID_LEGEND}_\n",
         "## Chapters\n",
     ]
     for ch in chapters:
@@ -273,6 +284,7 @@ def write_index_html(chapters, repo_name, lens, summary, mermaid, selected_files
         n_files=len(selected_files),
         summary=html.escape(summary.strip().replace("\n", " ")),
         mermaid=mermaid,
+        mermaid_legend=html.escape(MERMAID_LEGEND),
         chapter_list_html=chapter_list_html,
         files_list_html=files_list_html,
         reasoning_html=md_to_html(selection_reasoning),
@@ -340,7 +352,10 @@ def estimate_dry_run_cost(repo_path, instructions, provider, model, chapter_gues
     select_prompt, _files, _root = SmartCrawl().prep({"repo_path": repo_path})
 
     codebase = _codebase_preview_text(repo_path, CODEBASE_BUDGET)
-    analyze_prompt = fill(read_prompt(PROMPTS_DIR, "identify-abstractions.md"), codebase=codebase)
+    analyze_prompt = fill(
+        read_prompt(PROMPTS_DIR, "identify-abstractions.md"),
+        codebase=codebase, selected_files="(estimated -- not yet known)",
+    )
     relate_prompt = fill(
         read_prompt(PROMPTS_DIR, "analyze-relationships.md"),
         abstractions="(estimated -- not yet known)", codebase=codebase,

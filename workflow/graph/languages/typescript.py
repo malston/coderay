@@ -1,0 +1,74 @@
+"""Deterministic import extraction for TypeScript and TSX, via tree-sitter.
+
+tree-sitter-typescript ships two grammars in one package: language_typescript()
+for .ts, language_tsx() for .tsx (TSX syntax isn't valid under the plain
+TypeScript grammar). Both use the same import-statement query shape.
+"""
+import os
+
+import tree_sitter_typescript as _ts_ts
+from tree_sitter import Language, Parser, Query, QueryCursor
+
+EXTENSIONS = {".ts", ".tsx"}
+
+_TS_LANGUAGE = Language(_ts_ts.language_typescript())
+_TSX_LANGUAGE = Language(_ts_ts.language_tsx())
+
+_IMPORT_QUERY_SRC = """
+(import_statement
+  source: (string (string_fragment) @specifier))
+"""
+
+_EXTENSIONLESS_CANDIDATES = (".ts", ".tsx")
+_INDEX_CANDIDATES = (".ts", ".tsx")
+
+
+def _language_for(path):
+    return _TSX_LANGUAGE if path.endswith(".tsx") else _TS_LANGUAGE
+
+
+def _candidates(specifier, importer_path, selected_files):
+    """Resolve a relative specifier to the repo-relative path it imports. If more
+    than one candidate matches selected_files, the import is ambiguous, so the
+    edge is dropped rather than guessed.
+
+    A specifier that already names an extension (e.g. './x.ts') is resolved by
+    exact match only -- it never enters the extensionless-guessing loop below,
+    so an unrelated file that happens to share a prefix (e.g. 'x.tsx') can't
+    turn an unambiguous import into a false "ambiguous" one.
+    """
+    if not specifier.startswith("."):
+        return []
+    importer_dir = os.path.dirname(importer_path)
+    resolved_base = os.path.normpath(os.path.join(importer_dir, specifier))
+    if resolved_base in selected_files:
+        return [resolved_base]
+    if os.path.splitext(resolved_base)[1]:
+        return []  # specifier already carries an extension; no guessing
+    out = []
+    for ext in _EXTENSIONLESS_CANDIDATES:
+        candidate = resolved_base + ext
+        if candidate in selected_files and candidate not in out:
+            out.append(candidate)
+    for ext in _INDEX_CANDIDATES:
+        # os.sep, not a hardcoded "/": selected_files is built from
+        # os.path.relpath, so its separator matches the running platform.
+        candidate = f"{resolved_base}{os.sep}index{ext}"
+        if candidate in selected_files and candidate not in out:
+            out.append(candidate)
+    return out if len(out) <= 1 else []
+
+
+def imports(path, text, selected_files):
+    language = _language_for(path)
+    parser = Parser(language)
+    tree = parser.parse(text.encode("utf-8"))
+    query = Query(language, _IMPORT_QUERY_SRC)
+    captures = QueryCursor(query).captures(tree.root_node)
+    targets = []
+    for node in captures.get("specifier", []):
+        specifier = node.text.decode("utf-8")
+        for candidate in _candidates(specifier, path, selected_files):
+            if candidate not in targets:
+                targets.append(candidate)
+    return targets

@@ -66,6 +66,20 @@ def test_build_mermaid_handles_quote_in_name():
     assert 'A0["Weird "Quoted" Name"]' not in out
 
 
+def test_build_mermaid_renders_extracted_edge_as_solid_arrow():
+    abstractions = [{"name": "Foo"}, {"name": "Bar"}]
+    relationships = [{"from": "Foo", "to": "Bar", "label": "uses", "source": "EXTRACTED"}]
+    out = build_mermaid(abstractions, relationships)
+    assert 'A0 -- "uses" --> A1' in out
+
+
+def test_build_mermaid_renders_inferred_edge_as_dashed_arrow():
+    abstractions = [{"name": "Foo"}, {"name": "Bar"}]
+    relationships = [{"from": "Foo", "to": "Bar", "label": "guesses", "source": "INFERRED"}]
+    out = build_mermaid(abstractions, relationships)
+    assert 'A0 -. "guesses" .-> A1' in out
+
+
 def test_mermaid_script_is_pinned_and_has_integrity():
     assert "mermaid/dist/mermaid.min.js\"" not in MERMAID_SCRIPT  # unpinned "latest"
     assert "@11.17.2/dist/mermaid.min.js" in MERMAID_SCRIPT
@@ -175,6 +189,22 @@ def test_write_index_md_lists_chapters_and_mermaid(tmp_path):
     assert "# myrepo" in out
     assert "[First](01_first.md)" in out
     assert "flowchart TD" in out
+
+
+def test_write_index_md_includes_mermaid_legend(tmp_path):
+    write_index_md(_chapters(), "myrepo", "beginner-tutorial", "a summary", "flowchart TD", str(tmp_path), generated_at="2026-08-31")
+    out = (tmp_path / "index.md").read_text(encoding="utf-8")
+    assert "dashed arrows are the model's judgment" in out
+
+
+def test_write_index_html_includes_mermaid_legend(tmp_path):
+    write_index_html(
+        _chapters(), "myrepo", "beginner-tutorial", "a summary",
+        "flowchart TD", ["a.py"], "because", str(tmp_path),
+        generated_at="2026-08-31",
+    )
+    out = (tmp_path / "index.html").read_text(encoding="utf-8")
+    assert "dashed arrows are the model&#x27;s judgment" in out
 
 
 def test_write_index_html_escapes_summary_and_lists_files(tmp_path):
