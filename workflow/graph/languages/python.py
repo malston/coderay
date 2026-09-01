@@ -4,6 +4,8 @@ Only import edges are extracted -- resolving a call target to its defining symbo
 needs full name resolution, which is out of scope for v1 (see
 docs/superpowers/specs/2026-08-31-deterministic-import-graph-design.md, Non-goals).
 """
+import os
+
 import tree_sitter_python as _ts_python
 from tree_sitter import Language, Parser, Query, QueryCursor
 
@@ -22,9 +24,14 @@ _IMPORT_QUERY_SRC = """
 def _candidates(module_dotted, selected_files):
     """`foo.bar` -> the repo-relative path it resolves to: foo/bar.py or
     foo/bar/__init__.py -- whichever is actually in selected_files. If both are
-    present, the import is ambiguous, so the edge is dropped rather than guessed."""
-    base = module_dotted.replace(".", "/")
-    matches = sorted({f"{base}.py", f"{base}/__init__.py"} & selected_files)
+    present, the import is ambiguous, so the edge is dropped rather than guessed.
+
+    Joins with os.sep, not a hardcoded "/": selected_files is built from
+    os.path.relpath on this machine, so its separator matches whatever the
+    running platform uses.
+    """
+    base = module_dotted.replace(".", os.sep)
+    matches = sorted({f"{base}.py", f"{base}{os.sep}__init__.py"} & selected_files)
     return matches if len(matches) <= 1 else []
 
 

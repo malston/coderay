@@ -1,3 +1,4 @@
+import workflow.graph.languages.python as python_module
 from workflow.graph.languages.python import imports
 
 
@@ -27,3 +28,10 @@ def test_imports_drops_ambiguous_module_with_two_candidates():
     text = "import pkg.sub\n"  # could be pkg/sub.py or pkg/sub/__init__.py -- ambiguous
     selected = {"pkg/sub.py", "pkg/sub/__init__.py", "main.py"}
     assert imports("main.py", text, selected) == []
+
+
+def test_imports_uses_platform_separator_for_module_path(monkeypatch):
+    monkeypatch.setattr(python_module.os, "sep", "\\")
+    text = "import pkg.sub\n"
+    selected = {"pkg\\sub.py"}
+    assert imports("main.py", text, selected) == ["pkg\\sub.py"]

@@ -23,3 +23,11 @@ def test_imports_drops_ambiguous_specifier_with_two_candidates():
     text = "import foo from './foo';\n"  # matches both foo.ts and foo.tsx -- ambiguous
     selected = {"foo.ts", "foo.tsx", "main.ts"}
     assert imports("main.ts", text, selected) == []
+
+
+def test_imports_resolves_explicit_extension_specifier_even_with_decoy_file():
+    # './x.ts' already names its extension -- an unrelated 'x.ts.tsx' file must
+    # not make this look ambiguous and drop the edge.
+    text = "import x from './x.ts';\n"
+    selected = {"x.ts", "x.ts.tsx", "main.ts"}
+    assert imports("main.ts", text, selected) == ["x.ts"]

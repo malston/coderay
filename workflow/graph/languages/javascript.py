@@ -25,16 +25,24 @@ _EXTENSIONLESS_CANDIDATES = (".js", ".jsx", ".mjs", ".cjs", "/index.js", "/index
 def _candidates(specifier, importer_path, selected_files):
     """Resolve a relative specifier to the repo-relative path it imports. If more
     than one candidate matches selected_files, the import is ambiguous, so the
-    edge is dropped rather than guessed."""
+    edge is dropped rather than guessed.
+
+    A specifier that already names an extension (e.g. './x.js') is resolved by
+    exact match only -- it never enters the extensionless-guessing loop below,
+    so an unrelated file that happens to share a prefix (e.g. 'x.js.jsx') can't
+    turn an unambiguous import into a false "ambiguous" one.
+    """
     if not specifier.startswith("."):
         return []  # bare package specifier, not a file in this repo
     importer_dir = os.path.dirname(importer_path)
     resolved_base = os.path.normpath(os.path.join(importer_dir, specifier))
-    out = []
     if resolved_base in selected_files:
-        out.append(resolved_base)
+        return [resolved_base]
+    if os.path.splitext(resolved_base)[1]:
+        return []  # specifier already carries an extension; no guessing
+    out = []
     for suffix in _EXTENSIONLESS_CANDIDATES:
-        candidate = resolved_base + suffix if not resolved_base.endswith(suffix) else resolved_base
+        candidate = resolved_base + suffix
         if candidate in selected_files and candidate not in out:
             out.append(candidate)
     return out if len(out) <= 1 else []
