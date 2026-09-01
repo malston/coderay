@@ -30,6 +30,16 @@ def test_imports_drops_ambiguous_module_with_two_candidates():
     assert imports("main.py", text, selected) == []
 
 
+def test_imports_drops_relative_import_rather_than_misresolving_as_absolute():
+    # `from .helpers import x` has no `dotted_name` at the import_from_statement's
+    # module_name field (it's a `relative_import` node) -- the query never
+    # matches it, so this is a safe miss, never a wrong edge, even when a
+    # same-named top-level file exists.
+    text = "from .helpers import x\n"
+    selected = {"helpers.py", "pkg/main.py"}
+    assert imports("pkg/main.py", text, selected) == []
+
+
 def test_imports_uses_platform_separator_for_module_path(monkeypatch):
     monkeypatch.setattr(python_module.os, "sep", "\\")
     text = "import pkg.sub\n"
