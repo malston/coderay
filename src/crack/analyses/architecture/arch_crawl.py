@@ -62,7 +62,10 @@ def _env_names(text):
 
 
 def _classify(rel):
-    p = rel.replace(os.sep, '/')
+    # The manifest directories below are matched with their surrounding
+    # slashes, so the path carries a leading one: `k8s/` and `deploy/` sit at
+    # the repo root as often as they sit under `infra/`.
+    p = '/' + rel.replace(os.sep, '/').lstrip('/')
     base = os.path.basename(p).lower()
     if base.startswith('docker-compose') or base in ('compose.yaml', 'compose.yml'):
         return 'compose'

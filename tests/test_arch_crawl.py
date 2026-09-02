@@ -53,16 +53,17 @@ def test_classify_is_blind_to_infrastructure_written_in_a_general_purpose_langua
 
 
 @pytest.mark.parametrize("rel", ["k8s/api.yaml", "manifests/web.yml", "charts/api/values.yaml"])
-def test_classify_misses_a_manifest_directory_at_the_repo_root(rel):
-    """Known limitation, the same shape as backend's coderay-q2r.7 and tracked
-    with it under coderay-q2r.10.
+def test_classify_reads_a_manifest_directory_at_the_repo_root(rel):
+    """Was the second half of coderay-q2r.10, fixed upstream and re-ported at
+    pin 34f0ad2, alongside the same fix to backend's crawl (coderay-q2r.7).
 
-    Every k8s directory rule matches on a leading slash ('/k8s/', '/charts/'),
-    and os.path.relpath never produces one, so a manifest directory at the
-    repository root is skipped while the identical directory one level down is
-    classified. Inherited from the port source, deliberately not fixed here.
+    The k8s rules match their surrounding slashes ('/k8s/', '/charts/'), and
+    os.path.relpath never produces a leading one, so a manifest directory at
+    the repository root used to be skipped while the identical directory one
+    level down classified. Both forms must classify now, which is what
+    separates the fix from one that merely stripped the slashes.
     """
-    assert ac._classify(rel) is None
+    assert ac._classify(rel) == "k8s"
     assert ac._classify("deploy/" + rel) == "k8s"
 
 

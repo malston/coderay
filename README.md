@@ -21,11 +21,9 @@ A five-stage pipeline (BuildBundle, Pipeline, LayerCode, Trace, OverviewNode) th
 
 - Builds a bundle describing the repository structure at each layer.
 - Renders three views: the pipeline with a file count per layer, code snippets showing how each layer connects to the others, and a trace of a single request through all six layers.
-- Expects a server-side backend (Django, Express, Rails, FastAPI, and similar frameworks). Works best on backends with clear separation of concerns.
-- Known limitations, worth reading before you spend a run:
-  - Pointed at a repository with no server-side backend, it does not stop. It spends all three LLM calls and writes a report invented from an empty bundle, with no warning and no error. Check the layer counts it prints after the crawl before trusting the output.
-  - A layer directory at the repository root (`pages/api/` in some Next.js layouts, `routes/` in some Express layouts) is not classified, so those files are skipped and the layer reports zero.
-  - A flat Django app is affected too: `views.py` is not recognised, so the handler layer reports zero even though the routes and models are found.
+- Expects a server-side backend (Django, Express, Rails, FastAPI, and similar frameworks). Works best on backends with clear separation of concerns. Pointed at a repository with none, the run stops before it spends an LLM call.
+- Known limitation, worth reading before you spend a run:
+  - A flat Django app is read incompletely: `views.py` is not recognised, so the handler layer reports zero even though the routes and models are found.
 
 ### Architecture
 
@@ -36,7 +34,6 @@ A five-stage pipeline (BuildBundle, Inventory, TechStack, TraceRequest, Overview
 - Expects a multi-service application. Pointed at a repository with none of those sources, the run stops before it spends an LLM call.
 - Known limitations, worth reading before you spend a run:
   - Infrastructure written in a general-purpose language is invisible. AWS CDK and Pulumi stacks are ordinary `.ts`/`.py` programs, and SAM `template.yaml` is an ordinary YAML file, so none of them are classified. A CDK repository reports `0 config files` while its stacks sit in `infra/lib/`. Tracked as `coderay-q2r.10`.
-  - A manifest directory at the repository root (`k8s/`, `manifests/`, `charts/`) is not classified, though the same directory one level down is. This is the same root-directory blind spot the backend analysis has.
   - **Secret values can reach the LLM.** Only `.env` files are reduced to variable names. Compose files, Kubernetes manifests, `.tfvars`, and platform config such as `fly.toml` are sent whole, values included, even though the bundle header claims otherwise. A database password in a compose `environment:` block or a committed `.tfvars` leaves your machine. Check what those files hold before pointing this at a repository. Tracked as `coderay-q2r.14`.
   - Outside a git checkout, `git grep` fails and the SDK import lines are silently empty, so a tarball export loses the evidence that a connection is live and the report is built on configuration alone. Tracked as `coderay-q2r.15`.
 

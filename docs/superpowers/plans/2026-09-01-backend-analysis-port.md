@@ -14,7 +14,7 @@
 
 ## Global Constraints
 
-- **Port source of record:** `~/code/Crack-Any-Codebase-with-AI`, branch `feat/unified-cli`, commit `bb504c7`. Referred to below as `$SIB`. Verify with `git -C ~/code/Crack-Any-Codebase-with-AI rev-parse feat/unified-cli` before copying anything; it must print `bb504c7a9f44ba14f8d71a1f0cd9d2c997fb9d44`.
+- **Port source of record:** `~/code/Crack-Any-Codebase-with-AI`, branch `main`, commit `34f0ad2`. Referred to below as `$SIB`. Verify with `git -C ~/code/Crack-Any-Codebase-with-AI rev-parse main` before copying anything; it must print `34f0ad2a7044284555911590ca3773c92e1244ac`.
 - **No new dependencies.** `markdown-it-py>=4.2.0,<5` is already in `pyproject.toml`.
 - **`tour` is not modified.** No file under `src/crack/analyses/tour/` changes in this plan. `src/crack/cli.py` does not change either.
 - **Prompt loading uses `importlib.resources`**, never `os.path.join(os.path.dirname(__file__), ...)`. coderay's `read_prompt(prompts_dir, name)` does `(prompts_dir / name).read_text(encoding="utf-8")`, so it needs a Traversable or `Path`, not a `str`.
@@ -1266,7 +1266,7 @@ import pathlib
 import subprocess
 import sys
 
-PORT_SOURCE_COMMIT = "bb504c7a9f44ba14f8d71a1f0cd9d2c997fb9d44"
+PORT_SOURCE_COMMIT = "34f0ad2a7044284555911590ca3773c92e1244ac"
 DEFAULT_SIBLING = pathlib.Path.home() / "code" / "Crack-Any-Codebase-with-AI"
 GOLDEN = pathlib.Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "golden"
 
@@ -1347,7 +1347,7 @@ Then run:
 scripts/regen_golden.py backend
 ```
 
-Expected: `wrote tests/fixtures/golden/backend/index.html and .../index.md from ... @ bb504c7`. The HTML should be 244 lines and the markdown 59.
+Expected: `wrote tests/fixtures/golden/backend/index.html and .../index.md from ... @ 34f0ad2`. The HTML should be 244 lines and the markdown 59.
 
 - [ ] **Step 7: Run tests to verify they pass**
 

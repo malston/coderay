@@ -29,20 +29,22 @@ def test_classify_returns_none_for_a_non_layer_file(rel):
     assert bc.classify(rel) is None
 
 
-@pytest.mark.parametrize("rel", [
-    "pages/api/login.ts", "routes/user.js", "views/home.py",
-    "models/user.py", "services/billing.py",
+@pytest.mark.parametrize("rel,layer", [
+    ("pages/api/login.ts", "route"), ("routes/user.js", "route"),
+    ("views/home.py", "handler"), ("models/user.py", "database"),
+    ("services/billing.py", "service"),
 ])
-def test_classify_misses_a_layer_directory_at_the_repo_root(rel):
-    """Known limitation, tracked as coderay-q2r.7.
+def test_classify_reads_a_layer_directory_at_the_repo_root(rel, layer):
+    """Was coderay-q2r.7, fixed upstream and re-ported at pin 34f0ad2.
 
-    Every directory rule matches on a leading slash, and os.path.relpath
-    never produces one, so a layer directory at the repository root is
-    skipped. Inherited from the port source and deliberately not fixed
-    here, because backend_crawl.py is copied verbatim. When upstream fixes
-    it this test fails, which is the signal to re-port and invert it.
+    Every directory rule matches on its surrounding slashes, and
+    os.path.relpath never produces a leading one, so a repo keeping
+    `pages/api/` or `routes/` at its root used to match nothing. classify now
+    prepends the leading slash. The nested form must keep working too, which
+    is what separates the fix from one that merely stripped the slashes.
     """
-    assert bc.classify(rel) is None
+    assert bc.classify(rel) == layer
+    assert bc.classify("src/" + rel) == layer
 
 
 def _repo(tmp_path, files):
