@@ -29,6 +29,22 @@ def test_classify_returns_none_for_a_non_layer_file(rel):
     assert bc.classify(rel) is None
 
 
+@pytest.mark.parametrize("rel", [
+    "pages/api/login.ts", "routes/user.js", "views/home.py",
+    "models/user.py", "services/billing.py",
+])
+def test_classify_misses_a_layer_directory_at_the_repo_root(rel):
+    """Known limitation, tracked as coderay-q2r.7.
+
+    Every directory rule matches on a leading slash, and os.path.relpath
+    never produces one, so a layer directory at the repository root is
+    skipped. Inherited from the port source and deliberately not fixed
+    here, because backend_crawl.py is copied verbatim. When upstream fixes
+    it this test fails, which is the signal to re-port and invert it.
+    """
+    assert bc.classify(rel) is None
+
+
 def _repo(tmp_path, files):
     for rel, text in files.items():
         p = tmp_path / rel
