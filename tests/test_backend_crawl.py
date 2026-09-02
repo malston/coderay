@@ -96,10 +96,18 @@ def test_build_bundle_caps_total_size(tmp_path):
 
 
 def test_build_bundle_samples_handlers_and_prefers_core_names(tmp_path):
-    files = {f"app/views/zz{i}.py": "pass\n" for i in range(20)}
+    """The sample must be chosen by CORE_HINTS priority, not by filename order.
+
+    Every candidate here sorts alphabetically BEFORE the core-named file, so a
+    build_bundle that ignored _priority and sorted on the name alone would pick
+    aaa.py and miss message.py. That is the whole point: the trace pass needs
+    the file naming the core endpoint, and it is rarely first alphabetically.
+    """
+    files = {f"app/views/aaa{i}.py": "pass\n" for i in range(20)}
     files["app/views/message.py"] = "def send(): pass\n"
     repo = _repo(tmp_path, files)
-    bundle, stats = bc.build_bundle(repo, per_layer_sample=2)
+    bundle, stats = bc.build_bundle(repo, per_layer_sample=1)
     assert stats["counts"]["handler"] == 21
+    assert stats["included"] == 1
     assert "app/views/message.py" in bundle
-    assert stats["included"] == 2
+    assert "app/views/aaa0.py" not in bundle
