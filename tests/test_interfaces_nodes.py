@@ -1,8 +1,27 @@
 import pytest
 
+import crack.core.llm as llm_module
 from crack.analyses.interfaces import nodes as n
 
 CARDS = "### Booking (12)\nbody\n\n### Auth (3)\nbody\n"
+
+
+def _fake_llm(monkeypatch, fn):
+    """Fake the LLM at both boundaries the node calls through.
+
+    EndpointSequence reaches the model two ways: directly via call_llm for the
+    diagram, and via crack.core.yaml_call for the endpoint pick. yaml_call
+    resolves call_llm in its own module, so patching only this module's name
+    would leave the pick calling the real API.
+    """
+    monkeypatch.setattr(n, "call_llm", fn)
+    monkeypatch.setattr(llm_module, "call_llm", fn)
+
+
+def _sequence_node():
+    node = n.EndpointSequence()
+    node.wait = 0
+    return node
 
 
 def _repo(tmp_path, files):
@@ -124,10 +143,10 @@ def test_endpoint_sequence_reads_the_files_the_model_picks(tmp_path, monkeypatch
         prompts.append(p)
         return replies[len(prompts) - 1]
 
-    monkeypatch.setattr(n, "call_llm", reply)
+    _fake_llm(monkeypatch, reply)
     shared = {"repo_path": repo, "routes": "r", "menu_md": "m",
               "flows_md": "### F\nbody\n", "route_files": ["pages/api/book.ts"]}
-    n.EndpointSequence().run(shared)
+    _sequence_node().run(shared)
     assert shared["sequence_endpoint"] == "POST /api/book"
     assert shared["sequence_files"] == ["pages/api/book.ts"]
     # The handler source reached the diagram prompt, which is the point of step 1.
@@ -135,8 +154,8 @@ def test_endpoint_sequence_reads_the_files_the_model_picks(tmp_path, monkeypatch
 
 
 def test_endpoint_sequence_falls_back_to_the_largest_handler_when_the_pick_is_unusable(
-        tmp_path, monkeypatch):
-    """The pick step returning junk must not cost the whole section.
+        tmp_path, monkeypatch, capsys):
+    """The pick giving up must not cost the section, and must not be silent.
 
     Two distinguishing choices in one repo. The small handler sorts first
     alphabetically, so picking the largest is what separates the fallback from
@@ -149,15 +168,19 @@ def test_endpoint_sequence_falls_back_to_the_largest_handler_when_the_pick_is_un
         "pages/api/aaa.ts": "small\n",
         "pages/api/zzz.ts": "much longer handler body\n" * 20,
     })
-    replies = ["not yaml at all",
-               "```mermaid\nsequenceDiagram\n  a->>b: hi\n```"]
-    prompts = []
-    monkeypatch.setattr(n, "call_llm", lambda p: prompts.append(p) or replies[len(prompts) - 1])
+
+    def reply(prompt):
+        if "sequence diagram" in prompt:      # the pick, never usable here
+            return "not yaml at all"
+        return "```mermaid\nsequenceDiagram\n  a->>b: hi\n```"
+
+    _fake_llm(monkeypatch, reply)
     shared = {"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "",
               "route_files": ["pages/api/aaa.ts", "pages/api/zzz.ts"]}
-    n.EndpointSequence().run(shared)
+    _sequence_node().run(shared)
     assert shared["sequence_files"] == ["pages/api/zzz.ts"]
     assert shared["sequence_endpoint"] == "pages/api/zzz.ts"
+    assert "falling back" in capsys.readouterr().out
 
 
 def test_endpoint_sequence_retries_a_reply_with_no_diagram(tmp_path, monkeypatch):
@@ -170,9 +193,8 @@ def test_endpoint_sequence_retries_a_reply_with_no_diagram(tmp_path, monkeypatch
         return pick if "sequence diagram" in p else (
             "no diagram" if len(calls) < 5 else "```mermaid\nsequenceDiagram\n  a->>b: hi\n```")
 
-    monkeypatch.setattr(n, "call_llm", reply)
-    node = n.EndpointSequence()
-    node.wait = 0
+    _fake_llm(monkeypatch, reply)
+    node = _sequence_node()
     shared = {"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "",
               "route_files": ["pages/api/book.ts"]}
     node.run(shared)
@@ -190,3 +212,82 @@ def test_the_routes_slot_is_filled_before_the_prompt_goes_out(monkeypatch):
     n.ApiMenu().run({"routes": "ROUTE-BUNDLE"})
     assert "{routes}" not in prompts[0]
     assert "ROUTE-BUNDLE" in prompts[0]
+
+
+def test_the_endpoint_pick_retries_a_malformed_reply_instead_of_giving_up(tmp_path, monkeypatch):
+    """The pick goes through crack.core.yaml_call, which retries a bad reply
+    with a varied tail rather than accepting the first failure.
+
+    The distinguishing input is a first reply that is not YAML followed by a
+    good one: swallowing the parse error would take the fallback and lose the
+    endpoint the model went on to name correctly.
+    """
+    repo = _repo(tmp_path, {"pages/api/book.ts": "export default book\n",
+                            "pages/api/other.ts": "x\n" * 50})
+    replies = [
+        "sorry, here is prose instead of yaml",
+        '```yaml\nendpoint: "POST /api/book"\nfiles:\n  - pages/api/book.ts\n```',
+        "```mermaid\nsequenceDiagram\n  a->>b: hi\n```",
+    ]
+    _fake_llm(monkeypatch, lambda p: replies.pop(0))
+    shared = {"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "",
+              "route_files": ["pages/api/book.ts", "pages/api/other.ts"]}
+    _sequence_node().run(shared)
+    assert shared["sequence_endpoint"] == "POST /api/book"
+    assert shared["sequence_files"] == ["pages/api/book.ts"]
+
+
+def test_a_network_error_during_the_pick_is_not_turned_into_a_silent_fallback(
+        tmp_path, monkeypatch):
+    """A blanket `except Exception` around the pick swallowed transport errors
+    too, quietly degrading the diagram instead of letting the node retry.
+
+    yaml_call catches only parse and validation failures, so this propagates.
+    """
+    repo = _repo(tmp_path, {"pages/api/book.ts": "export default book\n"})
+
+    def reply(prompt):
+        # Only the pick call fails. The diagram call succeeds, so a swallowed
+        # transport error would look like a clean run that merely fell back --
+        # which is exactly the failure this test exists to catch.
+        if "sequence diagram" in prompt:
+            raise RuntimeError("connection reset")
+        return "```mermaid\nsequenceDiagram\n  a->>b: hi\n```"
+
+    _fake_llm(monkeypatch, reply)
+    node = _sequence_node()
+    with pytest.raises(RuntimeError, match="connection reset"):
+        node.run({"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "",
+                  "route_files": ["pages/api/book.ts"]})
+
+
+def test_the_endpoint_pick_retries_well_formed_yaml_that_names_nothing(tmp_path, monkeypatch):
+    """A reply can parse cleanly and still be useless.
+
+    `endpoint: ""` with no files is valid YAML, so a parse-only check accepts
+    it, read_files gets an empty list, and the run drops to the fallback
+    without ever asking the model again. The pick is validated, not just
+    parsed, so yaml_call retries and the second reply is used. The fallback
+    would have chosen zzz.ts, so taking book.ts is what proves the retry.
+    """
+    repo = _repo(tmp_path, {"pages/api/book.ts": "export default book\n",
+                            "pages/api/zzz.ts": "much longer handler\n" * 20})
+    replies = [
+        '```yaml\nendpoint: ""\nfiles: []\n```',
+        '```yaml\nendpoint: "POST /api/book"\nfiles:\n  - pages/api/book.ts\n```',
+        "```mermaid\nsequenceDiagram\n  a->>b: hi\n```",
+    ]
+    _fake_llm(monkeypatch, lambda p: replies.pop(0))
+    shared = {"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "",
+              "route_files": ["pages/api/book.ts", "pages/api/zzz.ts"]}
+    _sequence_node().run(shared)
+    assert shared["sequence_endpoint"] == "POST /api/book"
+    assert shared["sequence_files"] == ["pages/api/book.ts"]
+
+
+def test_the_module_does_not_carry_its_own_yaml_parser():
+    """CLAUDE.md: LLM YAML parsing goes through crack.core, not a local copy.
+
+    The duplicate was a real cache/retry defect once before.
+    """
+    assert not hasattr(n, "parse_yaml")

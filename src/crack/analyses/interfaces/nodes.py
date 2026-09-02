@@ -14,10 +14,9 @@ import os
 import re
 from importlib import resources
 
-import yaml
 from pocketflow import Node
 
-from crack.core import call_llm, read_prompt, fill
+from crack.core import call_llm, read_prompt, fill, yaml_call
 from . import routes_find as rf
 
 PROMPTS_DIR = resources.files("crack.analyses.interfaces") / "prompts"
@@ -25,12 +24,6 @@ PROMPTS_DIR = resources.files("crack.analyses.interfaces") / "prompts"
 
 def load_prompt(name):
     return read_prompt(PROMPTS_DIR, name)
-
-
-def parse_yaml(text):
-    m = re.search(r"```yaml\s*\n(.*?)```", text, re.DOTALL)
-    blob = m.group(1) if m else text
-    return yaml.safe_load(blob)
 
 
 def split_menu(md):
@@ -140,6 +133,29 @@ API surface (route files):
 """
 
 
+def _pick_endpoint(menu, routes):
+    """Ask the model for the endpoint to diagram and the files that show it.
+
+    Goes through crack.core.yaml_call rather than a local parse: yaml_call
+    retries a malformed reply with a varied tail, which both nudges the model to
+    fix its quoting and dodges the response cache so the retry is genuinely
+    fresh. Transport errors are not caught here; they belong to the node's own
+    max_retries, and swallowing them turned a network blip into a silently
+    degraded diagram. Raises AssertionError once the retries are spent.
+
+    yaml_call is coderay's, not the port source's: the local parse_yaml this
+    replaces is the duplication CLAUDE.md names, which was a real cache/retry
+    defect in a prior epic."""
+    def normalize(data):
+        data = data or {}
+        endpoint = str(data.get("endpoint", "")).strip()
+        paths = [str(p) for p in (data.get("files") or []) if p]
+        assert endpoint or paths, "pick named neither an endpoint nor any files"
+        return endpoint, paths
+
+    return yaml_call(fill(_PICK_PROMPT, menu=menu, routes=routes), normalize)
+
+
 class EndpointSequence(Node):
     """Two steps: an LLM picks the endpoint + its source files, we read them, then
     an LLM draws the sequence diagram. If the pick is unusable, fall back to the
@@ -158,13 +174,14 @@ class EndpointSequence(Node):
 
     def exec(self, ctx):
         # Step 1 — pick the endpoint and the files that show its flow.
-        endpoint, paths = "", []
         try:
-            picked = parse_yaml(call_llm(fill(_PICK_PROMPT, menu=ctx["menu"], routes=ctx["routes"])))
-            endpoint = str(picked.get("endpoint", "")).strip()
-            paths = [str(p) for p in (picked.get("files") or []) if p]
-        except Exception:
-            pass
+            endpoint, paths = _pick_endpoint(ctx["menu"], ctx["routes"])
+        except AssertionError as e:
+            # yaml_call has already retried with a varied tail. Only the pick is
+            # lost, and the fallback below still draws a diagram, so say what
+            # happened rather than letting the section look like a clean run.
+            print(f"  Sequence: endpoint pick unusable, falling back ({e})")
+            endpoint, paths = "", []
         handler_source, resolved = rf.read_files(ctx["repo"], paths)
         if not handler_source.strip():
             # Fallback: the largest Next.js handler on disk.

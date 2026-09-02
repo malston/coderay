@@ -116,7 +116,7 @@ FindRoutes -> ApiMenu -> TraceActions -> EndpointSequence -> OverviewNode
 
 - `src/crack/analyses/interfaces/routes_find.py` finds entry-point files by framework convention and concatenates them, aggregators first. `read_files` resolves LLM-picked source paths and refuses any that leave the repo (`_within`, coderay-q2r.16, the one deliberate divergence in that module).
 - The only four-section analysis, and the only one using the engine's `when_empty="omit"` (the tour) and a Section's own `prefix`/`cards` hooks (the sequence diagram and its card).
-- EndpointSequence makes two LLM calls: one picks the endpoint and its source files, one draws the diagram from them.
+- EndpointSequence makes two LLM calls: one picks the endpoint and its source files, one draws the diagram from them. The pick goes through `crack.core.yaml_call` (coderay-q2r.18, the second divergence in this analysis), so a malformed or empty reply retries with a varied tail instead of dropping straight to the fallback, and a transport error reaches the node's own `max_retries` instead of being swallowed.
 
 Full architecture rationale and past review findings: `.full-review/*.md` (a comprehensive code review that produced the fixes now on `main`).
 
