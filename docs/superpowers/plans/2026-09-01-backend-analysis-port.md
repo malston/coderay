@@ -14,7 +14,7 @@
 
 ## Global Constraints
 
-- **Port source of record:** `~/code/Crack-Any-Codebase-with-AI`, branch `feat/unified-cli`, commit `75ec7c4`. Referred to below as `$SIB`. Verify with `git -C ~/code/Crack-Any-Codebase-with-AI rev-parse feat/unified-cli` before copying anything; it must print `75ec7c49756e060fc38539d10e5bebe6098a9676`.
+- **Port source of record:** `~/code/Crack-Any-Codebase-with-AI`, branch `feat/unified-cli`, commit `c36679c`. Referred to below as `$SIB`. Verify with `git -C ~/code/Crack-Any-Codebase-with-AI rev-parse feat/unified-cli` before copying anything; it must print `c36679c415b924bd2beb23bcc3cfad6d63e60574`.
 - **No new dependencies.** `markdown-it-py>=4.2.0,<5` is already in `pyproject.toml`.
 - **`tour` is not modified.** No file under `src/crack/analyses/tour/` changes in this plan. `src/crack/cli.py` does not change either.
 - **Prompt loading uses `importlib.resources`**, never `os.path.join(os.path.dirname(__file__), ...)`. coderay's `read_prompt(prompts_dir, name)` does `(prompts_dir / name).read_text(encoding="utf-8")`, so it needs a Traversable or `Path`, not a `str`.
@@ -1086,12 +1086,29 @@ def test_golden_markdown(name):
 
 @pytest.mark.parametrize("name", ["backend"])
 def test_golden_html_escapes_injected_markup(name):
-    """The fixture carries a <script> tag in a card header on purpose."""
+    """Every fixture carries injected markup in two places on purpose: a card
+    header, and the mermaid diagram source.
+
+    The diagram is the one that bit the port source (see its commit 725b01e).
+    A diagram containing </pre><script> closed the pre element and executed
+    when the page was opened. Mermaid reads the element's textContent, which
+    the browser decodes back, so escaping the source is safe and reversible.
+    """
+    d = GOLDEN / name
+    html = (d / "index.html").read_text()
+    assert "<script>" not in html.split("</head>", 1)[1]
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "&lt;/pre&gt;&lt;script&gt;" in html
+
+
+@pytest.mark.parametrize("name", ["backend"])
+def test_render_escapes_the_diagram_it_is_handed(name):
+    """The golden files are static; this re-renders to catch a live regression."""
     d = GOLDEN / name
     shared = json.loads((d / "shared.json").read_text())
-    html = (d / "index.html").read_text()
-    assert "<script>alert(1)</script>" not in html
-    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "</pre><script>" in shared["pipeline_diagram"], "fixture lost its payload"
+    html = render.render_html(ANALYSES[name], "toy_repo", shared)
+    assert "</pre><script>" not in html
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -1191,7 +1208,7 @@ import pathlib
 import subprocess
 import sys
 
-PORT_SOURCE_COMMIT = "75ec7c49756e060fc38539d10e5bebe6098a9676"
+PORT_SOURCE_COMMIT = "c36679c415b924bd2beb23bcc3cfad6d63e60574"
 DEFAULT_SIBLING = pathlib.Path.home() / "code" / "Crack-Any-Codebase-with-AI"
 GOLDEN = pathlib.Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "golden"
 
@@ -1248,9 +1265,9 @@ Create `tests/fixtures/golden/backend/shared.json`:
     "database": 3,
     "response": 1
   },
-  "pipeline_diagram": "flowchart LR\n  route --> mw --> handler --> service --> db --> resp",
-  "pipeline_md": "```mermaid\nflowchart LR\n  route --> mw --> handler --> service --> db --> resp\n```\n\n### Route <script>alert(1)</script>\n\nOne `urls.py` maps **4** paths. See `app/urls.py:12`.\n\n### Middleware\n\nTwo layers, both custom:\n\n- auth\n- rate limiting\n\n### Handler\n\n11 views under `app/views/`.\n",
-  "layercode_md": "### Route — novel\n\nA `rest_path` wrapper folds method dispatch into the URL table.\n\n```python\ndef rest_path(route, **handlers):\n    return path(route, rest_dispatch(**handlers))\n```\n\n### Middleware — standard\n\nStock Django middleware, nothing to read.\n",
+  "pipeline_diagram": "flowchart LR\n  route --> mw\n  </pre><script>alert('xss')</script>",
+  "pipeline_md": "```mermaid\nflowchart LR\n  route --> mw\n  </pre><script>alert('xss')</script>\n```\n\n### Route <script>alert(1)</script>\n\nOne `urls.py` maps **4** paths. See `app/urls.py:12`.\n\n### Middleware\n\nTwo layers, both custom:\n\n- auth\n- rate limiting\n\n### Handler\n\n11 views under `app/views/`.\n",
+  "layercode_md": "### Route \u2014 novel\n\nA `rest_path` wrapper folds method dispatch into the URL table.\n\n```python\ndef rest_path(route, **handlers):\n    return path(route, rest_dispatch(**handlers))\n```\n\n### Middleware \u2014 standard\n\nStock Django middleware, nothing to read.\n",
   "trace_md": "**Endpoint:** POST /json/messages\n\n### 1. Route\n\n`app/urls.py:44` matches the path.\n\n### 2. Handler\n\n`app/views/message.py:88` validates, then calls the service.\n\n| field | required |\n| --- | --- |\n| `content` | yes |\n",
   "trace_endpoint": "POST /json/messages",
   "overview": {
@@ -1272,12 +1289,12 @@ Then run:
 scripts/regen_golden.py backend
 ```
 
-Expected: `wrote tests/fixtures/golden/backend/index.html and .../index.md from ... @ 75ec7c4`. The HTML should be 243 lines and the markdown 58.
+Expected: `wrote tests/fixtures/golden/backend/index.html and .../index.md from ... @ c36679c`. The HTML should be 244 lines and the markdown 59.
 
 - [ ] **Step 7: Run tests to verify they pass**
 
 Run: `uv run python -m pytest tests/ -q`
-Expected: PASS, 225 passed.
+Expected: PASS, 226 passed.
 
 - [ ] **Step 8: Verify the CLI end to end**
 
@@ -1351,7 +1368,7 @@ In `CLAUDE.md` and `AGENTS.md`, under "Architecture Overview", note that `crack`
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `uv run python -m pytest tests/ -q`
-Expected: PASS, 227 passed.
+Expected: PASS, 228 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -1364,7 +1381,7 @@ git commit -m "docs: document the backend analysis and the card-family contract"
 
 ## Done when
 
-- `uv run python -m pytest tests/ -q` passes with roughly 227 tests, up from the 145 baseline.
+- `uv run python -m pytest tests/ -q` passes with roughly 228 tests, up from the 145 baseline.
 - `uv run crack backend --help` works, and `crack tour` behaves exactly as before.
 - `crack/analyses/tour/` and `crack/cli.py` are untouched: `git diff a7b6df9 --stat -- src/crack/analyses/tour src/crack/cli.py` prints nothing.
 - The golden fixture regenerates identically: `scripts/regen_golden.py backend && git diff --exit-code tests/fixtures/golden/`.
