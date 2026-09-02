@@ -172,11 +172,16 @@ def call_llm(prompt: str) -> str:
             {"type": "text", "text": prefix, "cache_control": {"type": "ephemeral"}},
             {"type": "text", "text": suffix},
         ] if sep else prompt
-        resp = Anthropic().messages.create(
+        # Streaming, not create(): the SDK refuses a non-streaming call whose
+        # max_tokens implies more than 10 minutes of generation time, which
+        # backend's 32768-token cap trips. get_final_message() assembles the
+        # stream into the same Message object create() would have returned.
+        with Anthropic().messages.stream(
             model=model,
             max_tokens=max_out,
             messages=[{"role": "user", "content": content}],
-        )
+        ) as stream:
+            resp = stream.get_final_message()
         duration_s = time.perf_counter() - start
         usage = getattr(resp, "usage", None)
         if usage is None:

@@ -1,15 +1,31 @@
 # Crack
 
-Crack generates a multi-chapter tour of a codebase: a written walkthrough with diagrams, cross-references between chapters, and a suggested reading order. Point it at a repo and it produces a set of HTML/Markdown pages explaining how the code works.
+Crack runs analyses on a codebase and generates written overviews: multi-chapter tours with diagrams and cross-references, or request-flow summaries across server-side layers. Point it at a repo and get HTML/Markdown pages explaining how the code works.
 
 ## What this ships
 
-A five-stage pipeline, implemented as a [PocketFlow](https://github.com/The-Pocket/PocketFlow) workflow (retries and node isolation come from the framework; each node maps to one pipeline stage):
+Two analyses, each implemented as a [PocketFlow](https://github.com/The-Pocket/PocketFlow) workflow:
 
-- [`src/crack/analyses/tour/`](src/crack/analyses/tour/) — the `tour` analysis: SmartCrawl, ExtractGraph, Analyze, Relate, WriteChapters. SmartCrawl, Analyze, and Relate parse structured YAML output and retry on a bad response (`crack.core.yaml_call`); WriteChapters calls the LLM directly and retries via PocketFlow's own `Node(max_retries=3)`.
-- [`src/crack/analyses/tour/prompts/`](src/crack/analyses/tour/prompts/) — the prompt template each stage sends to the LLM, one file per stage.
-- [`src/crack/analyses/tour/instructions/`](src/crack/analyses/tour/instructions/) — four swappable output styles (see "Swap the output style" below). Same pipeline, different framing for the same chapters.
-- [`skill/CODEBASE-TOUR.md`](skill/CODEBASE-TOUR.md) — the same analysis packaged as an agent skill.
+### Tour
+
+A five-stage pipeline (SmartCrawl, ExtractGraph, Analyze, Relate, WriteChapters):
+
+- [`src/crack/analyses/tour/`](src/crack/analyses/tour/) -- the multi-chapter analysis. SmartCrawl, Analyze, and Relate parse structured YAML output and retry on a bad response (`crack.core.yaml_call`); WriteChapters calls the LLM directly and retries via PocketFlow's own `Node(max_retries=3)`.
+- [`src/crack/analyses/tour/prompts/`](src/crack/analyses/tour/prompts/) -- the prompt template each stage sends to the LLM, one file per stage.
+- [`src/crack/analyses/tour/instructions/`](src/crack/analyses/tour/instructions/) -- four swappable output styles (see "Swap the output style" below). Same pipeline, different framing for the same chapters.
+- [`skill/CODEBASE-TOUR.md`](skill/CODEBASE-TOUR.md) -- the analysis packaged as an agent skill.
+
+### Backend
+
+A five-stage pipeline (BuildBundle, Pipeline, LayerCode, Trace, OverviewNode) that maps a server-side backend into six layers (route, middleware, handler, service, database, response) and shows the request flow through them:
+
+- Builds a bundle describing the repository structure at each layer.
+- Renders three views: the pipeline with a file count per layer, code snippets showing how each layer connects to the others, and a trace of a single request through all six layers.
+- Expects a server-side backend (Django, Express, Rails, FastAPI, and similar frameworks). Works best on backends with clear separation of concerns.
+- Known limitations, worth reading before you spend a run:
+  - Pointed at a repository with no server-side backend, it does not stop. It spends all three LLM calls and writes a report invented from an empty bundle, with no warning and no error. Check the layer counts it prints after the crawl before trusting the output.
+  - A layer directory at the repository root (`pages/api/` in some Next.js layouts, `routes/` in some Express layouts) is not classified, so those files are skipped and the layer reports zero.
+  - A flat Django app is affected too: `views.py` is not recognised, so the handler layer reports zero even though the routes and models are found.
 
 ## Quickstart
 
@@ -18,7 +34,9 @@ pip install -e .            # or: pip install -e ".[openai,gemini]" for those pr
 cp .env.example .env        # fill in the one key you need, see .env.example for all options
 export GEMINI_API_KEY=...   # or ANTHROPIC_API_KEY / OPENAI_API_KEY
 
-crack tour path/to/repo
+crack tour path/to/repo     # multi-chapter codebase tour
+# OR
+crack backend path/to/repo  # server-side backend flow analysis
 ```
 
 If a run fails partway through (a bad LLM response after retries, a network error), the files, abstractions, and chapters completed so far are written to `run_state.json` in the target output directory, so you can see how far it got without rerunning the whole pipeline.

@@ -26,6 +26,12 @@ def fill(template, **kwargs):
     return template
 
 
+def extract_mermaid(md):
+    """Pull the body of the first ```mermaid fence, or "" when there is none."""
+    m = re.search(r"```mermaid\s*\n(.*?)```", md or "", re.DOTALL)
+    return m.group(1).strip() if m else ""
+
+
 def parse_yaml(text):
     """Extract and parse a ```yaml fenced block. Raises so a bad reply retries."""
     m = re.search(r"```yaml\s*\n(.*?)```", text, re.DOTALL)
