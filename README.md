@@ -1,10 +1,10 @@
 # Crack
 
-Crack runs analyses on a codebase and generates written overviews: multi-chapter tours with diagrams and cross-references, or request-flow summaries across server-side layers. Point it at a repo and get HTML/Markdown pages explaining how the code works.
+Crack runs analyses on a codebase and generates written overviews: multi-chapter tours with diagrams and cross-references, request-flow summaries across server-side layers, or a map of the services a system runs and rents. Point it at a repo and get HTML/Markdown pages explaining how the code works.
 
 ## What this ships
 
-Two analyses, each implemented as a [PocketFlow](https://github.com/The-Pocket/PocketFlow) workflow:
+Three analyses, each implemented as a [PocketFlow](https://github.com/The-Pocket/PocketFlow) workflow:
 
 ### Tour
 
@@ -27,6 +27,17 @@ A five-stage pipeline (BuildBundle, Pipeline, LayerCode, Trace, OverviewNode) th
   - A layer directory at the repository root (`pages/api/` in some Next.js layouts, `routes/` in some Express layouts) is not classified, so those files are skipped and the layer reports zero.
   - A flat Django app is affected too: `views.py` is not recognised, so the handler layer reports zero even though the routes and models are found.
 
+### Architecture
+
+A five-stage pipeline (BuildBundle, Inventory, TechStack, TraceRequest, OverviewNode) that maps a multi-service system: the programs it runs, the services it rents, and the wires between them:
+
+- Overlays four sources that no single file holds together: process declarations (compose, Kubernetes manifests, `Procfile`, platform config), environment variable *names* (never their values), the union of `package.json` dependencies, and Terraform. SDK `import` lines found by `git grep` are the proof a connection is live rather than merely configured.
+- Renders three views: every node sorted into four bands (run, rent, call, client), the real technology behind each box's label, and one request traced hop by hop with its variants.
+- Expects a multi-service application. Pointed at a repository with none of those sources, the run stops before it spends an LLM call.
+- Known limitations, worth reading before you spend a run:
+  - Infrastructure written in a general-purpose language is invisible. AWS CDK and Pulumi stacks are ordinary `.ts`/`.py` programs, and SAM `template.yaml` is an ordinary YAML file, so none of them are classified. A CDK repository reports `0 config files` while its stacks sit in `infra/lib/`. Tracked as `coderay-q2r.10`.
+  - A manifest directory at the repository root (`k8s/`, `manifests/`, `charts/`) is not classified, though the same directory one level down is. This is the same root-directory blind spot the backend analysis has.
+
 ## Quickstart
 
 ```bash
@@ -37,6 +48,8 @@ export GEMINI_API_KEY=...   # or ANTHROPIC_API_KEY / OPENAI_API_KEY
 crack tour path/to/repo     # multi-chapter codebase tour
 # OR
 crack backend path/to/repo  # server-side backend flow analysis
+# OR
+crack architecture path/to/repo  # multi-service architecture map
 ```
 
 If a run fails partway through (a bad LLM response after retries, a network error), the files, abstractions, and chapters completed so far are written to `run_state.json` in the target output directory, so you can see how far it got without rerunning the whole pipeline.

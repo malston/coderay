@@ -12,19 +12,26 @@ from crack.core import render
 
 GOLDEN = pathlib.Path(__file__).parent / "fixtures" / "golden"
 
-@pytest.mark.parametrize("name", ["backend"])
+# The shared key each analysis's THEME.hero_prefix reads its diagram from. Not
+# part of the card-family contract -- the hero is each analysis's own business
+# -- so the XSS tests below have to be told which key to reach for.
+DIAGRAM_KEY = {"backend": "pipeline_diagram", "architecture": "arch_diagram"}
+
+GOLDEN_ANALYSES = sorted(DIAGRAM_KEY)
+
+@pytest.mark.parametrize("name", GOLDEN_ANALYSES)
 def test_golden_html(name):
     d = GOLDEN / name
     shared = json.loads((d / "shared.json").read_text(encoding="utf-8"))
     assert render.render_html(ANALYSES[name], "toy_repo", shared) == (d / "index.html").read_text(encoding="utf-8")
 
-@pytest.mark.parametrize("name", ["backend"])
+@pytest.mark.parametrize("name", GOLDEN_ANALYSES)
 def test_golden_markdown(name):
     d = GOLDEN / name
     shared = json.loads((d / "shared.json").read_text(encoding="utf-8"))
     assert render.render_markdown(ANALYSES[name], "toy_repo", shared) == (d / "index.md").read_text(encoding="utf-8")
 
-@pytest.mark.parametrize("name", ["backend"])
+@pytest.mark.parametrize("name", GOLDEN_ANALYSES)
 def test_golden_html_escapes_injected_markup(name):
     """Every fixture carries injected markup in two places on purpose: a card
     header, and the mermaid diagram source.
@@ -49,17 +56,17 @@ def test_golden_html_escapes_injected_markup(name):
     assert "&lt;/pre&gt;&lt;script&gt;" in html
 
 
-@pytest.mark.parametrize("name", ["backend"])
+@pytest.mark.parametrize("name", GOLDEN_ANALYSES)
 def test_render_escapes_the_diagram_it_is_handed(name):
     """The golden files are static; this re-renders to catch a live regression."""
     d = GOLDEN / name
     shared = json.loads((d / "shared.json").read_text(encoding="utf-8"))
-    assert "</pre><script>" in shared["pipeline_diagram"], "fixture lost its payload"
+    assert "</pre><script>" in shared[DIAGRAM_KEY[name]], "fixture lost its payload"
     html = render.render_html(ANALYSES[name], "toy_repo", shared)
     assert "</pre><script>" not in html
 
 
-@pytest.mark.parametrize("name", ["backend"])
+@pytest.mark.parametrize("name", GOLDEN_ANALYSES)
 def test_render_escapes_a_diagram_inside_a_card_body(name):
     """The golden fixture's mermaid payload sits above the first `###` header,
     so split_cards drops it before it ever reaches md_rich/_mermaidize (see
@@ -70,8 +77,8 @@ def test_render_escapes_a_diagram_inside_a_card_body(name):
     """
     d = GOLDEN / name
     shared = json.loads((d / "shared.json").read_text(encoding="utf-8"))
-    shared["pipeline_diagram"] = ""  # keep the hero's esc() out of this test
-    shared["pipeline_md"] = (
+    shared[DIAGRAM_KEY[name]] = ""  # keep the hero's esc() out of this test
+    shared[ANALYSES[name].SECTIONS[0].key] = (
         "### Route\n\n"
         "```mermaid\n"
         "flowchart LR\n"

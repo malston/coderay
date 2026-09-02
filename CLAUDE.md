@@ -76,7 +76,7 @@ CI runs `pytest` on every push/PR via `.github/workflows/tests.yml`. To cut a re
 
 ## Architecture Overview
 
-Crack dispatches to two analyses, each a PocketFlow pipeline:
+Crack dispatches to three analyses, each a PocketFlow pipeline:
 
 **Tour** (five sequential nodes, `src/crack/analyses/tour/nodes.py`, wired in `src/crack/analyses/tour/flow.py`):
 
@@ -98,11 +98,21 @@ BuildBundle -> Pipeline -> LayerCode -> Trace -> OverviewNode
 - Analyzes the repository structure and maps files to six semantic layers: route, middleware, handler, service, database, response.
 - Renders three views: the pipeline with file counts per layer, code snippets at layer boundaries, and a request trace through all six.
 
+**Architecture** (five sequential nodes: four in `src/crack/analyses/architecture/nodes.py` plus the shared `OverviewNode`, wired in `build_flow()` in `src/crack/analyses/architecture/__init__.py`):
+
+```text
+BuildBundle -> Inventory -> TechStack -> TraceRequest -> OverviewNode
+```
+
+- `src/crack/analyses/architecture/arch_crawl.py` overlays four sources into one bundle: process declarations (compose, k8s, `Procfile`, platform config), env var names only, the union of `package.json` dependencies, and Terraform, plus SDK import lines from `git grep` as proof a connection is live.
+- Inventory runs first and its numbered node list is reused by TechStack and TraceRequest, so all three passes name the same graph.
+- Renders three views: every node banded run/rent/call/client, the technology behind each label, and one request traced hop by hop.
+
 Full architecture rationale and past review findings: `.full-review/*.md` (a comprehensive code review that produced the fixes now on `main`).
 
 ## Conventions & Patterns
 
-- Card-family analyses (today just `backend`; architecture, interfaces and schema follow) declare `SECTIONS` and `THEME` and are rendered by `crack/core/render.py`. An analysis whose page shape does not fit declares its own `render_html` and `render_markdown` instead, and `crack/core/render.py` steps aside for it. Tour uses neither path: it predates the contract and writes its own multi-file output directly from `run()`, via `write_index_md`, `write_index_html` and `write_chapter_files`.
+- Card-family analyses (today `backend` and `architecture`; interfaces and schema follow) declare `SECTIONS` and `THEME` and are rendered by `crack/core/render.py`. An analysis whose page shape does not fit declares its own `render_html` and `render_markdown` instead, and `crack/core/render.py` steps aside for it. Tour uses neither path: it predates the contract and writes its own multi-file output directly from `run()`, via `write_index_md`, `write_index_html` and `write_chapter_files`.
 - Untrusted input (the target repo's own files, and anything the LLM echoes back from them) must be escaped before it reaches HTML/Mermaid output. This bit the project once (a confirmed stored-XSS bug); see `.full-review/02a-security.md` before touching rendering code.
 - LLM YAML parsing goes through `crack.core.yaml_call`, not a bespoke `parse_yaml`/`.format()` combo in pipeline nodes -- that duplication was a real bug (a cache/retry defect) fixed in a prior epic. Reuse `crack.core.yaml_call` and `crack.core.fill()` for new LLM-calling code.
 - Any file-content budget (`preview_budget`, `codebase_budget`) must be enforced by capping _how many files_ are included, not by raising a per-file floor -- that inversion was the root cause of two Critical scalability bugs.

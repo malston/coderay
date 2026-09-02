@@ -1,0 +1,171 @@
+import json
+
+import pytest
+
+from crack.analyses.architecture import arch_crawl as ac
+
+
+@pytest.mark.parametrize("rel,kind", [
+    ("docker-compose.yml", "compose"),
+    ("docker-compose.prod.yaml", "compose"),
+    ("compose.yaml", "compose"),
+    ("Procfile", "gateway"),
+    ("apps/web/next.config.js", "gateway"),
+    ("vercel.json", "gateway"),
+    ("ops/nginx.conf", "gateway"),
+    (".env", "env"),
+    (".env.example", "env"),
+    ("infra/main.tf", "iac"),
+    ("infra/prod.tfvars", "iac"),
+    ("package.json", "package"),
+    ("deploy/k8s/api.yaml", "k8s"),
+    ("ops/manifests/web.yml", "k8s"),
+])
+def test_classify_maps_a_path_to_its_source_kind(rel, kind):
+    assert ac._classify(rel) == kind
+
+
+@pytest.mark.parametrize("rel", [
+    "README.md", "src/index.ts", "docs/architecture.png", "config.yaml",
+])
+def test_classify_returns_none_for_a_file_that_is_not_an_architecture_source(rel):
+    assert ac._classify(rel) is None
+
+
+@pytest.mark.parametrize("rel", [
+    "infra/lib/api-stack.ts",     # AWS CDK
+    "infrastructure/index.ts",    # Pulumi
+    "template.yaml",              # AWS SAM
+    "Pulumi.yaml",                # Pulumi project file
+])
+def test_classify_is_blind_to_infrastructure_written_in_a_general_purpose_language(rel):
+    """Known limitation, tracked as coderay-q2r.10.
+
+    _classify keys off extension or exact filename, so CDK and Pulumi stacks
+    (ordinary .ts/.py programs) and SAM/Pulumi templates (ordinary .yaml outside
+    a k8s directory) match nothing. A CDK repo reports `0 config files` while
+    its stacks sit in infra/lib/. Inherited from the port source and
+    deliberately not fixed here, because arch_crawl.py is copied verbatim. When
+    upstream fixes it this test fails, which is the signal to re-port and
+    invert it.
+    """
+    assert ac._classify(rel) is None
+
+
+@pytest.mark.parametrize("rel", ["k8s/api.yaml", "manifests/web.yml", "charts/api/values.yaml"])
+def test_classify_misses_a_manifest_directory_at_the_repo_root(rel):
+    """Known limitation, the same shape as backend's coderay-q2r.7 and tracked
+    with it under coderay-q2r.10.
+
+    Every k8s directory rule matches on a leading slash ('/k8s/', '/charts/'),
+    and os.path.relpath never produces one, so a manifest directory at the
+    repository root is skipped while the identical directory one level down is
+    classified. Inherited from the port source, deliberately not fixed here.
+    """
+    assert ac._classify(rel) is None
+    assert ac._classify("deploy/" + rel) == "k8s"
+
+
+def test_env_names_keeps_the_names_and_never_the_values():
+    """The bundle goes to an LLM, so a leaked value is a leaked secret."""
+    names = ac._env_names(
+        "export STRIPE_SECRET_KEY=sk_live_51H_realsecret\n"
+        "DATABASE_URL=postgres://user:hunter2@db/app\n"
+        "lowercase_ignored=1\n"
+        "# COMMENTED_OUT=x\n"
+    )
+    assert names == ["STRIPE_SECRET_KEY", "DATABASE_URL"]
+    assert not any("sk_live" in n or "hunter2" in n for n in names)
+
+
+def _repo(tmp_path, files):
+    for rel, text in files.items():
+        p = tmp_path / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf-8")
+    return str(tmp_path)
+
+
+def test_build_bundle_overlays_the_four_sources_and_counts_them(tmp_path):
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services:\n  api:\n    image: api\n",
+        "deploy/k8s/api.yaml": "kind: Deployment\n",
+        "Procfile": "web: node server.js\n",
+        "infra/main.tf": 'resource "aws_s3_bucket" "uploads" {}\n',
+        ".env.example": "STRIPE_SECRET_KEY=sk_test_x\nREDIS_URL=redis://localhost\n",
+        "package.json": json.dumps({"dependencies": {"stripe": "^14"},
+                                    "devDependencies": {"vitest": "^1"}}),
+    })
+    bundle, stats = ac.build_bundle(repo)
+
+    assert stats == {"config_files": 4, "env_vars": 2, "deps": 2,
+                     "integrations": 0, "sdk_lines": 0}
+    assert "PROCESS DECLARATION (compose / k8s): docker-compose.yml" in bundle
+    assert "KUBERNETES MANIFESTS: deploy/k8s/api.yaml" in bundle
+    assert "GATEWAY / PLATFORM CONFIG: Procfile" in bundle
+    assert "INFRASTRUCTURE-AS-CODE (Terraform): infra/main.tf" in bundle
+    assert "aws_s3_bucket" in bundle
+    # Env vars reach the bundle as names only.
+    assert "STRIPE_SECRET_KEY" in bundle and "sk_test_x" not in bundle
+    assert "stripe @ ^14" in bundle and "vitest @ ^1" in bundle
+
+
+def test_build_bundle_returns_nothing_for_a_repo_with_no_architecture_sources(tmp_path):
+    """Unlike backend's bundle, this one has no header prepended, so it really
+    is empty and BuildBundle's `assert bundle.strip()` guard can fire."""
+    repo = _repo(tmp_path, {"README.md": "# a single-binary tool\n",
+                            "src/main.go": "package main\n"})
+    bundle, stats = ac.build_bundle(repo)
+    assert bundle == ""
+    assert stats["config_files"] == 0
+
+
+def test_build_bundle_skips_ignored_directories(tmp_path):
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services: {}\n",
+        "node_modules/pkg/docker-compose.yml": "ignored-compose\n",
+        "tests/docker-compose.yml": "ignored-compose\n",
+        "vendor/infra/main.tf": "ignored-tf\n",
+    })
+    bundle, stats = ac.build_bundle(repo)
+    assert stats["config_files"] == 1
+    assert "ignored" not in bundle
+
+
+def test_build_bundle_unions_dependencies_from_every_package_json(tmp_path):
+    repo = _repo(tmp_path, {
+        "package.json": json.dumps({"dependencies": {"stripe": "^14"}}),
+        "apps/web/package.json": json.dumps({"dependencies": {"next": "^15"}}),
+    })
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["deps"] == 2
+
+
+def test_build_bundle_tolerates_a_malformed_package_json(tmp_path):
+    repo = _repo(tmp_path, {
+        "package.json": "{not json",
+        "apps/web/package.json": json.dumps({"dependencies": {"next": "^15"}}),
+    })
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["deps"] == 1
+
+
+def test_build_bundle_lists_the_integration_directories(tmp_path):
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services: {}\n",
+        "packages/app-store/stripe/index.ts": "x\n",
+        "packages/app-store/zoom/index.ts": "x\n",
+        "packages/app-store/_utils/helper.ts": "x\n",
+    })
+    bundle, stats = ac.build_bundle(repo)
+    assert stats["integrations"] == 2
+    assert "INTEGRATION DIRECTORIES (packages/app-store, 2 total)" in bundle
+    assert "stripe, zoom" in bundle
+    # Leading-underscore directories are scaffolding, not integrations.
+    assert "_utils" not in bundle
+
+
+def test_build_bundle_caps_the_total_size(tmp_path):
+    repo = _repo(tmp_path, {"docker-compose.yml": "s" * 50_000})
+    bundle, _stats = ac.build_bundle(repo, max_chars=1_000)
+    assert len(bundle) == 1_000
