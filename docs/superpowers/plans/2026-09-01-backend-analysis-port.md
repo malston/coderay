@@ -14,7 +14,7 @@
 
 ## Global Constraints
 
-- **Port source of record:** `~/code/Crack-Any-Codebase-with-AI`, branch `feat/unified-cli`, commit `c36679c`. Referred to below as `$SIB`. Verify with `git -C ~/code/Crack-Any-Codebase-with-AI rev-parse feat/unified-cli` before copying anything; it must print `c36679c415b924bd2beb23bcc3cfad6d63e60574`.
+- **Port source of record:** `~/code/Crack-Any-Codebase-with-AI`, branch `feat/unified-cli`, commit `d2bf696`. Referred to below as `$SIB`. Verify with `git -C ~/code/Crack-Any-Codebase-with-AI rev-parse feat/unified-cli` before copying anything; it must print `d2bf6963f621a78b9ea3ac73268e1386a982df9d`.
 - **No new dependencies.** `markdown-it-py>=4.2.0,<5` is already in `pyproject.toml`.
 - **`tour` is not modified.** No file under `src/crack/analyses/tour/` changes in this plan. `src/crack/cli.py` does not change either.
 - **Prompt loading uses `importlib.resources`**, never `os.path.join(os.path.dirname(__file__), ...)`. coderay's `read_prompt(prompts_dir, name)` does `(prompts_dir / name).read_text(encoding="utf-8")`, so it needs a Traversable or `Path`, not a `str`.
@@ -1050,6 +1050,23 @@ def test_overview_spec_names_the_three_sections():
     assert spec["name"] == "toy_repo"
     assert [t for t, _ in spec["sections"]] == ["The pipeline", "The code", "The trace"]
     assert "route 4" in spec["facts"]
+
+
+def test_overview_spec_name_matches_the_name_the_page_is_rendered_with(tmp_path, monkeypatch):
+    """The overview prompt and the page title must name the same repo.
+
+    run_analysis hands the renderer repo_name_of(args.repo_path) as the page
+    title. If overview_spec computed the name differently, the LLM-written copy
+    would name a different repo than the heading above it. A relative path is
+    the case that exposes a divergence.
+    """
+    from crack.core.runner import repo_name_of
+
+    repo = tmp_path / "toy_repo"
+    repo.mkdir()
+    monkeypatch.chdir(tmp_path)
+    spec = backend.overview_spec({"repo_path": "toy_repo", "layer_counts": {}})
+    assert spec["name"] == repo_name_of("toy_repo") == "toy_repo"
 ```
 
 Create `tests/test_golden.py`:
@@ -1133,10 +1150,34 @@ to:
 
 ```python
 from crack.core import OverviewNode
-from crack.core.render import Section, Theme
-from crack.core.runner import run_analysis
+from crack.core.render import Section, Theme, esc
+from crack.core.runner import repo_name_of, run_analysis
 from .nodes import BuildBundle, Pipeline, LayerCode, Trace
 ```
+
+Then delete the now-unused `import os` from the top of the file and add `import sys` (`run()` below needs it).
+
+**Also in this step, add `repo_name_of` to `src/crack/core/runner.py`** and route the two existing
+call sites through it, replacing the inline `os.path.basename(os.path.abspath(...))` in both
+`default_output_dir` and `run_analysis`:
+
+```python
+def repo_name_of(repo_path):
+    """The repo's directory name, used for the output folder and the page title.
+
+    One helper so the name the overview prompt is given always matches the name
+    rendered on the page. Resolving to an absolute path first keeps a relative
+    repo_path (".", "../thing/") from yielding a useless name."""
+    return os.path.basename(os.path.abspath(repo_path))
+```
+
+`overview_spec` must then use `repo_name_of(shared["repo_path"])` rather than computing the
+basename itself. This matters: `run_analysis` passes its own `repo_name_of(...)` result to the
+renderer as the page title, so a second, different computation inside `overview_spec` makes the
+LLM-written overview copy name a different repo than the page heading it sits under. The port
+source hit exactly this and fixed it in commit 505d7e2, "use repo_name_of in overview_spec so the
+prompt matches the page". It also removes the duplication flagged as a Minor when `run_analysis`
+landed.
 
 Change `init_shared` from the sibling's two-argument form to coderay's:
 
@@ -1159,7 +1200,7 @@ def run(args) -> None:
     run_analysis(sys.modules[__name__], args)
 ```
 
-Add `import sys` beside the existing `import os` at the top.
+
 
 - [ ] **Step 4: Register it**
 
@@ -1205,7 +1246,7 @@ import pathlib
 import subprocess
 import sys
 
-PORT_SOURCE_COMMIT = "c36679c415b924bd2beb23bcc3cfad6d63e60574"
+PORT_SOURCE_COMMIT = "d2bf6963f621a78b9ea3ac73268e1386a982df9d"
 DEFAULT_SIBLING = pathlib.Path.home() / "code" / "Crack-Any-Codebase-with-AI"
 GOLDEN = pathlib.Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "golden"
 
@@ -1286,12 +1327,12 @@ Then run:
 scripts/regen_golden.py backend
 ```
 
-Expected: `wrote tests/fixtures/golden/backend/index.html and .../index.md from ... @ c36679c`. The HTML should be 244 lines and the markdown 59.
+Expected: `wrote tests/fixtures/golden/backend/index.html and .../index.md from ... @ d2bf696`. The HTML should be 244 lines and the markdown 59.
 
 - [ ] **Step 7: Run tests to verify they pass**
 
 Run: `uv run python -m pytest tests/ -q`
-Expected: PASS, 225 passed.
+Expected: PASS, 226 passed.
 
 - [ ] **Step 8: Verify the CLI end to end**
 
@@ -1365,7 +1406,7 @@ In `CLAUDE.md` and `AGENTS.md`, under "Architecture Overview", note that `crack`
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `uv run python -m pytest tests/ -q`
-Expected: PASS, 227 passed.
+Expected: PASS, 228 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -1378,7 +1419,7 @@ git commit -m "docs: document the backend analysis and the card-family contract"
 
 ## Done when
 
-- `uv run python -m pytest tests/ -q` passes with roughly 227 tests, up from the 145 baseline.
+- `uv run python -m pytest tests/ -q` passes with roughly 228 tests, up from the 145 baseline.
 - `uv run crack backend --help` works, and `crack tour` behaves exactly as before.
 - `crack/analyses/tour/` and `crack/cli.py` are untouched: `git diff a7b6df9 --stat -- src/crack/analyses/tour src/crack/cli.py` prints nothing.
 - The golden fixture regenerates identically: `scripts/regen_golden.py backend && git diff --exit-code tests/fixtures/golden/`.
