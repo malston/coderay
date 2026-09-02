@@ -1,4 +1,7 @@
 import os
+import subprocess
+import sys
+import textwrap
 
 import pytest
 
@@ -100,3 +103,43 @@ def test_run_analysis_creates_the_output_dir_before_the_flow_runs(tmp_path):
     analysis.build_flow = staticmethod(Flow)
     run_analysis(analysis, _Args(str(tmp_path), out=str(out)))
     assert seen["existed"] is True
+
+
+def test_run_analysis_writes_utf8_output_under_the_c_locale(tmp_path):
+    """A monkeypatched locale does not reproduce this: index.md/index.html
+    must open for writing with an explicit encoding, or a real C-locale
+    process (the container/CI default) raises UnicodeEncodeError after every
+    LLM call in the run has already been paid for."""
+    out = tmp_path / "out"
+    script = tmp_path / "run_it.py"
+    script.write_text(textwrap.dedent(f"""
+        from crack.core.render import Section, Theme
+        from crack.core.runner import run_analysis
+
+        class Flow:
+            def run(self, shared):
+                shared["body_md"] = "### A\\ntext with an em dash \\u2014 end"
+
+        class Analysis:
+            NAME = "demo"
+            SECTIONS = [Section("01", "Only", "note", "rail", 400, "body_md")]
+            THEME = Theme(
+                title_suffix="demo", eyebrow="Demo", accent="#000", accent_soft="#eee",
+                hero_from="#111", hero_to="#222", eyebrow_color="#333", eyebrow_bar="#444",
+                sub_color="#555", card_top_from="#666",
+                subtitle=lambda sh: "sub", footer=lambda sh: "foot",
+                md_preamble=lambda sh: "")
+            init_shared = staticmethod(lambda args: {{"repo_path": args.repo_path}})
+            build_flow = staticmethod(Flow)
+
+        class Args:
+            repo_path = {str(tmp_path)!r}
+            out = {str(out)!r}
+
+        run_analysis(Analysis, Args())
+        """))
+    env = dict(os.environ, LC_ALL="C", LANG="C", PYTHONUTF8="0")
+    result = subprocess.run(
+        [sys.executable, str(script)], env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert "—" in (out / "index.md").read_text(encoding="utf-8")
