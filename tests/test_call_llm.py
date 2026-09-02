@@ -714,10 +714,10 @@ def test_disk_cache_key_matches_the_marker_stripped_text_actually_sent(monkeypat
 
 
 def _fake_anthropic_module_stream_only(input_tokens, output_tokens, cache_read, cache_write, text="ok"):
-    # No `create` method at all -- if call_llm() ever falls back to
-    # `messages.create(...)`, this raises AttributeError instead of silently
-    # succeeding, which is what makes this fake catch a regression to the
-    # non-streaming call.
+    # `create` is present but poisoned. A regression to the non-streaming call
+    # then fails with a message naming the cause, rather than with an incidental
+    # AttributeError from a method that merely happened to be absent. The real
+    # SDK exposes both methods, so the fake should too.
     fake = types.ModuleType("anthropic")
 
     class Usage:
@@ -742,6 +742,12 @@ def _fake_anthropic_module_stream_only(input_tokens, output_tokens, cache_read, 
         def stream(self, **kwargs):
             return _FakeStream(Resp())
 
+        def create(self, **kwargs):
+            raise AssertionError(
+                "call_llm used the non-streaming messages.create(). The anthropic "
+                "path must stream: a max_tokens above 21333 makes the SDK raise "
+                "before the request is sent. See bead coderay-q2r.9.")
+
     class Anthropic:
         def __init__(self, *a, **kw):
             self.messages = Messages()
@@ -754,9 +760,8 @@ def test_anthropic_call_uses_streaming_not_create(monkeypatch):
     # coderay backend analysis sets LLM_MAX_OUTPUT_TOKENS=32768, which the
     # SDK's non-streaming path rejects outright (ValueError: "Streaming is
     # required for operations that may take longer than 10 minutes."). A
-    # fake anthropic module with no `create` method at all means a call_llm()
-    # that regresses to `messages.create(...)` fails with AttributeError
-    # instead of silently passing.
+    # The fake's `create` is poisoned, so a call_llm() that regresses to
+    # `messages.create(...)` fails with a message naming the cause.
     call_llm_module.reset_usage()
     monkeypatch.setenv("LLM_MAX_OUTPUT_TOKENS", "32768")
     monkeypatch.setitem(
