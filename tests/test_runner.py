@@ -69,8 +69,8 @@ def _fake_analysis(env_defaults_dict=None, record=None):
 def test_run_analysis_writes_both_index_files(tmp_path):
     out = tmp_path / "out"
     run_analysis(_fake_analysis(), _Args(str(tmp_path), out=str(out)))
-    assert (out / "index.html").read_text().startswith("<!doctype html>")
-    assert (out / "index.md").read_text().startswith("# ")
+    assert (out / "index.html").read_text(encoding="utf-8").startswith("<!doctype html>")
+    assert (out / "index.md").read_text(encoding="utf-8").startswith("# ")
 
 
 def test_run_analysis_defaults_the_output_dir_to_cwd_output(tmp_path, monkeypatch):
@@ -82,12 +82,14 @@ def test_run_analysis_defaults_the_output_dir_to_cwd_output(tmp_path, monkeypatc
     assert os.path.isfile(os.path.join(out, "index.html"))
 
 
-def test_run_analysis_applies_env_defaults_during_the_flow(tmp_path):
+def test_run_analysis_applies_env_defaults_during_the_flow(tmp_path, monkeypatch):
+    monkeypatch.delenv("LLM_MAX_OUTPUT_TOKENS", raising=False)
+    before = os.environ.get("LLM_MAX_OUTPUT_TOKENS")
     record = {}
     analysis = _fake_analysis({"LLM_MAX_OUTPUT_TOKENS": "32768"}, record)
     run_analysis(analysis, _Args(str(tmp_path), out=str(tmp_path / "o")))
     assert record["max_tokens"] == "32768"
-    assert "LLM_MAX_OUTPUT_TOKENS" not in os.environ
+    assert os.environ.get("LLM_MAX_OUTPUT_TOKENS") == before
 
 
 def test_run_analysis_creates_the_output_dir_before_the_flow_runs(tmp_path):
@@ -137,7 +139,7 @@ def test_run_analysis_writes_utf8_output_under_the_c_locale(tmp_path):
             out = {str(out)!r}
 
         run_analysis(Analysis, Args())
-        """))
+        """), encoding="utf-8")
     env = dict(os.environ, LC_ALL="C", LANG="C", PYTHONUTF8="0")
     result = subprocess.run(
         [sys.executable, str(script)], env=env, capture_output=True, text=True)

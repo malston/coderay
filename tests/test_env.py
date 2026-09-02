@@ -23,5 +23,7 @@ def test_restores_on_exception():
     assert "CRACK_TEST_RAISES" not in os.environ
 
 def test_empty_defaults_is_a_no_op():
+    before = dict(os.environ)
     with env_defaults({}):
-        pass
+        assert dict(os.environ) == before
+    assert dict(os.environ) == before

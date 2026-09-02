@@ -49,3 +49,28 @@ def test_render_escapes_the_diagram_it_is_handed(name):
     assert "</pre><script>" in shared["pipeline_diagram"], "fixture lost its payload"
     html = render.render_html(ANALYSES[name], "toy_repo", shared)
     assert "</pre><script>" not in html
+
+
+@pytest.mark.parametrize("name", ["backend"])
+def test_render_escapes_a_diagram_inside_a_card_body(name):
+    """The golden fixture's mermaid payload sits above the first `###` header,
+    so split_cards drops it before it ever reaches md_rich/_mermaidize (see
+    split_cards's docstring). This puts the same payload inside a card body
+    instead, so it flows through split_cards into md_rich and exercises
+    _mermaidize itself, which must not un-escape markdown-it's already-escaped
+    fenced content -- not just the hero's esc() call.
+    """
+    d = GOLDEN / name
+    shared = json.loads((d / "shared.json").read_text(encoding="utf-8"))
+    shared["pipeline_diagram"] = ""  # keep the hero's esc() out of this test
+    shared["pipeline_md"] = (
+        "### Route\n\n"
+        "```mermaid\n"
+        "flowchart LR\n"
+        "  route --> mw\n"
+        "  </pre><script>alert('xss')</script>\n"
+        "```\n"
+    )
+    html = render.render_html(ANALYSES[name], "toy_repo", shared)
+    assert "</pre><script>" not in html
+    assert "&lt;/pre&gt;&lt;script&gt;" in html

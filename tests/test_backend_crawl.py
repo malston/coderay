@@ -49,7 +49,7 @@ def _repo(tmp_path, files):
     for rel, text in files.items():
         p = tmp_path / rel
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(text)
+        p.write_text(text, encoding="utf-8")
     return str(tmp_path)
 
 

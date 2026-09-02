@@ -6,7 +6,7 @@ CARDS = "### Route\nbody\n\n### Handler\nbody\n"
 
 def test_build_bundle_populates_codebase_and_counts(tmp_path):
     (tmp_path / "app").mkdir()
-    (tmp_path / "app" / "urls.py").write_text("urlpatterns = []\n")
+    (tmp_path / "app" / "urls.py").write_text("urlpatterns = []\n", encoding="utf-8")
     shared = {"repo_path": str(tmp_path)}
     n.BuildBundle().run(shared)
     assert "urlpatterns" in shared["codebase"]
@@ -23,7 +23,7 @@ def test_build_bundle_does_not_reject_a_repo_with_no_backend(tmp_path):
     nodes.py is a near-verbatim copy. When upstream fixes it this test fails,
     which is the signal to re-port and invert it.
     """
-    (tmp_path / "README.md").write_text("# hi\n")
+    (tmp_path / "README.md").write_text("# hi\n", encoding="utf-8")
     shared = {"repo_path": str(tmp_path)}
     n.BuildBundle().run(shared)
     assert shared["layer_counts"] == {}
