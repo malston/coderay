@@ -27,7 +27,7 @@ import pathlib
 import subprocess
 import sys
 
-PORT_SOURCE_COMMIT = "5fd2a96585d27ad7fe2cd7d2c5f0d7941f15ee22"
+PORT_SOURCE_COMMIT = "bb504c7a9f44ba14f8d71a1f0cd9d2c997fb9d44"
 DEFAULT_SIBLING = pathlib.Path.home() / "code" / "Crack-Any-Codebase-with-AI"
 GOLDEN = pathlib.Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "golden"
 
