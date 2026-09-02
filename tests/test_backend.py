@@ -57,13 +57,16 @@ def test_overview_spec_name_matches_the_name_the_page_is_rendered_with(tmp_path,
 
     run_analysis hands the renderer repo_name_of(args.repo_path) as the page
     title. If overview_spec computed the name differently, the LLM-written copy
-    would name a different repo than the heading above it. A relative path is
-    the case that exposes a divergence.
+    would name a different repo than the heading above it. "." is the case that
+    exposes a divergence.
     """
     from crack.core.runner import repo_name_of
 
     repo = tmp_path / "toy_repo"
     repo.mkdir()
-    monkeypatch.chdir(tmp_path)
-    spec = backend.overview_spec({"repo_path": "toy_repo", "layer_counts": {}})
-    assert spec["name"] == repo_name_of("toy_repo") == "toy_repo"
+    monkeypatch.chdir(repo)
+    spec = backend.overview_spec({"repo_path": ".", "layer_counts": {}})
+    assert spec["name"] == repo_name_of(".") == "toy_repo"
+    # "." is the shape that separates the two implementations: a naive
+    # os.path.basename(repo_path) returns "." here, not the directory name.
+    assert spec["name"] != os.path.basename(".")
