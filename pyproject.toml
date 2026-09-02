@@ -33,7 +33,7 @@ crack = "crack.cli:main"
 package-dir = {"" = "src"}
 packages = [
     "crack", "crack.core", "crack.analyses", "crack.analyses.architecture",
-    "crack.analyses.backend", "crack.analyses.tour",
+    "crack.analyses.backend", "crack.analyses.interfaces", "crack.analyses.tour",
     "crack.analyses.tour.graph", "crack.analyses.tour.graph.languages",
 ]
 
@@ -41,3 +41,4 @@ packages = [
 "crack.analyses.tour" = ["prompts/*.md", "instructions/*.md"]
 "crack.analyses.backend" = ["prompts/*.md"]
 "crack.analyses.architecture" = ["prompts/*.md"]
+"crack.analyses.interfaces" = ["prompts/*.md"]

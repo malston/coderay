@@ -15,7 +15,8 @@ GOLDEN = pathlib.Path(__file__).parent / "fixtures" / "golden"
 # The shared key each analysis's THEME.hero_prefix reads its diagram from. Not
 # part of the card-family contract -- the hero is each analysis's own business
 # -- so the XSS tests below have to be told which key to reach for.
-DIAGRAM_KEY = {"backend": "pipeline_diagram", "architecture": "arch_diagram"}
+DIAGRAM_KEY = {"backend": "pipeline_diagram", "architecture": "arch_diagram",
+               "interfaces": "sequence_md"}
 
 GOLDEN_ANALYSES = sorted(DIAGRAM_KEY)
 

@@ -1,10 +1,10 @@
 # Crack
 
-Crack runs analyses on a codebase and generates written overviews: multi-chapter tours with diagrams and cross-references, request-flow summaries across server-side layers, or a map of the services a system runs and rents. Point it at a repo and get HTML/Markdown pages explaining how the code works.
+Crack runs analyses on a codebase and generates written overviews: multi-chapter tours with diagrams and cross-references, request-flow summaries across server-side layers, a map of the services a system runs and rents, or a guide to a product's API surface. Point it at a repo and get HTML/Markdown pages explaining how the code works.
 
 ## What this ships
 
-Three analyses, each implemented as a [PocketFlow](https://github.com/The-Pocket/PocketFlow) workflow:
+Four analyses, each implemented as a [PocketFlow](https://github.com/The-Pocket/PocketFlow) workflow:
 
 ### Tour
 
@@ -37,6 +37,16 @@ A five-stage pipeline (BuildBundle, Inventory, TechStack, TraceRequest, Overview
   - Credential values are stripped from the bundle before it is sent, by key name (`password`, `token`, `secret`, and similar), by connection-string position (`postgres://user:pw@host`), and for every value under a Kubernetes `Secret`. Names, service topology, images and ports survive. This is a redactor, not a secret scanner: a credential under an unguessable key name in a file that is not a `Secret` can still get through, so treat the bundle as sensitive.
   - Outside a git checkout, `git grep` fails and the SDK import lines are silently empty, so a tarball export loses the evidence that a connection is live and the report is built on configuration alone. Tracked as `coderay-q2r.15`.
 
+### Interfaces
+
+A five-stage pipeline (FindRoutes, ApiMenu, TraceActions, EndpointSequence, OverviewNode) that reads a product's API surface at three levels of zoom:
+
+- Collects the files that declare entry points by framework convention: Rails `config/routes.rb`, Django `urls.py`, Express and Fastify routers, Next.js `pages/api/` and `app/**/route.ts`, tRPC, GraphQL and gRPC schemas, and Go `cmd/`. Manifests and aggregators are read first, so a size cap trims single handlers rather than the map.
+- Renders four views: every endpoint grouped by feature and sized against the biggest group, a short tour of the groups that say the most about the product, one user gesture traced across service lanes, and a message-by-message sequence diagram of a single endpoint. The tour is omitted rather than rendered empty when the model writes none.
+- Expects a web API. Pointed at a repository with no surface files, the run stops before it spends an LLM call.
+- Known limitation, worth reading before you spend a run:
+  - When the model's endpoint pick cannot be read, the sequence diagram falls back to the largest handler on disk. If that also finds nothing, the diagram is drawn without the handler source and nothing in the output says so. Check that the sequence section names an endpoint you recognise.
+
 ## Quickstart
 
 ```bash
@@ -49,9 +59,11 @@ crack tour path/to/repo     # multi-chapter codebase tour
 crack backend path/to/repo  # server-side backend flow analysis
 # OR
 crack architecture path/to/repo  # multi-service architecture map
+# OR
+crack interfaces path/to/repo  # API surface and endpoint sequence
 ```
 
-If a **tour** run fails partway through (a bad LLM response after retries, a network error), the files, abstractions, and chapters completed so far are written to `run_state.json` in the target output directory, so you can see how far it got without rerunning the whole pipeline. The `backend` and `architecture` analyses do not do this: a failed run leaves an empty output directory.
+If a **tour** run fails partway through (a bad LLM response after retries, a network error), the files, abstractions, and chapters completed so far are written to `run_state.json` in the target output directory, so you can see how far it got without rerunning the whole pipeline. The `backend`, `architecture` and `interfaces` analyses do not do this: a failed run leaves an empty output directory.
 
 Example output:
 

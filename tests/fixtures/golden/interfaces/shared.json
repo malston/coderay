@@ -1,0 +1,31 @@
+{
+  "repo_path": "/tmp/toy_repo",
+  "opener": "Ninety-one endpoints, and two thirds of them are booking.",
+  "route_files": [
+    "config/routes.rb",
+    "pages/api/book.ts",
+    "pages/api/pay.ts"
+  ],
+  "group_names": [
+    "Booking <script>alert(1)</script> (42)",
+    "Payments (18)",
+    "Auth (6)"
+  ],
+  "groups_md": "### Booking <script>alert(1)</script> (42)\n\nThe biggest surface by far. `config/routes.rb:88` maps **42** paths.\n\n- `POST /api/book` creates a hold\n- `DELETE /api/book/:id` releases it\n\n### Payments (18)\n\nStripe-backed, all under `pages/api/pay*`.\n\n### Auth (6)\n\nSession cookies, no bearer tokens.\n",
+  "tour_md": "### Start at booking\n\nIt is where the product's idea lives.\n\n### Then payments\n\nEverything else exists to make this work.\n",
+  "flows_md": "### Guest books a room\n\n| lane | step |\n| --- | --- |\n| web | `POST /api/book` |\n| worker | holds inventory |\n\n### Guest cancels\n\nThe hold is released, then Stripe is refunded.\n",
+  "sequence_endpoint": "POST /api/book <script>alert(1)</script>",
+  "sequence_md": "```mermaid\nsequenceDiagram\n  client->>api: POST /api/book\n  </pre><script>alert('xss')</script>\n```\n\nThe hold is written before Stripe is called, so a failed charge leaves a row to reap.\n",
+  "sequence_files": [
+    "pages/api/book.ts"
+  ],
+  "overview": {
+    "welcome": "toy_repo is a booking API with a thin payments wing and almost no admin surface.",
+    "intros": {
+      "Feature menu": "Three groups; booking is two thirds of the whole surface.",
+      "The tour": "Booking first, because it is where the product's idea lives.",
+      "Action flows": "Two gestures, both crossing the worker lane.",
+      "Endpoint sequence": "One booking write, and the row it leaves behind on failure."
+    }
+  }
+}
