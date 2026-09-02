@@ -76,22 +76,34 @@ CI runs `pytest` on every push/PR via `.github/workflows/tests.yml`. To cut a re
 
 ## Architecture Overview
 
-A PocketFlow pipeline with five sequential nodes (`src/crack/analyses/tour/nodes.py`, wired in `src/crack/analyses/tour/flow.py`):
+Crack dispatches to two analyses, each a PocketFlow pipeline:
+
+**Tour** (five sequential nodes, `src/crack/analyses/tour/nodes.py`, wired in `src/crack/analyses/tour/flow.py`):
 
 ```text
 SmartCrawl -> ExtractGraph -> Analyze -> Relate -> WriteChapters
 ```
 
 - **SmartCrawl** walks the target repo (`src/crack/core/crawl.py`), builds a preview manifest, and asks the LLM which ~0.1-2% of files matter. Enforces `preview_budget` and `codebase_budget` so large repos can't blow the LLM's context window.
-- **Analyze** / **Relate** / **WriteChapters** call the LLM via `crack.core.call_llm` and parse its YAML output via `crack.core.yaml_call`, which retries with a varied prompt on bad output (the retry-safe path — don't reintroduce a local prompt-parsing loop that bypasses it, see the Rules doc).
+- **Analyze** / **Relate** / **WriteChapters** call the LLM via `crack.core.call_llm` and parse its YAML output via `crack.core.yaml_call`, which retries with a varied prompt on bad output (the retry-safe path -- don't reintroduce a local prompt-parsing loop that bypasses it, see the Rules doc).
 - `src/crack/analyses/tour/render.py` renders the analysis's output (`shared` dict, typed as `PipelineState` in `src/crack/analyses/tour/nodes.py`) to markdown + HTML.
-- `src/crack/analyses/tour/prompts/*.md` are the four LLM prompt templates; `src/crack/analyses/tour/instructions/*.md` are swappable output lenses (`--instructions <name>`), auto-discovered from the directory — adding a lens is just adding a file.
+- `src/crack/analyses/tour/prompts/*.md` are the four LLM prompt templates; `src/crack/analyses/tour/instructions/*.md` are swappable output lenses (`--instructions <name>`), auto-discovered from the directory -- adding a lens is just adding a file.
+
+**Backend** (five sequential nodes, `src/crack/analyses/backend/nodes.py`, wired in `src/crack/analyses/backend/flow.py`):
+
+```text
+BuildBundle -> Pipeline -> LayerCode -> Trace -> OverviewNode
+```
+
+- Analyzes the repository structure and maps files to six semantic layers: route, middleware, handler, service, database, response.
+- Renders three views: the pipeline with file counts per layer, code snippets at layer boundaries, and a request trace through all six.
 
 Full architecture rationale and past review findings: `.full-review/*.md` (a comprehensive code review that produced the fixes now on `main`).
 
 ## Conventions & Patterns
 
-- Untrusted input (the target repo's own files, and anything the LLM echoes back from them) must be escaped before it reaches HTML/Mermaid output. This bit the project once (a confirmed stored-XSS bug); see `.full-review/02a-security.md` before touching `src/crack/analyses/tour/render.py`'s rendering code.
-- LLM YAML parsing goes through `crack.core.yaml_call`, not a bespoke `parse_yaml`/`.format()` combo in `src/crack/analyses/tour/nodes.py` — that duplication was a real bug (a cache/retry defect) fixed in a prior epic. Reuse `crack.core.yaml_call` and `crack.core.fill()` for new LLM-calling code.
-- Any file-content budget (`preview_budget`, `codebase_budget`) must be enforced by capping _how many files_ are included, not by raising a per-file floor — that inversion was the root cause of two Critical scalability bugs.
-- Tests live in `tests/`, run via plain `pytest`, no network/API key required — LLM calls are faked at the `call_llm`/`yaml_call` boundary, not mocked deeper in the call stack.
+- The four card-family analyses (non-tour analyses) declare `SECTIONS` and `THEME` and are rendered by `crack/core/render.py`. An analysis with a page shape that does not fit this contract declares its own `render_html` and `render_markdown` functions instead. Tour uses the second path.
+- Untrusted input (the target repo's own files, and anything the LLM echoes back from them) must be escaped before it reaches HTML/Mermaid output. This bit the project once (a confirmed stored-XSS bug); see `.full-review/02a-security.md` before touching rendering code.
+- LLM YAML parsing goes through `crack.core.yaml_call`, not a bespoke `parse_yaml`/`.format()` combo in pipeline nodes -- that duplication was a real bug (a cache/retry defect) fixed in a prior epic. Reuse `crack.core.yaml_call` and `crack.core.fill()` for new LLM-calling code.
+- Any file-content budget (`preview_budget`, `codebase_budget`) must be enforced by capping _how many files_ are included, not by raising a per-file floor -- that inversion was the root cause of two Critical scalability bugs.
+- Tests live in `tests/`, run via plain `pytest`, no network/API key required -- LLM calls are faked at the `call_llm`/`yaml_call` boundary, not mocked deeper in the call stack.

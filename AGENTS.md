@@ -1,6 +1,6 @@
 # Agent Instructions
 
-Crack is a PocketFlow pipeline that crawls a target repo, picks the files that matter, and writes a multi-chapter tour via LLM calls. See `CLAUDE.md` for build/test commands, architecture, and project conventions — read it before making changes.
+Crack runs two PocketFlow analyses: a multi-chapter tour and a server-side backend flow analysis. See `CLAUDE.md` for build/test commands, architecture, and project conventions -- read it before making changes.
 
 This project uses **bd** (beads) for issue tracking; see the managed Beads sections below for commands and workflow. Run `bd prime` for full workflow context.
 
@@ -29,6 +29,38 @@ cp -rf source dest          # NOT: cp -r source dest
 - `ssh` - use `-o BatchMode=yes` to fail instead of prompting
 - `apt-get` - use `-y` flag
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
+
+## Architecture Overview
+
+Crack dispatches to two analyses, each a PocketFlow pipeline:
+
+**Tour** (five sequential nodes, `src/crack/analyses/tour/nodes.py`, wired in `src/crack/analyses/tour/flow.py`):
+
+```text
+SmartCrawl -> ExtractGraph -> Analyze -> Relate -> WriteChapters
+```
+
+- **SmartCrawl** walks the target repo (`src/crack/core/crawl.py`), builds a preview manifest, and asks the LLM which ~0.1-2% of files matter. Enforces `preview_budget` and `codebase_budget` so large repos can't blow the LLM's context window.
+- **Analyze** / **Relate** / **WriteChapters** call the LLM via `crack.core.call_llm` and parse its YAML output via `crack.core.yaml_call`, which retries with a varied prompt on bad output (the retry-safe path -- don't reintroduce a local prompt-parsing loop that bypasses it).
+- `src/crack/analyses/tour/render.py` renders the analysis's output (`shared` dict, typed as `PipelineState` in `src/crack/analyses/tour/nodes.py`) to markdown + HTML.
+- `src/crack/analyses/tour/prompts/*.md` are the four LLM prompt templates; `src/crack/analyses/tour/instructions/*.md` are swappable output lenses (`--instructions <name>`), auto-discovered from the directory -- adding a lens is just adding a file.
+
+**Backend** (five sequential nodes, `src/crack/analyses/backend/nodes.py`, wired in `src/crack/analyses/backend/flow.py`):
+
+```text
+BuildBundle -> Pipeline -> LayerCode -> Trace -> OverviewNode
+```
+
+- Analyzes the repository structure and maps files to six semantic layers: route, middleware, handler, service, database, response.
+- Renders three views: the pipeline with file counts per layer, code snippets at layer boundaries, and a request trace through all six.
+
+## Conventions & Patterns
+
+- The four card-family analyses (non-tour analyses) declare `SECTIONS` and `THEME` and are rendered by `crack/core/render.py`. An analysis with a page shape that does not fit this contract declares its own `render_html` and `render_markdown` functions instead. Tour uses the second path.
+- Untrusted input (the target repo's own files, and anything the LLM echoes back from them) must be escaped before it reaches HTML/Mermaid output.
+- LLM YAML parsing goes through `crack.core.yaml_call`, not a bespoke `parse_yaml`/`.format()` combo in pipeline nodes -- that duplication was a real bug fixed in a prior epic. Reuse `crack.core.yaml_call` and `crack.core.fill()` for new LLM-calling code.
+- Any file-content budget (`preview_budget`, `codebase_budget`) must be enforced by capping _how many files_ are included, not by raising a per-file floor -- that inversion was the root cause of two Critical scalability bugs.
+- Tests live in `tests/`, run via plain `pytest`, no network/API key required -- LLM calls are faked at the `call_llm`/`yaml_call` boundary, not mocked deeper in the call stack.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->
 
