@@ -12,6 +12,7 @@ from .call_llm import (  # noqa: F401
 from .llm import (  # noqa: F401
     read_prompt,
     fill,
+    extract_mermaid,
     parse_yaml,
     yaml_call,
 )
