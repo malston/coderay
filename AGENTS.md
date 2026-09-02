@@ -56,7 +56,7 @@ BuildBundle -> Pipeline -> LayerCode -> Trace -> OverviewNode
 
 ## Conventions & Patterns
 
-- Card-family analyses (today just `backend`; architecture, interfaces and schema follow) declare `SECTIONS` and `THEME` and are rendered by `crack/core/render.py`. An analysis with a page shape that does not fit this contract declares its own `render_html` and `render_markdown` functions instead. Tour uses the second path.
+- Card-family analyses (today just `backend`; architecture, interfaces and schema follow) declare `SECTIONS` and `THEME` and are rendered by `crack/core/render.py`. An analysis whose page shape does not fit declares its own `render_html` and `render_markdown` instead, and `crack/core/render.py` steps aside for it. Tour uses neither path: it predates the contract and writes its own multi-file output directly from `run()`, via `write_index_md`, `write_index_html` and `write_chapter_files`.
 - Untrusted input (the target repo's own files, and anything the LLM echoes back from them) must be escaped before it reaches HTML/Mermaid output.
 - LLM YAML parsing goes through `crack.core.yaml_call`, not a bespoke `parse_yaml`/`.format()` combo in pipeline nodes -- that duplication was a real bug fixed in a prior epic. Reuse `crack.core.yaml_call` and `crack.core.fill()` for new LLM-calling code.
 - Any file-content budget (`preview_budget`, `codebase_budget`) must be enforced by capping _how many files_ are included, not by raising a per-file floor -- that inversion was the root cause of two Critical scalability bugs.

@@ -22,7 +22,10 @@ A five-stage pipeline (BuildBundle, Pipeline, LayerCode, Trace, OverviewNode) th
 - Builds a bundle describing the repository structure at each layer.
 - Renders three views: the pipeline with a file count per layer, code snippets showing how each layer connects to the others, and a trace of a single request through all six layers.
 - Expects a server-side backend (Django, Express, Rails, FastAPI, and similar frameworks). Works best on backends with clear separation of concerns.
-- Known limitations: does not produce a clear error message when pointed at a frontend-only or documentation repository; layer directories at the repository root (like `pages/api/` in some Next.js layouts, or `routes/` in some Express layouts) are not currently classified and are skipped.
+- Known limitations, worth reading before you spend a run:
+  - Pointed at a repository with no server-side backend, it does not stop. It spends all three LLM calls and writes a report invented from an empty bundle, with no warning and no error. Check the layer counts it prints after the crawl before trusting the output.
+  - A layer directory at the repository root (`pages/api/` in some Next.js layouts, `routes/` in some Express layouts) is not classified, so those files are skipped and the layer reports zero.
+  - A flat Django app is affected too: `views.py` is not recognised, so the handler layer reports zero even though the routes and models are found.
 
 ## Quickstart
 
