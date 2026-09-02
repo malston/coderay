@@ -14,6 +14,22 @@ call_llm_module = importlib.import_module("crack.core.call_llm")
 from crack.core.call_llm import _cache_path, _cache_put, call_llm
 
 
+class _FakeStream:
+    """Mimics the context manager `Anthropic().messages.stream(...)` returns."""
+
+    def __init__(self, resp):
+        self._resp = resp
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+    def get_final_message(self):
+        return self._resp
+
+
 @pytest.fixture(autouse=True)
 def isolated_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(call_llm_module, "CACHE_DIR", str(tmp_path))
@@ -69,8 +85,8 @@ def _fake_anthropic_module(stop_reason, text="hi", block_type="text"):
             self.usage = Usage()
 
     class Messages:
-        def create(self, **kwargs):
-            return Resp()
+        def stream(self, **kwargs):
+            return _FakeStream(Resp())
 
     class Anthropic:
         def __init__(self, *a, **kw):
@@ -102,8 +118,8 @@ def _fake_anthropic_module_with_usage(input_tokens, output_tokens, cache_read, c
             self.usage = Usage()
 
     class Messages:
-        def create(self, **kwargs):
-            return Resp()
+        def stream(self, **kwargs):
+            return _FakeStream(Resp())
 
     class Anthropic:
         def __init__(self, *a, **kw):
@@ -149,8 +165,8 @@ def _fake_anthropic_module_missing_usage(text="ok"):
         usage = None
 
     class Messages:
-        def create(self, **kwargs):
-            return Resp()
+        def stream(self, **kwargs):
+            return _FakeStream(Resp())
 
     class Anthropic:
         def __init__(self, *a, **kw):
@@ -415,8 +431,8 @@ def _fake_anthropic_module_truncated_with_usage(input_tokens, output_tokens):
             self.usage = Usage()
 
     class Messages:
-        def create(self, **kwargs):
-            return Resp()
+        def stream(self, **kwargs):
+            return _FakeStream(Resp())
 
     class Anthropic:
         def __init__(self, *a, **kw):
@@ -495,9 +511,9 @@ def _fake_anthropic_module_capturing_kwargs(captured, text="ok"):
         usage = Usage()
 
     class Messages:
-        def create(self, **kwargs):
+        def stream(self, **kwargs):
             captured.update(kwargs)
-            return Resp()
+            return _FakeStream(Resp())
 
     class Anthropic:
         def __init__(self, *a, **kw):
@@ -695,3 +711,64 @@ def test_disk_cache_key_matches_the_marker_stripped_text_actually_sent(monkeypat
     expected_path = _cache_path("anthropic", "claude-sonnet-5", 16384, "stable stuffvolatile stuff")
     assert os.path.exists(expected_path)
     assert not os.path.exists(_cache_path("anthropic", "claude-sonnet-5", 16384, prompt))
+
+
+def _fake_anthropic_module_stream_only(input_tokens, output_tokens, cache_read, cache_write, text="ok"):
+    # No `create` method at all -- if call_llm() ever falls back to
+    # `messages.create(...)`, this raises AttributeError instead of silently
+    # succeeding, which is what makes this fake catch a regression to the
+    # non-streaming call.
+    fake = types.ModuleType("anthropic")
+
+    class Usage:
+        def __init__(self):
+            self.input_tokens = input_tokens
+            self.output_tokens = output_tokens
+            self.cache_read_input_tokens = cache_read
+            self.cache_creation_input_tokens = cache_write
+
+    class Block:
+        def __init__(self):
+            self.type = "text"
+            self.text = text
+
+    class Resp:
+        def __init__(self):
+            self.stop_reason = "end_turn"
+            self.content = [Block()]
+            self.usage = Usage()
+
+    class Messages:
+        def stream(self, **kwargs):
+            return _FakeStream(Resp())
+
+    class Anthropic:
+        def __init__(self, *a, **kw):
+            self.messages = Messages()
+
+    fake.Anthropic = Anthropic
+    return fake
+
+
+def test_anthropic_call_uses_streaming_not_create(monkeypatch):
+    # coderay backend analysis sets LLM_MAX_OUTPUT_TOKENS=32768, which the
+    # SDK's non-streaming path rejects outright (ValueError: "Streaming is
+    # required for operations that may take longer than 10 minutes."). A
+    # fake anthropic module with no `create` method at all means a call_llm()
+    # that regresses to `messages.create(...)` fails with AttributeError
+    # instead of silently passing.
+    call_llm_module.reset_usage()
+    monkeypatch.setenv("LLM_MAX_OUTPUT_TOKENS", "32768")
+    monkeypatch.setitem(
+        sys.modules, "anthropic",
+        _fake_anthropic_module_stream_only(input_tokens=100, output_tokens=50, cache_read=10, cache_write=5),
+    )
+
+    result = call_llm("prompt")
+
+    assert result == "ok"
+    record = call_llm_module.get_usage()[0]
+    assert record["input_tokens"] == 100
+    assert record["output_tokens"] == 50
+    assert record["cache_read_tokens"] == 10
+    assert record["cache_write_tokens"] == 5
