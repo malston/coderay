@@ -32,7 +32,7 @@ crack = "crack.cli:main"
 [tool.setuptools]
 package-dir = {"" = "src"}
 packages = [
-    "crack", "crack.core", "crack.analyses", "crack.analyses.tour",
+    "crack", "crack.core", "crack.analyses", "crack.analyses.backend", "crack.analyses.tour",
     "crack.analyses.tour.graph", "crack.analyses.tour.graph.languages",
 ]
 
