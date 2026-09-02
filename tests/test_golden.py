@@ -31,8 +31,16 @@ def test_golden_html_escapes_injected_markup(name):
 
     The diagram is the one that bit the port source (see its commit 725b01e).
     A diagram containing </pre><script> closed the pre element and executed
-    when the page was opened. Mermaid reads the element's textContent, which
-    the browser decodes back, so escaping the source is safe and reversible.
+    when the page was opened.
+
+    What this test proves is narrow: the payload does not survive into the
+    HTML source. It does NOT prove the rendered page is safe. Mermaid reads
+    the element's textContent, which the browser decodes back to the raw
+    characters, so the escaping is undone before mermaid ever sees it. What
+    happens next is decided by mermaid's securityLevel, and the card engine
+    currently initialises it to 'loose', the one level that does not sanitise
+    (tour uses 'strict'). Tracked as bead coderay-q2r.11; until that is
+    settled, do not read a pass here as "diagram content is safe".
     """
     d = GOLDEN / name
     html = (d / "index.html").read_text(encoding="utf-8")
