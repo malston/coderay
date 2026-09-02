@@ -1,10 +1,10 @@
 # Crack
 
-Crack runs analyses on a codebase and generates written overviews: multi-chapter tours with diagrams and cross-references, request-flow summaries across server-side layers, a map of the services a system runs and rents, or a guide to a product's API surface. Point it at a repo and get HTML/Markdown pages explaining how the code works.
+Crack runs analyses on a codebase and generates written overviews: multi-chapter tours with diagrams and cross-references, request-flow summaries across server-side layers, a map of the services a system runs and rents, a guide to a product's API surface, or a tour of the data model and the migrations that shaped it. Point it at a repo and get HTML/Markdown pages explaining how the code works.
 
 ## What this ships
 
-Four analyses, each implemented as a [PocketFlow](https://github.com/The-Pocket/PocketFlow) workflow:
+Five analyses, each implemented as a [PocketFlow](https://github.com/The-Pocket/PocketFlow) workflow:
 
 ### Tour
 
@@ -47,6 +47,16 @@ A five-stage pipeline (FindRoutes, ApiMenu, TraceActions, EndpointSequence, Over
 - Known limitation, worth reading before you spend a run:
   - When the model's endpoint pick cannot be read, the sequence diagram falls back to the largest handler on disk. If that also finds nothing, the diagram is drawn without the handler source and nothing in the output says so. Check that the sequence section names an endpoint you recognise.
 
+### Schema
+
+A six-stage pipeline (FindSchema, SchemaTour, TraceFlows, TableDeepDive, MigrationActs, OverviewNode) that reads a database schema as a map of the business:
+
+- Finds the schema by convention in priority order: Prisma `schema.prisma`, Rails `db/schema.rb`, a dumped `schema.sql`, or the Django and SQLAlchemy `models.py` files concatenated. `--schema path/to/file` overrides the search.
+- Renders four views: the schema told as a story with an ER diagram, one user action traced across tables, the columns and indexes of the core tables, and the migration history clustered into product eras.
+- The deep dive reviews four tables per LLM call rather than all at once, which is why this analysis does not raise the output-token ceiling the way the others do.
+- The migration section is skipped, with a note saying so, when fewer than four migrations are found. That is a real finding about the repository rather than a gap in the report, so it stays on the page.
+- Expects a schema. Pointed at a repository with none, the run stops before it spends an LLM call and tells you to try `--schema`.
+
 ## Quickstart
 
 ```bash
@@ -61,9 +71,11 @@ crack backend path/to/repo  # server-side backend flow analysis
 crack architecture path/to/repo  # multi-service architecture map
 # OR
 crack interfaces path/to/repo  # API surface and endpoint sequence
+# OR
+crack schema path/to/repo     # data model and migration history
 ```
 
-If a **tour** run fails partway through (a bad LLM response after retries, a network error), the files, abstractions, and chapters completed so far are written to `run_state.json` in the target output directory, so you can see how far it got without rerunning the whole pipeline. The `backend`, `architecture` and `interfaces` analyses do not do this: a failed run leaves an empty output directory.
+If a **tour** run fails partway through (a bad LLM response after retries, a network error), the files, abstractions, and chapters completed so far are written to `run_state.json` in the target output directory, so you can see how far it got without rerunning the whole pipeline. The other analyses do not do this: a failed run leaves an empty output directory.
 
 Example output:
 

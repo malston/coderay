@@ -16,7 +16,7 @@ GOLDEN = pathlib.Path(__file__).parent / "fixtures" / "golden"
 # part of the card-family contract -- the hero is each analysis's own business
 # -- so the XSS tests below have to be told which key to reach for.
 DIAGRAM_KEY = {"backend": "pipeline_diagram", "architecture": "arch_diagram",
-               "interfaces": "sequence_md"}
+               "interfaces": "sequence_md", "schema": "erd"}
 
 GOLDEN_ANALYSES = sorted(DIAGRAM_KEY)
 
