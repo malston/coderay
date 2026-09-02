@@ -31,12 +31,14 @@ A five-stage pipeline (BuildBundle, Pipeline, LayerCode, Trace, OverviewNode) th
 
 A five-stage pipeline (BuildBundle, Inventory, TechStack, TraceRequest, OverviewNode) that maps a multi-service system: the programs it runs, the services it rents, and the wires between them:
 
-- Overlays four sources that no single file holds together: process declarations (compose, Kubernetes manifests, `Procfile`, platform config), environment variable *names* (never their values), the union of `package.json` dependencies, and Terraform. SDK `import` lines found by `git grep` are the proof a connection is live rather than merely configured.
+- Overlays four sources that no single file holds together: process declarations (compose, Kubernetes manifests, `Procfile`, platform config), environment variable names from `.env` files, the union of `package.json` dependencies, and Terraform. SDK `import` lines found by `git grep` are the proof a connection is live rather than merely configured.
 - Renders three views: every node sorted into four bands (run, rent, call, client), the real technology behind each box's label, and one request traced hop by hop with its variants.
 - Expects a multi-service application. Pointed at a repository with none of those sources, the run stops before it spends an LLM call.
 - Known limitations, worth reading before you spend a run:
   - Infrastructure written in a general-purpose language is invisible. AWS CDK and Pulumi stacks are ordinary `.ts`/`.py` programs, and SAM `template.yaml` is an ordinary YAML file, so none of them are classified. A CDK repository reports `0 config files` while its stacks sit in `infra/lib/`. Tracked as `coderay-q2r.10`.
   - A manifest directory at the repository root (`k8s/`, `manifests/`, `charts/`) is not classified, though the same directory one level down is. This is the same root-directory blind spot the backend analysis has.
+  - **Secret values can reach the LLM.** Only `.env` files are reduced to variable names. Compose files, Kubernetes manifests, `.tfvars`, and platform config such as `fly.toml` are sent whole, values included, even though the bundle header claims otherwise. A database password in a compose `environment:` block or a committed `.tfvars` leaves your machine. Check what those files hold before pointing this at a repository. Tracked as `coderay-q2r.14`.
+  - Outside a git checkout, `git grep` fails and the SDK import lines are silently empty, so a tarball export loses the evidence that a connection is live and the report is built on configuration alone. Tracked as `coderay-q2r.15`.
 
 ## Quickstart
 
@@ -52,7 +54,7 @@ crack backend path/to/repo  # server-side backend flow analysis
 crack architecture path/to/repo  # multi-service architecture map
 ```
 
-If a run fails partway through (a bad LLM response after retries, a network error), the files, abstractions, and chapters completed so far are written to `run_state.json` in the target output directory, so you can see how far it got without rerunning the whole pipeline.
+If a **tour** run fails partway through (a bad LLM response after retries, a network error), the files, abstractions, and chapters completed so far are written to `run_state.json` in the target output directory, so you can see how far it got without rerunning the whole pipeline. The `backend` and `architecture` analyses do not do this: a failed run leaves an empty output directory.
 
 Example output:
 

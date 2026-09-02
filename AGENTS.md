@@ -54,6 +54,16 @@ BuildBundle -> Pipeline -> LayerCode -> Trace -> OverviewNode
 - Analyzes the repository structure and maps files to six semantic layers: route, middleware, handler, service, database, response.
 - Renders three views: the pipeline with file counts per layer, code snippets at layer boundaries, and a request trace through all six.
 
+**Architecture** (five sequential nodes: four in `src/crack/analyses/architecture/nodes.py` plus the shared `OverviewNode`, wired in `build_flow()` in `src/crack/analyses/architecture/__init__.py`):
+
+```text
+BuildBundle -> Inventory -> TechStack -> TraceRequest -> OverviewNode
+```
+
+- `src/crack/analyses/architecture/arch_crawl.py` overlays four sources into one bundle: process declarations (compose, k8s, `Procfile`, platform config), env var names from `.env` files (every other source is sent whole, values included -- see coderay-q2r.14), the union of `package.json` dependencies, and Terraform, plus SDK import lines from `git grep` as proof a connection is live.
+- Inventory runs first and its numbered node list is reused by TechStack and TraceRequest, so all three passes name the same graph.
+- Renders three views: every node banded run/rent/call/client, the technology behind each label, and one request traced hop by hop.
+
 ## Conventions & Patterns
 
 - Card-family analyses (today `backend` and `architecture`; interfaces and schema follow) declare `SECTIONS` and `THEME` and are rendered by `crack/core/render.py`. An analysis whose page shape does not fit declares its own `render_html` and `render_markdown` instead, and `crack/core/render.py` steps aside for it. Tour uses neither path: it predates the contract and writes its own multi-file output directly from `run()`, via `write_index_md`, `write_index_html` and `write_chapter_files`.

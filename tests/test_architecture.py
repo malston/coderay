@@ -68,10 +68,12 @@ def test_overview_spec_names_the_three_sections_and_counts_the_nodes():
 
 
 def test_overview_spec_counts_only_headers_that_start_a_line():
-    """A `###` inside a fenced diagram or mid-sentence is not a node card.
+    """A `###` in the middle of a line is not a node card.
 
-    The distinguishing input is the fenced block: a count that does not anchor
-    to the start of a line reads three nodes here, not two.
+    The regex anchors to the start of a line and knows nothing about fences, so
+    a `### foo` at the start of a line inside a fenced block IS counted. The
+    distinguishing input is the mid-line `###` below: drop the anchor and the
+    count reads three nodes here, not two.
     """
     spec = architecture.overview_spec({
         "repo_path": "/tmp/toy_repo",

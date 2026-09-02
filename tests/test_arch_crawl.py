@@ -75,7 +75,6 @@ def test_env_names_keeps_the_names_and_never_the_values():
         "# COMMENTED_OUT=x\n"
     )
     assert names == ["STRIPE_SECRET_KEY", "DATABASE_URL"]
-    assert not any("sk_live" in n or "hunter2" in n for n in names)
 
 
 def _repo(tmp_path, files):
@@ -84,6 +83,61 @@ def _repo(tmp_path, files):
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text, encoding="utf-8")
     return str(tmp_path)
+
+
+def test_only_dotenv_files_have_their_values_stripped(tmp_path):
+    """Known defect, tracked as coderay-q2r.14.
+
+    _env_names keeps names only, and the bundle header says "values omitted",
+    but that rule reaches exactly one of the seven file kinds the crawl
+    collects. compose, k8s, gateway and iac files are appended whole, values
+    included, and all four are ordinary places to find live credentials. The
+    bundle goes to a third-party LLM API.
+
+    Inherited from the port source and deliberately not fixed here, because
+    arch_crawl.py is copied verbatim. This test asserts the leak, so it fails
+    the moment the leak is closed -- which is the signal to re-port and invert
+    it. Read a pass here as "the defect is still present", never as "safe".
+    """
+    repo = _repo(tmp_path, {
+        ".env": "DOTENV_SECRET=stripped-value\n",
+        "infra/prod.tfvars": 'db_password = "leaked-from-tfvars"\n',
+        "docker-compose.yml": "services:\n  api:\n    environment:\n"
+                              "      STRIPE_KEY: leaked-from-compose\n",
+        "deploy/k8s/secret.yaml": "kind: Secret\ndata:\n  pw: leaked-from-k8s\n",
+        "fly.toml": '[env]\nAPI_TOKEN = "leaked-from-fly"\n',
+    })
+    bundle, _stats = ac.build_bundle(repo)
+
+    # The one path that honours the promise.
+    assert "DOTENV_SECRET" in bundle
+    assert "stripped-value" not in bundle
+
+    # The four that do not.
+    for leaked in ("leaked-from-tfvars", "leaked-from-compose",
+                   "leaked-from-k8s", "leaked-from-fly"):
+        assert leaked in bundle, f"{leaked} no longer leaks -- see coderay-q2r.14"
+
+
+def test_sdk_imports_report_zero_outside_a_git_checkout(tmp_path):
+    """Known defect, tracked as coderay-q2r.15.
+
+    _sdk_grep catches every exception and returns "", so `git grep` failing
+    with exit 128 (not a repository) is indistinguishable from it succeeding
+    with no matches. A tarball export loses the whole evidence class that
+    proves a connection is live, and nothing in the stats says so.
+
+    The repo below holds a real SDK import that a working `git grep` would
+    find, which is what separates the two cases; tmp_path is not a git
+    checkout, so the count is zero anyway. Inherited from the port source and
+    deliberately not fixed here.
+    """
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services: {}\n",
+        "src/pay.ts": "import Stripe from 'stripe';\n",
+    })
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["sdk_lines"] == 0
 
 
 def test_build_bundle_overlays_the_four_sources_and_counts_them(tmp_path):

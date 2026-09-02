@@ -40,14 +40,16 @@ def test_golden_html_escapes_injected_markup(name):
     A diagram containing </pre><script> closed the pre element and executed
     when the page was opened.
 
-    What this test proves is narrow: the payload does not survive into the
-    HTML source. It does NOT prove the rendered page is safe. Mermaid reads
-    the element's textContent, which the browser decodes back to the raw
-    characters, so the escaping is undone before mermaid ever sees it. What
-    happens next is decided by mermaid's securityLevel, and the card engine
-    currently initialises it to 'loose', the one level that does not sanitise
-    (tour uses 'strict'). Tracked as bead coderay-q2r.11; until that is
-    settled, do not read a pass here as "diagram content is safe".
+    This one reads the committed bytes rather than re-rendering, so it guards
+    the fixture, not the renderer: it fails when a regenerated golden file
+    loses its payload, which would quietly hollow out every other test here.
+    The live escaping is covered by test_render_escapes_* below.
+
+    Escaping the HTML source is necessary but not sufficient on its own.
+    Mermaid reads the element's textContent, which the browser has already
+    decoded back to the raw characters, so what happens next is decided by
+    mermaid's securityLevel. The card engine sets 'strict' (see
+    crack/core/render.py and bead coderay-q2r.11, closed), which sanitises.
     """
     d = GOLDEN / name
     html = (d / "index.html").read_text(encoding="utf-8")
