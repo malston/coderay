@@ -27,9 +27,35 @@ import pathlib
 import subprocess
 import sys
 
-PORT_SOURCE_COMMIT = "d2bf6963f621a78b9ea3ac73268e1386a982df9d"
+PORT_SOURCE_COMMIT = "5fd2a96585d27ad7fe2cd7d2c5f0d7941f15ee22"
 DEFAULT_SIBLING = pathlib.Path.home() / "code" / "Crack-Any-Codebase-with-AI"
 GOLDEN = pathlib.Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "golden"
+
+
+# Places where crack deliberately differs from the port source. Every entry is
+# applied to the generated HTML, so the fixture keeps deriving from the pinned
+# upstream commit rather than from crack's own renderer, which would make the
+# golden test check crack against itself. Each entry must still match, so a
+# divergence that upstream later adopts fails loudly here instead of rotting.
+DIVERGENCES = [
+    # coderay-q2r.11: mermaid reads diagram source back out of textContent with
+    # the HTML escaping already decoded, so 'loose', which does not sanitise,
+    # leaves LLM-authored labels executable. tour has always used 'strict'.
+    ("  if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: 'neutral', "
+     "securityLevel: 'loose', flowchart: { htmlLabels: true } });",
+     "  // 'strict' sanitises LLM-authored diagram labels; see coderay-q2r.11.\n"
+     "  if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: 'neutral', "
+     "securityLevel: 'strict' });"),
+]
+
+
+def _apply_divergences(html):
+    for old, new in DIVERGENCES:
+        if old not in html:
+            sys.exit(f"divergence no longer applies, upstream may have adopted it: {old!r}")
+        html = html.replace(old, new)
+    return html
+
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
@@ -71,7 +97,8 @@ def main():
 
     analysis = load(args.analysis)
     shared = json.loads(shared_path.read_text(encoding="utf-8"))
-    (out_dir / "index.html").write_text(render.render_html(analysis, "toy_repo", shared), encoding="utf-8")
+    html = _apply_divergences(render.render_html(analysis, "toy_repo", shared))
+    (out_dir / "index.html").write_text(html, encoding="utf-8")
     (out_dir / "index.md").write_text(render.render_markdown(analysis, "toy_repo", shared), encoding="utf-8")
     print(f"wrote {out_dir}/index.html and {out_dir}/index.md from {args.sibling} @ {head[:7]}")
 

@@ -95,3 +95,36 @@ def test_a_custom_renderer_wins_over_the_card_engine():
 def test_section_intro_comes_from_the_overview():
     shared = {"body_md": "### A\nt", "overview": {"intros": {"Only": "the intro"}}}
     assert "the intro" in render_html(_Analysis, "repo", shared)
+
+
+def test_mermaid_runs_at_security_level_strict():
+    """LLM-authored diagram labels must be sanitised by mermaid itself.
+
+    Escaping the diagram into the HTML source is not enough on its own:
+    mermaid reads the element back out of textContent, which the browser has
+    already decoded to the raw characters. securityLevel decides what happens
+    next, and 'loose' does not sanitise. tour has always used 'strict' and the
+    card engine now matches it. Deliberate divergence from the port source,
+    tracked as coderay-q2r.11 and reproduced by scripts/regen_golden.py.
+    """
+    import pathlib as _p
+
+    engine = _p.Path(__file__).parent.parent / "src" / "crack" / "core" / "render.py"
+    text = engine.read_text(encoding="utf-8")
+    assert "securityLevel: 'strict'" in text
+    assert "securityLevel: 'loose'" not in text
+    # strict ignores htmlLabels, and leaving it set invites the misreading that
+    # HTML inside a label is supported.
+    assert "htmlLabels" not in text
+
+
+def test_card_engine_and_tour_agree_on_mermaid_security():
+    """The two renderers must not drift apart on this setting again."""
+    import pathlib as _p
+    import re as _re
+
+    root = _p.Path(__file__).parent.parent / "src" / "crack"
+    found = set()
+    for path in (root / "core" / "render.py", root / "analyses" / "tour" / "render.py"):
+        found |= set(_re.findall(r"securityLevel: '(\w+)'", path.read_text(encoding="utf-8")))
+    assert found == {"strict"}, found

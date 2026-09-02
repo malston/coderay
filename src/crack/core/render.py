@@ -148,7 +148,8 @@ PAGE = """<!doctype html>
 <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <script>
-  if (window.mermaid) mermaid.initialize({{ startOnLoad: false, theme: 'neutral', securityLevel: 'loose', flowchart: {{ htmlLabels: true }} }});
+  // 'strict' sanitises LLM-authored diagram labels; see coderay-q2r.11.
+  if (window.mermaid) mermaid.initialize({{ startOnLoad: false, theme: 'neutral', securityLevel: 'strict' }});
 </script>
 <script>
   window.addEventListener('load', async function () {{
