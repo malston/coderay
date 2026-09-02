@@ -15,11 +15,19 @@ def run_flow(flow, shared, out_dir, dump_state):
         print(f"\nPipeline failed. Wrote partial run state to {state_path}")
         raise
 
+def repo_name_of(repo_path):
+    """The repo's directory name, used for the output folder and the page title.
+
+    One helper so the name the overview prompt is given always matches the name
+    rendered on the page. Resolving to an absolute path first keeps a relative
+    repo_path (".", "../thing/") from yielding a useless name."""
+    return os.path.basename(os.path.abspath(repo_path))
+
 def default_output_dir(repo_path, analysis_name):
     """Anchored on the current working directory, not this file's location, so
     output lands in the same place whether crack runs from an editable checkout
     or as an installed tool."""
-    name = os.path.basename(os.path.abspath(repo_path))
+    name = repo_name_of(repo_path)
     return os.path.join(os.getcwd(), "output", f"{name}-{analysis_name}")
 
 def run_analysis(analysis, args):
@@ -30,7 +38,7 @@ def run_analysis(analysis, args):
     out_dir = args.out or default_output_dir(args.repo_path, analysis.NAME)
     os.makedirs(out_dir, exist_ok=True)
 
-    name = os.path.basename(os.path.abspath(args.repo_path))
+    name = repo_name_of(args.repo_path)
     shared = analysis.init_shared(args)
     with env_defaults(getattr(analysis, "ENV_DEFAULTS", {})):
         analysis.build_flow().run(shared)

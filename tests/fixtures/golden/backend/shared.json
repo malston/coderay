@@ -1,0 +1,24 @@
+{
+  "repo_path": "/tmp/toy_repo",
+  "layer_counts": {
+    "route": 4,
+    "middleware": 2,
+    "handler": 11,
+    "service": 5,
+    "database": 3,
+    "response": 1
+  },
+  "pipeline_diagram": "flowchart LR\n  route --> mw\n  </pre><script>alert('xss')</script>",
+  "pipeline_md": "```mermaid\nflowchart LR\n  route --> mw\n  </pre><script>alert('xss')</script>\n```\n\n### Route <script>alert(1)</script>\n\nOne `urls.py` maps **4** paths. See `app/urls.py:12`.\n\n### Middleware\n\nTwo layers, both custom:\n\n- auth\n- rate limiting\n\n### Handler\n\n11 views under `app/views/`.\n",
+  "layercode_md": "### Route \u2014 novel\n\nA `rest_path` wrapper folds method dispatch into the URL table.\n\n```python\ndef rest_path(route, **handlers):\n    return path(route, rest_dispatch(**handlers))\n```\n\n### Middleware \u2014 standard\n\nStock Django middleware, nothing to read.\n",
+  "trace_md": "**Endpoint:** POST /json/messages\n\n### 1. Route\n\n`app/urls.py:44` matches the path.\n\n### 2. Handler\n\n`app/views/message.py:88` validates, then calls the service.\n\n| field | required |\n| --- | --- |\n| `content` | yes |\n",
+  "trace_endpoint": "POST /json/messages",
+  "overview": {
+    "welcome": "toy_repo is a small Django service with a hand-rolled REST dispatcher and a two-layer middleware stack.",
+    "intros": {
+      "The pipeline": "Four routes fan into eleven handlers; the service layer is thin.",
+      "The code": "Only the routing layer is unusual, and it is one wrapper function.",
+      "The trace": "One message write, committed before the response returns."
+    }
+  }
+}
