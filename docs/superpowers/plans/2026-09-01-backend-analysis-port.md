@@ -723,9 +723,6 @@ def test_classify_maps_a_path_to_its_layer(rel, layer):
 def test_classify_returns_none_for_a_non_layer_file(rel):
     assert bc.classify(rel) is None
 
-def test_classify_handles_windows_separators():
-    assert bc.classify("app\\views\\message.py") == "handler"
-
 def _repo(tmp_path, files):
     for rel, text in files.items():
         p = tmp_path / rel
@@ -805,9 +802,9 @@ In `pyproject.toml`, add `"crack.analyses.backend",` to the `[tool.setuptools] p
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `uv run python -m pytest tests/ -q`
-Expected: PASS, 201 passed.
+Expected: PASS, 200 passed.
 
-If `test_classify_handles_windows_separators` fails, that is a real portability bug in the copied crawl and worth fixing at the source: `classify` already does `rel.replace(os.sep, '/')`, which is a no-op on POSIX for a backslash path. Report it rather than deleting the test; the same class of bug was found and fixed in this project's own extractors (see the coderay-bum work).
+`classify` normalizes with `rel.replace(os.sep, '/')`. That is correct and needs no change: it is only ever called with `os.path.relpath` output, so a backslash path arrives only on Windows, where `os.sep` is a backslash. On POSIX a backslash is a legal filename character rather than a separator, so leaving it alone is right. Do not add a test asserting that a backslash path classifies on POSIX; it would encode behavior that cannot occur.
 
 - [ ] **Step 6: Commit**
 
@@ -972,7 +969,7 @@ In `pyproject.toml`, under `[tool.setuptools.package-data]`, add:
 - [ ] **Step 6: Run tests to verify they pass**
 
 Run: `uv run python -m pytest tests/ -q`
-Expected: PASS, 213 passed.
+Expected: PASS, 212 passed.
 
 - [ ] **Step 7: Commit**
 
@@ -1294,7 +1291,7 @@ Expected: `wrote tests/fixtures/golden/backend/index.html and .../index.md from 
 - [ ] **Step 7: Run tests to verify they pass**
 
 Run: `uv run python -m pytest tests/ -q`
-Expected: PASS, 226 passed.
+Expected: PASS, 225 passed.
 
 - [ ] **Step 8: Verify the CLI end to end**
 
@@ -1368,7 +1365,7 @@ In `CLAUDE.md` and `AGENTS.md`, under "Architecture Overview", note that `crack`
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `uv run python -m pytest tests/ -q`
-Expected: PASS, 228 passed.
+Expected: PASS, 227 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -1381,7 +1378,7 @@ git commit -m "docs: document the backend analysis and the card-family contract"
 
 ## Done when
 
-- `uv run python -m pytest tests/ -q` passes with roughly 228 tests, up from the 145 baseline.
+- `uv run python -m pytest tests/ -q` passes with roughly 227 tests, up from the 145 baseline.
 - `uv run crack backend --help` works, and `crack tour` behaves exactly as before.
 - `crack/analyses/tour/` and `crack/cli.py` are untouched: `git diff a7b6df9 --stat -- src/crack/analyses/tour src/crack/cli.py` prints nothing.
 - The golden fixture regenerates identically: `scripts/regen_golden.py backend && git diff --exit-code tests/fixtures/golden/`.
