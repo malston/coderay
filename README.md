@@ -34,7 +34,7 @@ A five-stage pipeline (BuildBundle, Inventory, TechStack, TraceRequest, Overview
 - Expects a multi-service application. Pointed at a repository with none of those sources, the run stops before it spends an LLM call.
 - Known limitations, worth reading before you spend a run:
   - Infrastructure written in a general-purpose language is invisible. AWS CDK and Pulumi stacks are ordinary `.ts`/`.py` programs, and SAM `template.yaml` is an ordinary YAML file, so none of them are classified. A CDK repository reports `0 config files` while its stacks sit in `infra/lib/`. Tracked as `coderay-q2r.10`.
-  - **Secret values can reach the LLM.** Only `.env` files are reduced to variable names. Compose files, Kubernetes manifests, `.tfvars`, and platform config such as `fly.toml` are sent whole, values included, even though the bundle header claims otherwise. A database password in a compose `environment:` block or a committed `.tfvars` leaves your machine. Check what those files hold before pointing this at a repository. Tracked as `coderay-q2r.14`.
+  - Credential values are stripped from the bundle before it is sent, by key name (`password`, `token`, `secret`, and similar), by connection-string position (`postgres://user:pw@host`), and for every value under a Kubernetes `Secret`. Names, service topology, images and ports survive. This is a redactor, not a secret scanner: a credential under an unguessable key name in a file that is not a `Secret` can still get through, so treat the bundle as sensitive.
   - Outside a git checkout, `git grep` fails and the SDK import lines are silently empty, so a tarball export loses the evidence that a connection is live and the report is built on configuration alone. Tracked as `coderay-q2r.15`.
 
 ## Quickstart

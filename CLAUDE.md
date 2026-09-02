@@ -104,7 +104,7 @@ BuildBundle -> Pipeline -> LayerCode -> Trace -> OverviewNode
 BuildBundle -> Inventory -> TechStack -> TraceRequest -> OverviewNode
 ```
 
-- `src/crack/analyses/architecture/arch_crawl.py` overlays four sources into one bundle: process declarations (compose, k8s, `Procfile`, platform config), env var names from `.env` files (every other source is sent whole, values included -- see coderay-q2r.14), the union of `package.json` dependencies, and Terraform, plus SDK import lines from `git grep` as proof a connection is live.
+- `src/crack/analyses/architecture/arch_crawl.py` overlays four sources into one bundle: process declarations (compose, k8s, `Procfile`, platform config), env var names from `.env` files, with credential values redacted out of every other source by `_redact` (coderay-q2r.14, the one deliberate divergence from the port source in that module), the union of `package.json` dependencies, and Terraform, plus SDK import lines from `git grep` as proof a connection is live.
 - Inventory runs first and its numbered node list is reused by TechStack and TraceRequest, so all three passes name the same graph.
 - Renders three views: every node banded run/rent/call/client, the technology behind each label, and one request traced hop by hop.
 

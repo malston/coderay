@@ -86,38 +86,110 @@ def _repo(tmp_path, files):
     return str(tmp_path)
 
 
-def test_only_dotenv_files_have_their_values_stripped(tmp_path):
-    """Known defect, tracked as coderay-q2r.14.
+@pytest.mark.parametrize("line,secret", [
+    ("      STRIPE_KEY: sk_live_51HxxREALSECRET", "sk_live_51HxxREALSECRET"),
+    ("      - DB_PASSWORD=hunter2", "hunter2"),
+    ('db_password = "hunter2"', "hunter2"),
+    ('API_TOKEN = "tok_abc123"', "tok_abc123"),
+    ("  aws_secret_access_key: wJalrXUtnFEMI", "wJalrXUtnFEMI"),
+    ("  private_key: MIIEvQIBADANBg", "MIIEvQIBADANBg"),
+    ("  DATABASE_URL: postgres://app:hunter2@db:5432/app", "hunter2"),
+])
+def test_redact_removes_a_secret_value(line, secret):
+    out = ac._redact(line)
+    assert secret not in out
+    assert ac.REDACTED in out
 
-    _env_names keeps names only, and the bundle header says "values omitted",
-    but that rule reaches exactly one of the seven file kinds the crawl
-    collects. compose, k8s, gateway and iac files are appended whole, values
-    included, and all four are ordinary places to find live credentials. The
-    bundle goes to a third-party LLM API.
 
-    Inherited from the port source and deliberately not fixed here, because
-    arch_crawl.py is copied verbatim. This test asserts the leak, so it fails
-    the moment the leak is closed -- which is the signal to re-port and invert
-    it. Read a pass here as "the defect is still present", never as "safe".
+@pytest.mark.parametrize("line", [
+    "    image: envoyproxy/envoy:v1.29",
+    "      - '5432:5432'",
+    "  replicas: 3",
+    '  instance_type = "t3.medium"',
+    "      LOG_LEVEL: debug",
+    "    depends_on:",
+])
+def test_redact_keeps_the_topology_the_analysis_is_for(line):
+    """Redaction that ate image names or ports would break the analysis."""
+    assert ac._redact(line) == line
+
+
+def test_redact_covers_every_value_under_a_kubernetes_secret():
+    """A Secret's keys are arbitrary, so no key-name pattern can catch them.
+
+    `pw` below matches no secret-word pattern; only knowing it sits under a
+    Secret's data: block catches it. That is what separates block tracking
+    from a per-line key match.
+    """
+    manifest = ("kind: Secret\n"
+                "metadata:\n"
+                "  name: api-creds\n"
+                "data:\n"
+                "  pw: aHVudGVyMg==\n"
+                "  tls.crt: TUlJRXZR\n")
+    out = ac._redact(manifest)
+    assert "aHVudGVyMg==" not in out
+    assert "TUlJRXZR" not in out
+    # The shape of the manifest survives, so the LLM still sees a Secret exists.
+    assert "kind: Secret" in out
+    assert "name: api-creds" in out
+    assert "pw:" in out
+
+
+def test_redact_stops_at_the_end_of_the_secret_block():
+    """A ConfigMap following a Secret must not be redacted along with it."""
+    manifest = ("kind: Secret\n"
+                "data:\n"
+                "  pw: aHVudGVyMg==\n"
+                "---\n"
+                "kind: ConfigMap\n"
+                "data:\n"
+                "  LOG_LEVEL: debug\n")
+    out = ac._redact(manifest)
+    assert "aHVudGVyMg==" not in out
+    assert "LOG_LEVEL: debug" in out
+
+
+def test_redact_is_linear_on_a_long_line_with_no_separator():
+    """The key pattern must stay bounded.
+
+    Unbounded, _ASSIGN_RE consumes the whole line as a candidate key, fails to
+    find the : or =, and backtracks one character at a time, which is quadratic.
+    A 200k-char minified config took seconds. The bound leaves a ~100x margin
+    here, so this fails on a genuine regression and not on a slow machine.
+    """
+    import time
+    line = "s" * 200_000
+    start = time.perf_counter()
+    ac._redact(line)
+    assert time.perf_counter() - start < 1.0
+
+
+def test_no_source_sends_a_secret_value_to_the_bundle(tmp_path):
+    """coderay-q2r.14. The bundle goes to a third-party LLM API.
+
+    Every file kind the crawl collects is checked here, because the defect
+    this replaced was exactly that the rule reached only one of them.
     """
     repo = _repo(tmp_path, {
-        ".env": "DOTENV_SECRET=stripped-value\n",
+        ".env": "DOTENV_SECRET=leaked-from-dotenv\n",
         "infra/prod.tfvars": 'db_password = "leaked-from-tfvars"\n',
-        "docker-compose.yml": "services:\n  api:\n    environment:\n"
+        "docker-compose.yml": "services:\n  api:\n    image: api:1.2\n"
+                              "    environment:\n"
                               "      STRIPE_KEY: leaked-from-compose\n",
         "deploy/k8s/secret.yaml": "kind: Secret\ndata:\n  pw: leaked-from-k8s\n",
         "fly.toml": '[env]\nAPI_TOKEN = "leaked-from-fly"\n',
     })
     bundle, _stats = ac.build_bundle(repo)
 
-    # The one path that honours the promise.
-    assert "DOTENV_SECRET" in bundle
-    assert "stripped-value" not in bundle
-
-    # The four that do not.
-    for leaked in ("leaked-from-tfvars", "leaked-from-compose",
+    for leaked in ("leaked-from-dotenv", "leaked-from-tfvars", "leaked-from-compose",
                    "leaked-from-k8s", "leaked-from-fly"):
-        assert leaked in bundle, f"{leaked} no longer leaks -- see coderay-q2r.14"
+        assert leaked not in bundle, f"{leaked} reached the bundle"
+
+    # The names and the topology still reach the model.
+    assert "DOTENV_SECRET" in bundle
+    assert "STRIPE_KEY" in bundle
+    assert "image: api:1.2" in bundle
 
 
 def test_sdk_imports_report_zero_outside_a_git_checkout(tmp_path):

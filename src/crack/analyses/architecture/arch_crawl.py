@@ -61,6 +61,79 @@ def _env_names(text):
     return names
 
 
+REDACTED = '[REDACTED]'
+
+# Key names whose value is a credential often enough that guessing wrong costs
+# nothing: the analysis needs to know STRIPE_KEY exists, never what it equals.
+SECRET_KEY_RE = re.compile(
+    r'(pass|pwd|secret|token|key|cred|auth|private|salt|signature|dsn|'
+    r'session|cookie|licen[cs]e|webhook)', re.I)
+
+# key: value / key = value / key=value, keeping the indent and the separator so
+# the redacted file still parses as the format it came from. The key length is
+# bounded: unbounded, it backtracks a character at a time down a long line with
+# no separator, which is quadratic on a minified config file.
+_ASSIGN_RE = re.compile(r'^(?P<head>\s*-?\s*"?(?P<key>[A-Za-z_][\w.\-]{0,127})"?\s*[:=]\s*)'
+                        r'(?P<value>\S.*)$')
+
+# A credential embedded in a connection string, which no key name reveals.
+# Every run is length-bounded. Unbounded, this sub scans from each of a long
+# line's positions, consumes the rest of it looking for '://', and backtracks:
+# quadratic on a minified config file.
+_URL_CRED_RE = re.compile(r'(?P<scheme>[a-zA-Z][\w+.\-]{0,31}://[^\s:/@]{1,255}:)'
+                          r'(?P<pw>[^\s@/]{1,255})(?=@)')
+
+# A Secret's keys are arbitrary, so nothing about the key name marks the value.
+# Track the block instead: every value under it is a credential by definition.
+_SECRET_KIND_RE = re.compile(r'^\s*kind:\s*["\']?Secret\b', re.I)
+_SECRET_DATA_RE = re.compile(r'^\s*(data|stringData):\s*$')
+_DOC_BREAK_RE = re.compile(r'^(---|\.\.\.)\s*$')
+
+
+def _redact(text):
+    """Strip credential values out of a config file, keeping its shape.
+
+    This function and its call in build_bundle are coderay's, not the port
+    source's (coderay-q2r.14). Everything else in this module is a verbatim
+    copy; keep the diff to this one seam so a re-port stays mechanical.
+
+    The bundle is sent to a third-party LLM API, so a password in a compose
+    `environment:` block or a committed `.tfvars` would leave the machine. What
+    the analysis needs from these files is the topology -- services, images,
+    ports, resources, and the NAMES of the things they are wired to -- never a
+    value. Names, structure and indentation survive; values that look like
+    credentials do not.
+
+    ponytail: key-name patterns plus Secret-block tracking, not a secret
+    scanner. A credential under an unguessable key name in a non-Secret file
+    still gets through; reach for detect-secrets or gitleaks if that matters.
+    """
+    out, in_secret_doc, in_secret_data = [], False, False
+    for line in text.splitlines(keepends=True):
+        stripped = line.rstrip('\n\r')
+
+        if _DOC_BREAK_RE.match(stripped):
+            in_secret_doc = in_secret_data = False
+            out.append(line)
+            continue
+        if _SECRET_KIND_RE.match(stripped):
+            in_secret_doc = True
+        elif in_secret_doc and _SECRET_DATA_RE.match(stripped):
+            in_secret_data = True
+            out.append(line)
+            continue
+
+        m = _ASSIGN_RE.match(stripped)
+        if m and (in_secret_data or SECRET_KEY_RE.search(m.group('key'))):
+            out.append(m.group('head') + REDACTED + line[len(stripped):])
+            continue
+        if m and in_secret_doc and not _SECRET_DATA_RE.match(stripped):
+            in_secret_data = False
+
+        out.append(_URL_CRED_RE.sub(lambda x: x.group('scheme') + REDACTED, line))
+    return "".join(out)
+
+
 def _classify(rel):
     # The manifest directories below are matched with their surrounding
     # slashes, so the path carries a leading one: `k8s/` and `deploy/` sit at
@@ -133,7 +206,7 @@ def build_bundle(repo, max_chars=500_000):
                 except (ValueError, OSError):
                     pass
             else:
-                buckets[kind].append((rel, _read(full)))
+                buckets[kind].append((rel, _redact(_read(full))))
 
     parts = []
     for kind, label in (('compose', 'PROCESS DECLARATION (compose / k8s)'),
