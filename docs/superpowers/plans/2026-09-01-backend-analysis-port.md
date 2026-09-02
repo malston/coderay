@@ -1081,9 +1081,12 @@ def test_overview_spec_name_matches_the_name_the_page_is_rendered_with(tmp_path,
 
     repo = tmp_path / "toy_repo"
     repo.mkdir()
-    monkeypatch.chdir(tmp_path)
-    spec = backend.overview_spec({"repo_path": "toy_repo", "layer_counts": {}})
-    assert spec["name"] == repo_name_of("toy_repo") == "toy_repo"
+    monkeypatch.chdir(repo)
+    spec = backend.overview_spec({"repo_path": ".", "layer_counts": {}})
+    assert spec["name"] == repo_name_of(".") == "toy_repo"
+    # "." is the shape that separates the two implementations: a naive
+    # os.path.basename(repo_path) returns "." here, not the directory name.
+    assert spec["name"] != os.path.basename(".")
 ```
 
 Create `tests/test_golden.py`:
