@@ -45,7 +45,7 @@ SmartCrawl -> ExtractGraph -> Analyze -> Relate -> WriteChapters
 - `src/crack/analyses/tour/render.py` renders the analysis's output (`shared` dict, typed as `PipelineState` in `src/crack/analyses/tour/nodes.py`) to markdown + HTML.
 - `src/crack/analyses/tour/prompts/*.md` are the four LLM prompt templates; `src/crack/analyses/tour/instructions/*.md` are swappable output lenses (`--instructions <name>`), auto-discovered from the directory -- adding a lens is just adding a file.
 
-**Backend** (five sequential nodes, `src/crack/analyses/backend/nodes.py`, wired in `src/crack/analyses/backend/flow.py`):
+**Backend** (five sequential nodes: four in `src/crack/analyses/backend/nodes.py` plus the shared `OverviewNode` from `src/crack/core/nodes.py`, wired in `build_flow()` in `src/crack/analyses/backend/__init__.py`):
 
 ```text
 BuildBundle -> Pipeline -> LayerCode -> Trace -> OverviewNode
