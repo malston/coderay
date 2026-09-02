@@ -1,5 +1,3 @@
-import pytest
-
 from crack.core import OverviewNode, write_overview
 
 SECTIONS = [("The pipeline", "the six layers"), ("The code", "the odd bits")]

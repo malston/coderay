@@ -1,5 +1,3 @@
-import pytest
-
 from crack.core.render import (Section, Theme, card, esc, extract_mermaid, md,
                                md_rich, render_html, render_markdown,
                                split_cards, strip_mermaid)

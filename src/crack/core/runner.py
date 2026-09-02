@@ -1,4 +1,8 @@
 """Runs a pipeline flow against a shared state dict, common to any analysis."""
+import os
+
+from .env import env_defaults
+from .render import render_html, render_markdown
 
 def run_flow(flow, shared, out_dir, dump_state):
     """Run `flow` against `shared`. On an unhandled exception, call
@@ -10,3 +14,32 @@ def run_flow(flow, shared, out_dir, dump_state):
         state_path = dump_state(shared, out_dir)
         print(f"\nPipeline failed. Wrote partial run state to {state_path}")
         raise
+
+def default_output_dir(repo_path, analysis_name):
+    """Anchored on the current working directory, not this file's location, so
+    output lands in the same place whether crack runs from an editable checkout
+    or as an installed tool."""
+    name = os.path.basename(os.path.abspath(repo_path))
+    return os.path.join(os.getcwd(), "output", f"{name}-{analysis_name}")
+
+def run_analysis(analysis, args):
+    """Run one analysis and write its index.md and index.html. Returns out_dir.
+
+    The output directory is created before the flow runs, because an analysis
+    may write extra files into it during the run."""
+    out_dir = args.out or default_output_dir(args.repo_path, analysis.NAME)
+    os.makedirs(out_dir, exist_ok=True)
+
+    name = os.path.basename(os.path.abspath(args.repo_path))
+    shared = analysis.init_shared(args)
+    with env_defaults(getattr(analysis, "ENV_DEFAULTS", {})):
+        analysis.build_flow().run(shared)
+
+    with open(os.path.join(out_dir, "index.md"), "w") as fh:
+        fh.write(render_markdown(analysis, name, shared))
+    with open(os.path.join(out_dir, "index.html"), "w") as fh:
+        fh.write(render_html(analysis, name, shared))
+
+    print(f"\nWrote {analysis.NAME} to {out_dir}/")
+    print(f"  Open {out_dir}/index.html in a browser")
+    return out_dir
