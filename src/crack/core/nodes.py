@@ -33,6 +33,10 @@ class OverviewNode(Node):
         return write_overview(spec["name"], spec["what"], spec["sections"], spec.get("facts", ""))
 
     def exec_fallback(self, prep_res, exc):
+        # coderay-q2r.13: non-fatal on purpose, but never silent. Without this
+        # line a failed overview leaves no trace on the console at all.
+        print(f"  Overview failed ({type(exc).__name__}: {exc}); "
+              "the page ships without its intro copy")
         return {"welcome": "", "intros": {}}
 
     def post(self, shared, prep_res, exec_res):
