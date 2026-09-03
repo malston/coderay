@@ -52,7 +52,7 @@ BuildBundle -> Pipeline -> LayerCode -> Trace -> OverviewNode
 ```
 
 - Analyzes the repository structure and maps files to six semantic layers: route, middleware, handler, service, database, response.
-- `src/crack/analyses/backend/backend_crawl.py` walks the repo through `crack.core.list_files`, so it shares every crawler's repo containment and credential-name skips (coderay-q2r.54, the one deliberate divergence from the port source in that module). A source file over `DEFAULT_MAX_FILE_BYTES` is dropped from the walk, so it leaves the layer counts too; one that does not decode as UTF-8 is counted but its body is left out. Nothing arrives cut off part way.
+- `src/crack/analyses/backend/backend_crawl.py` walks the repo through `crack.core.list_files`, so it gets the repo containment and credential-name skips at walk time, symlink target names included (coderay-q2r.54, the one deliberate divergence from the port source in that module). A source file over `DEFAULT_MAX_FILE_BYTES` is dropped from the walk, so it leaves the layer counts too; one that does not decode as UTF-8 is counted but its body is left out. Nothing arrives cut off part way.
 - Renders three views: the pipeline with file counts per layer, code snippets at layer boundaries, and a request trace through all six.
 
 **Architecture** (five sequential nodes: four in `src/crack/analyses/architecture/nodes.py` plus the shared `OverviewNode`, wired in `build_flow()` in `src/crack/analyses/architecture/__init__.py`):

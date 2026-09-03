@@ -384,3 +384,19 @@ def test_relate_tags_inferred_when_relationship_names_unknown_abstraction(monkey
     abstractions = [{"name": "Foo", "files": ["foo.py"]}]
     result = Relate().exec(("prompt", abstractions, []))
     assert result == [{"from": "Foo", "to": "Baz", "label": "uses", "source": "INFERRED"}]
+
+
+def test_extract_graph_reads_an_uppercase_source_extension(tmp_path):
+    """list_files accepts `.PY`, so a selected MAIN.PY must reach the Python
+    extractor instead of falling through the unsupported-language branch."""
+    (tmp_path / "MAIN.PY").write_text("from pkg.helper import go\n")
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "helper.py").write_text("def go(): pass\n")
+    shared = {
+        "repo_path": str(tmp_path),
+        "selected_files": ["MAIN.PY", "pkg/helper.py"],
+    }
+    prep_res = ExtractGraph().prep(shared)
+    exec_res = ExtractGraph().exec(prep_res)
+    ExtractGraph().post(shared, prep_res, exec_res)
+    assert shared["symbol_graph"] == [{"from": "MAIN.PY", "to": "pkg/helper.py", "kind": "imports"}]

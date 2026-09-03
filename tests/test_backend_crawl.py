@@ -138,17 +138,17 @@ def test_build_bundle_skips_a_symlink_that_renames_a_credential_file(tmp_path):
 
 
 def test_build_bundle_includes_a_long_file_whole(tmp_path):
-    """coderay-q2r.54: the budget is enforced by how many files are included,
-    never by cutting a file off part way."""
+    """coderay-q2r.54: the budget is enforced by how many files are included;
+    a file that fits arrives whole."""
     body = "x" * 50_000 + "\nTAIL_MARKER\n"
     repo = _repo(tmp_path, {"app/urls.py": body})
     bundle, _ = bc.build_bundle(repo)
     assert "TAIL_MARKER" in bundle
 
 
-def test_build_bundle_drops_an_oversized_file_instead_of_truncating_it(tmp_path):
+def test_build_bundle_drops_an_oversized_file_whole(tmp_path):
     """coderay-q2r.54: list_files' per-file size cap drops the file from the
-    bundle and its count; nothing arrives cut off part way."""
+    bundle and its count."""
     repo = _repo(tmp_path, {"app/urls.py": "x" * 600_000, "app/views/a.py": "pass\n"})
     bundle, stats = bc.build_bundle(repo)
     assert "LAYER ROUTE" not in bundle
@@ -156,8 +156,8 @@ def test_build_bundle_drops_an_oversized_file_instead_of_truncating_it(tmp_path)
 
 
 def test_build_bundle_skips_a_file_it_cannot_decode(tmp_path):
-    """coderay-q2r.54: an undecodable file is left out of the bundle rather than
-    read with replacement characters; it still counts toward its layer."""
+    """coderay-q2r.54: an undecodable file is left out of the bundle; it still
+    counts toward its layer."""
     repo = _repo(tmp_path, {"app/views/a.py": "pass\n"})
     (tmp_path / "app" / "urls.py").write_bytes(b"\xff\xfe not utf-8")
     bundle, stats = bc.build_bundle(repo)

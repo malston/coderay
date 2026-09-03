@@ -73,7 +73,10 @@ def build_bundle(repo, max_chars=650_000, per_layer_sample=18):
     files_by_layer = {k: [] for k in ('route', 'middleware', 'handler', 'service', 'database', 'response')}
     counts = Counter()
     # list_files carries the repo containment and credential-name checks every
-    # crawler shares (coderay-q2r.54); classify() narrows to SRC_EXT itself.
+    # crawler shares (coderay-q2r.54). keep_ext/keep_names are narrowed to the
+    # backend's own source set because list_files applies them to a symlink's
+    # target name too: with the defaults, `app/urls.py -> ../notes.md` would
+    # pass and classify() would file the link as a route.
     for path in list_files(repo, keep_ext=SRC_EXT, skip_dirs=SKIP_DIRS, keep_names=frozenset()):
         rel = os.path.relpath(path, repo)
         layer = classify(rel)

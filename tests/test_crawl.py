@@ -109,3 +109,18 @@ def test_list_files_keeps_r_scripts_in_either_case(tmp_path):
     (tmp_path / "helpers.r").write_text("y <- 2\n")
     names = {os.path.basename(p) for p in list_files(str(tmp_path))}
     assert names == {"analysis.R", "helpers.r"}
+
+
+def test_wanted_rejects_credential_shaped_names_in_any_case():
+    """The extension match is case-insensitive, so the credential skip has to
+    be too, or `credentials.JSON` slips through on the extension alone."""
+    for name in ("credentials.JSON", "SECRETS.YML", "token.JSON", "Service-Account.json"):
+        assert not crawl._wanted(name, crawl.DEFAULT_KEEP_EXT, crawl.DEFAULT_KEEP_NAMES), name
+    assert not crawl._wanted("server.PEM", crawl.DEFAULT_KEEP_EXT | {".pem"}, crawl.DEFAULT_KEEP_NAMES)
+
+
+def test_list_files_accepts_an_uppercase_keep_ext_override(tmp_path):
+    (tmp_path / "analysis.r").write_text("x <- 1\n")
+    (tmp_path / "helpers.R").write_text("y <- 2\n")
+    names = {os.path.basename(p) for p in list_files(str(tmp_path), keep_ext={".R"})}
+    assert names == {"analysis.r", "helpers.R"}
