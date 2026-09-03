@@ -1,5 +1,6 @@
 import pytest
 
+import crack.core.llm as llm
 from crack.core.llm import extract_mermaid, parse_yaml
 
 
@@ -108,3 +109,20 @@ def test_parse_json_survives_a_fenced_block_inside_a_string_value():
 
     reply = '```json\n{"note": "see ```mermaid\\ngraph LR\\n``` above", "n": 2}\n```'
     assert parse_json(reply) == {"note": "see ```mermaid\ngraph LR\n``` above", "n": 2}
+
+
+@pytest.mark.parametrize("call", [llm.json_call, llm.yaml_call])
+def test_an_error_raised_inside_call_llm_is_not_retried_as_a_bad_reply(monkeypatch, call):
+    """coderay-q2r.41. A ValueError from the transport side (a non-numeric
+    LLM_MAX_OUTPUT_TOKENS, say) is not a malformed reply; retrying it with a
+    "return complete JSON" tail blames the model for a config error."""
+    calls = []
+
+    def boom(prompt):
+        calls.append(prompt)
+        raise ValueError("invalid literal for int() with base 10: 'lots'")
+
+    monkeypatch.setattr(llm, "call_llm", boom)
+    with pytest.raises(ValueError, match="lots"):
+        call("p", lambda x: x)
+    assert len(calls) == 1

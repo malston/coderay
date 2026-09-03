@@ -8,9 +8,10 @@ Four steps, each a slice of the same commit list (§6.3 to §6.5):
 
 Reliability mirrors the rest of the repo: every LLM node uses
 Node(max_retries=3, wait=2), JSON parsing is strict so bad output retries, and
-the only swallowed errors live in gitlog's subprocess reads.
+gitlog's subprocess reads raise on any git failure rather than reporting no data.
 """
 import os
+import re
 from importlib import resources
 
 from pocketflow import Node
@@ -42,7 +43,7 @@ def _era_for(month, eras):
     for e in eras:
         if e["start"] <= month <= e.get("end", "9999-99"):
             return e
-    return eras[-1] if eras else None
+    return None  # coderay-q2r.40: not the last era, which mislabels a gap
 
 
 # Step 1. Crawl the log; pull the bulk-change rosters once.
@@ -57,6 +58,7 @@ class FetchHistory(Node):
             "commits_asc": gl.commits_ascending(commits),
             "bulk_adds": gl.bulk_changes(repo_path, "A", min_files=10),
             "bulk_dels": gl.bulk_changes(repo_path, "D", min_files=5),
+            "shallow": gl.is_shallow(repo_path),
         }
 
     def post(self, shared, prep_res, exec_res):
@@ -65,6 +67,12 @@ class FetchHistory(Node):
         span = f"{exec_res['commits_asc'][0]['month']}..{exec_res['commits_asc'][-1]['month']}" if c else "empty"
         print(f"  Crawled {len(c):,} commits ({span}), "
               f"{len(exec_res['bulk_adds'])} bulk adds, {len(exec_res['bulk_dels'])} bulk deletions")
+        if exec_res["shallow"]:  # coderay-q2r.38
+            print("  WARNING: this is a shallow clone; the log is a fragment of the "
+                  "history and the eras will be wrong. Unshallow it first (git fetch --unshallow).")
+
+
+_YEAR_MONTH = re.compile(r"\d{4}-\d{2}")
 
 
 # Step 2. Name the eras from a bird's-eye survey (§6.3).
@@ -91,6 +99,11 @@ class NameEras(Node):
             for e in result:
                 for k in ("name", "start", "end", "description", "turning_point"):
                     assert k in e, f"era missing {k!r}: {e!r}"
+                # coderay-q2r.39: era windows are YYYY-MM string comparisons;
+                # any other form selects no commits or raises outside the retry.
+                for k in ("start", "end"):
+                    assert isinstance(e[k], str) and _YEAR_MONTH.fullmatch(e[k]), \
+                        f"era {k!r} must be YYYY-MM, got {e[k]!r}: {e!r}"
             return result
         return json_call(prompt, normalize)
 
@@ -122,6 +135,10 @@ class ProfileEras(Node):
         for i, era in enumerate(eras):
             print(f"  Profiling era {i+1}/{len(eras)}: {era['name']}")
             window = gl.era_commits(ctx["commits_asc"], era["start"], era["end"])
+            if not window:  # coderay-q2r.39
+                print(f"  Era {era['name']!r} ({era['start']}..{era['end']}) matches no "
+                      "commits; skipping its profile rather than asking the model to invent one")
+                continue
             marks = gl.landmarks(window)
             sampled, was_sampled = gl.sample_commits(window, ctx["max_commits"])
             stream = gl.commit_stream(sampled)
@@ -154,6 +171,12 @@ class ProfileEras(Node):
                 assert isinstance(result, dict) and "cast" in result and "mood" in result, \
                     f"profile must be a JSON object with top-level `cast` and `mood`. Got keys: " \
                     f"{list(result) if isinstance(result, dict) else type(result).__name__}"
+                # coderay-q2r.39: key presence is not shape; a string here
+                # failed at .get() outside json_call and re-ran every era.
+                assert isinstance(result["cast"], dict) and "contributors" in result["cast"], \
+                    f"`cast` must be an object with `contributors`, got {result['cast']!r}"
+                assert isinstance(result["mood"], dict) and "patterns" in result["mood"], \
+                    f"`mood` must be an object with `patterns`, got {result['mood']!r}"
                 return result
             result = json_call(prompt, normalize)
             profiles.append({"era": era, "profile": result, "commit_count": len(window)})
@@ -185,13 +208,13 @@ class Graveyard(Node):
         # components of the scope) so we don't return six variants of one deletion.
         graves, seen_areas = [], set()
         for c in candidates:
+            if len(graves) >= max_graves:  # coderay-q2r.40: checked first, so 0 means none
+                break
             area = os.sep.join(c["scope"].split(os.sep)[:2])
             if area in seen_areas:
                 continue
             seen_areas.add(area)
             graves.append(c)
-            if len(graves) >= max_graves:
-                break
         return {
             "repo_path": shared["repo_path"],
             "eras": shared["eras"],

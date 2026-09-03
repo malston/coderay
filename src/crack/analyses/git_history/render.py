@@ -73,6 +73,8 @@ def _profiles_by_era(shared):
     return paired
 
 
+# The CDN scripts below are pinned to an exact version with an SRI hash and
+# crossorigin, matching crack/core/render.py; see coderay-q2r.19.
 HTML_TEMPLATE = """<!doctype html>
 <html lang="en">
 <head>

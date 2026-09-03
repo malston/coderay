@@ -90,8 +90,9 @@ def json_call(prompt, normalize, retries=4):
     for k in range(retries):
         tail = "" if k == 0 else (
             f"\n\nReturn COMPLETE JSON with every required top-level field. (retry {k})")
+        reply = call_llm(prompt + tail)  # outside the try: its errors are not bad replies (coderay-q2r.41)
         try:
-            return normalize(parse_json(call_llm(prompt + tail)))
+            return normalize(parse_json(reply))
         except _REPLY_ERRORS as e:
             print(f"  json_call attempt {k + 1}/{retries} failed: {e}")
             last = e
@@ -112,8 +113,9 @@ def yaml_call(prompt, normalize, retries=4):
         tail = "" if k == 0 else (
             f"\n\nReturn VALID YAML: put every string value in double quotes and "
             f"escape any double quote inside it as \\\". (retry {k})")
+        reply = call_llm(prompt + tail)  # outside the try: its errors are not bad replies (coderay-q2r.41)
         try:
-            return normalize(parse_yaml(call_llm(prompt + tail)))
+            return normalize(parse_yaml(reply))
         except _REPLY_ERRORS as e:
             print(f"  yaml_call attempt {k + 1}/{retries} failed: {e}")
             last = e

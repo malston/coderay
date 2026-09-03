@@ -37,11 +37,6 @@ GOLDEN = pathlib.Path(__file__).resolve().parent.parent / "tests" / "fixtures" /
 # upstream commit rather than from crack's own renderer, which would make the
 # golden test check crack against itself. Each entry must still match, so a
 # divergence that upstream later adopts fails loudly here instead of rotting.
-# Places where crack deliberately differs from the port source. Every entry is
-# applied to the generated HTML, so the fixture keeps deriving from the pinned
-# upstream commit rather than from crack's own renderer, which would make the
-# golden test check crack against itself. Each entry must still match, so a
-# divergence that upstream later adopts fails loudly here instead of rotting.
 #
 # Keyed by analysis, because the bespoke renderers are not the card engine and
 # do not carry its exact strings: git_history's mermaid line has no `flowchart`

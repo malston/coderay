@@ -15,7 +15,8 @@
       "start": "2013-05",
       "end": "2016-02",
       "description": "One Ghost-shaped product, one author, publishing only.",
-      "turning_point": "The first paid theme lands and billing appears in `core/server/`."
+      "turning_point": "The first paid theme lands and billing appears in `core/server/`.",
+      "diagram": "flowchart LR\n  A[Blog] --> B[Themes]\n  B --> C[</pre><script>alert(1)</script>]"
     },
     {
       "name": "Going multi-tenant",
@@ -32,31 +33,39 @@
         "start": "2013-05",
         "end": "2016-02",
         "description": "One Ghost-shaped product, one author, publishing only.",
-        "turning_point": "The first paid theme lands and billing appears in `core/server/`."
+        "turning_point": "The first paid theme lands and billing appears in `core/server/`.",
+        "diagram": "flowchart LR\n  A[Blog] --> B[Themes]\n  B --> C[</pre><script>alert(1)</script>]"
       },
       "commit_count": 4821,
       "profile": {
         "cast": {
-          "narrative": "One founder writes 80% of it, at night.",
-          "people": [
+          "contributors": [
             {
               "name": "hannahwolfe",
-              "role": "everything"
+              "pct": 80,
+              "note": "Founder; wrote everything."
             },
             {
               "name": "ErisDS <script>alert(1)</script>",
-              "role": "core + release"
+              "pct": 15,
+              "note": "Core + release. <img src=x onerror=alert(1)>"
             }
-          ]
+          ],
+          "narrative": "One founder writes 80% of it, at night."
         },
         "mood": {
-          "narrative": "Fast, unreviewed, and cheerful about it.",
           "patterns": [
             {
               "label": "direct-to-master",
-              "detail": "No PR in the first 900 commits."
+              "pct": 60,
+              "note": "No PR in the first 900 commits."
+            },
+            {
+              "label": "Other",
+              "pct": 10
             }
-          ]
+          ],
+          "narrative": "Fast, unreviewed, and cheerful about it."
         }
       }
     },
@@ -71,22 +80,24 @@
       "commit_count": 9134,
       "profile": {
         "cast": {
-          "narrative": "A team of six, with review as the default.",
-          "people": [
+          "contributors": [
             {
               "name": "kevinansfield",
-              "role": "admin client"
+              "pct": 22,
+              "note": "Admin client."
             }
-          ]
+          ],
+          "narrative": "A team of six, with review as the default."
         },
         "mood": {
-          "narrative": "Slower, and deliberately so.",
           "patterns": [
             {
               "label": "migration-heavy",
-              "detail": "Every release carries a schema step."
+              "pct": 30,
+              "note": "Every release carries a schema step."
             }
-          ]
+          ],
+          "narrative": "Slower, and deliberately so."
         }
       }
     }

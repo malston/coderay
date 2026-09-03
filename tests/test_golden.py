@@ -107,3 +107,44 @@ def test_render_escapes_a_diagram_inside_a_card_body(name):
     html = render.render_html(ANALYSES[name], "toy_repo", shared)
     assert "</pre><script>" not in html
     assert "&lt;/pre&gt;&lt;script&gt;" in html
+
+
+def test_the_git_history_fixture_still_carries_its_payload():
+    """Fixture guard, not escaping coverage (see the card-family twin above).
+    The payload sits in a contributor name, a bar note, and an era diagram,
+    so the cast/mood bars and _mermaid_block are all exercised by the
+    byte-for-byte test; a regenerated fixture that lost them would hollow
+    that out silently (coderay-q2r.42)."""
+    d = GOLDEN / "git-history"
+    shared = json.loads((d / "shared.json").read_text(encoding="utf-8"))
+    names = [c["name"] for p in shared["profiles"] for c in p["profile"]["cast"]["contributors"]]
+    assert any("<script>" in n for n in names), "fixture lost its contributor payload"
+    assert "</pre><script>" in shared["eras"][0]["diagram"], "fixture lost its diagram payload"
+    html = (d / "index.html").read_text(encoding="utf-8")
+    assert "<script>alert" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "&lt;/pre&gt;&lt;script&gt;" in html
+
+
+def test_git_history_render_escapes_every_slot_it_is_handed():
+    """Live re-render: the bespoke renderer has no card engine behind it, so
+    its own _esc, md and _mermaid_block are the only thing between a hostile
+    era name, contributor, note, grave entry or diagram and the page."""
+    d = GOLDEN / "git-history"
+    shared = json.loads((d / "shared.json").read_text(encoding="utf-8"))
+    payload = "</pre><script>alert(1)</script>"
+    shared["eras"][1]["name"] = payload
+    shared["eras"][1]["description"] = payload
+    shared["eras"][1]["turning_point"] = payload
+    shared["profiles"][1]["era"] = shared["eras"][1]
+    shared["profiles"][1]["profile"]["cast"]["contributors"][0]["note"] = payload
+    shared["profiles"][1]["profile"]["mood"]["patterns"][0]["label"] = payload
+    shared["profiles"][1]["profile"]["mood"]["narrative"] = payload
+    shared["graves"][0]["commit"]["scope"] = payload
+    shared["graves"][0]["entry_md"] = f"text\n\n```mermaid\nflowchart LR\n  A[{payload}]\n```\n"
+    shared["overview"]["welcome"] = payload
+    html = render.render_html(ANALYSES["git-history"], payload, shared)
+    body = html.split("</head>", 1)[1]
+    assert "<script>" not in body
+    assert "</pre><script>" not in html
+    assert "&lt;/pre&gt;&lt;script&gt;" in body
