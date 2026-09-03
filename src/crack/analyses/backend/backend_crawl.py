@@ -5,9 +5,10 @@ Every backend is the same six layers with different names:
 
 We classify each source file into a layer by its path, report a file count per
 layer (so the prompts can lead with a concrete number, not an adjective), and
-build a bundle that includes the 'spine' files in full — routing, middleware,
-and the response/decorator helpers, where teams write their custom idioms — plus
-a size-capped sample of the handler/service/model files. Nothing calls an LLM.
+build a bundle that leads with the 'spine' files — routing, middleware, and the
+response/decorator helpers, where teams write their custom idioms — plus a
+sample of the handler/service/model files, chosen round-robin across the layers
+until the budget is spent. Nothing is cut part way. Nothing calls an LLM.
 """
 import os
 from collections import Counter
@@ -87,7 +88,7 @@ def build_bundle(repo, max_chars=650_000, per_layer_sample=18):
             counts[layer] += 1
             files_by_layer[layer].append(rel)
 
-    # Decide what to include: spine layers in full; handlers/services/models sampled.
+    # Candidates per layer: every spine file; handlers/services/models sampled.
     queues = {}
     for layer in ('route', 'middleware', 'response'):
         queues[layer] = sorted(files_by_layer[layer])

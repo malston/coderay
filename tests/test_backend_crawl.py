@@ -209,7 +209,7 @@ def test_build_bundle_gives_every_layer_a_file_before_a_spine_file_takes_the_res
     assert stats["counts"] == {"route": 1, "handler": 18, "service": 18, "database": 18}
     assert len(bundle) <= 650_000
     assert "LAYER ROUTE: app/routes/bundle.js" in bundle
-    for layer in ("HANDLER", "SERVICE", "DATABASE"):
-        assert f"LAYER {layer}: " in bundle, layer
+    shares = [bundle.count(f"LAYER {layer}: ") for layer in ("HANDLER", "SERVICE", "DATABASE")]
+    assert min(shares) >= 1 and max(shares) - min(shares) <= 1, shares
     # Grouped emission: the prompts see the layers in the same order as before.
     assert bundle.index("LAYER ROUTE:") < bundle.index("LAYER HANDLER:") < bundle.index("LAYER DATABASE:")
