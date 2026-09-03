@@ -466,7 +466,7 @@ def test_build_bundle_refuses_a_config_file_symlinked_out_of_the_repo(tmp_path):
 
 
 def test_build_bundle_refuses_a_config_file_symlinked_to_an_in_repo_credential_file(tmp_path):
-    """coderay-q2r.56. `docker-compose.yml -> ../id_rsa` resolves inside the
+    """coderay-q2r.56. `docker-compose.yml -> id_rsa` resolves inside the
     repo, so within_repo let the key body through. A bare key line has no
     `key=value` shape, so _redact cannot catch it either; only refusing the
     read does."""
