@@ -144,3 +144,23 @@ def test_readable_refuses_a_credential_named_target_unless_the_crawler_opts_in(t
     assert not readable(repo, repo / "src" / "config.py", credential_names=True)  # a symlink to one never is
     assert readable(repo, repo / "src" / "alias.py")        # a legitimate in-repo symlink
     assert not readable(repo, repo / "src" / "config.py")   # a symlink that renames one
+
+
+def test_credential_names_cover_every_dotenv_variant_except_the_templates():
+    """coderay-q2r.60. The list named .env, .env.local and .env.production, so
+    `.env.staging` and `.envrc` were read whole. Every `.env*` is a credential
+    file except the two committed templates the crawlers keep on purpose."""
+    for name in (".env.staging", ".env.test", ".ENV.Development", ".envrc"):
+        assert not crawl._wanted(name, set(), {name}), name
+    for name in (".env.example", ".env.sample"):
+        assert crawl._wanted(name, set(), crawl.DEFAULT_KEEP_NAMES), name
+
+
+def test_readable_refuses_a_symlink_to_a_dotenv_variant(tmp_path):
+    """coderay-q2r.60. Reproduction from the PR #30 review."""
+    from crack.core import readable
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".env.staging").write_text("STAGE=stag3\n")
+    (repo / "cfg.ts").symlink_to(repo / ".env.staging")
+    assert not readable(repo, repo / "cfg.ts")

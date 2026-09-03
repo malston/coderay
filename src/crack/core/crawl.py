@@ -103,7 +103,7 @@ DEFAULT_MAX_FILE_BYTES = 500_000
 # keep_ext/keep_names — these are excluded even if a caller explicitly asks
 # for their extension.
 DEFAULT_SKIP_NAMES = frozenset({
-    '.env', '.env.local', '.env.production', '.netrc', '.npmrc', '.pypirc',
+    '.netrc', '.npmrc', '.pypirc',
     'credentials', 'credentials.json', 'service-account.json', 'client_secret.json',
     'id_rsa', 'id_ed25519', 'id_ecdsa', 'id_dsa', '.htpasswd', 'terraform.tfvars',
     # coderay-q2r.37: pure-credential names the list missed while it was only
@@ -152,9 +152,16 @@ def readable(repo, path, *, credential_names=False):
     return not _credential_named(os.path.basename(os.path.realpath(path)))
 
 
+# Committed templates: variable names with placeholder values. The only `.env*`
+# files a crawler reads (coderay-q2r.60).
+DOTENV_TEMPLATES = frozenset({'.env.example', '.env.sample'})
+
+
 def _credential_named(filename):
     # Case-folded so `credentials.JSON` is refused the same way `credentials.json` is.
     lowered = filename.lower()
+    if lowered.startswith('.env'):
+        return lowered not in DOTENV_TEMPLATES
     return lowered in DEFAULT_SKIP_NAMES or lowered.endswith(DEFAULT_SKIP_SUFFIXES)
 
 
