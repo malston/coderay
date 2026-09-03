@@ -144,7 +144,7 @@ FetchHistory -> NameEras -> ProfileEras -> Graveyard -> OverviewNode
 FetchRepo -> PainScene -> VariantSentence -> CompetitivePositioning -> SurprisesAndAbsences
 ```
 
-- The second bespoke-renderer analysis, and the only one with no shared overview: it renders four independent extractions (the pain scene, the one-sentence variant, a competitive positioning table with a mermaid diagram, and the surprises-and-absences lists) with its own `render_html`/`render_markdown`.
+- The second bespoke-renderer analysis; like tour, it has no shared overview. It renders four independent extractions (the pain scene, the one-sentence variant, a competitive positioning table with a mermaid diagram, and the surprises-and-absences lists) with its own `render_html`/`render_markdown`.
 - `FetchRepo` reads the repo through `bundle()`, which keeps whole files in `list_files` order until a 650k-char budget is spent and reports how many it dropped (coderay-q2r.47; the port source concatenated everything with no cap). `--include`/`--exclude` are `.gitignore`-style patterns passed to `list_files`. An empty bundle stops the run before any LLM call.
 - Ported text-only: the port source's `IllustratePain` node (a Gemini image of the pain scene written beside the report) is not included, so shared core carries no image provider and `init_shared` needs no `out_dir`. `CompetitivePositioning.normalize` also requires every competitor to carry a `name` (coderay-q2r.48).
 
