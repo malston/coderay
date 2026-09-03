@@ -108,10 +108,11 @@ DEFAULT_SKIP_NAMES = frozenset({
     'id_rsa', 'id_ed25519', 'id_ecdsa', 'id_dsa', '.htpasswd', 'terraform.tfvars',
     # coderay-q2r.37: pure-credential names the list missed while it was only
     # crawler noise. Never source, so skipping them costs the crawl nothing.
-    'secrets.yml', 'secrets.yaml', 'secrets.json',
-    '.git-credentials', '.pgpass', 'kubeconfig',
+    'secrets.yml', 'secrets.yaml', 'secrets.json', 'secrets.toml', 'secret.json',
+    'credentials.yml', 'token.json', '.git-credentials', '.pgpass', 'kubeconfig',
 })
-DEFAULT_SKIP_SUFFIXES = ('.pem', '.key', '.p12', '.pfx', '.keystore', '.jks')
+DEFAULT_SKIP_SUFFIXES = ('.pem', '.key', '.p12', '.pfx', '.keystore', '.jks', '.ppk',
+                         '.tfvars', '.tfstate', '.tfstate.backup')
 
 
 def within_repo(repo, path):

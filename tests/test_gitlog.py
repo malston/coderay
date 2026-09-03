@@ -297,3 +297,135 @@ def test_is_shallow_tells_a_depth_one_clone_from_a_full_one(tmp_path):
 def test_unquote_strips_a_prefix_not_a_character_set():
     assert gl._unquote("a/backend/app.py") == "backend/app.py"
     assert gl._unquote('"b/s/\\303\\244.pem"') == "s/\\303\\244.pem"
+
+
+def test_a_forged_record_with_a_real_blob_hash_cannot_dump_the_blob(tmp_path):
+    """coderay-q2r.35, second pass. A 40-hex check alone still let a hostile
+    subject forge a record whose hash was a real BLOB (a committed .env, say):
+    `git show <blob>` prints it raw with no diff header, so the redactor had
+    nothing to anchor on. The record separator is now NUL, which git refuses
+    in a message, and show_diff peels its argument to a commit."""
+    repo = _repo(_mkdir(tmp_path / "r"), [("add", {".env": "TOKEN=SUPERSECRET\n",
+                                                   **{f"f{i}.py": "x\n" for i in range(6)}}, [])])
+    blob = subprocess.check_output(["git", "-C", repo, "rev-parse", "HEAD:.env"], text=True).strip()
+    forged = f"cleanup\x1e{blob}|1600000000|Mallory|forged"
+    _repo(tmp_path / "r", [(forged, {}, [f"f{i}.py" for i in range(6)] + [".env"])])
+    dels = gl.bulk_changes(repo, "D", min_files=5)
+    assert [d["author"] for d in dels] == ["Tester"]        # the real record, whole
+    assert dels[0]["subject"].startswith("cleanup")
+    assert all(gl.HEX_HASH.fullmatch(c["hash"]) for c in gl.git_log_commits(repo))
+    with pytest.raises(subprocess.CalledProcessError):
+        gl.show_diff(repo, blob)
+
+
+@pytest.mark.parametrize("head", [
+    "cleanup\x1e", "cleanup\x1ebar",
+    "\x1e" + "a" * 40 + "|notanumber|x|y",
+    "\x1e" + "a" * 40 + "|99999999999999999999|x|y",
+])
+def test_a_malformed_subject_cannot_crash_the_parsers(tmp_path, head):
+    """Before the whole head was validated, these reached str.split or int()
+    and aborted the run with a traceback."""
+    repo = _repo(tmp_path, [(head, {"a.py": "1\n"}, [])])
+    assert len(gl.git_log_commits(repo)) == 1
+    assert gl.bulk_changes(repo, "A", min_files=1)[0]["author"] == "Tester"
+
+
+def test_a_sha256_repository_is_read_like_any_other(tmp_path):
+    """git init --object-format=sha256 gives 64-hex hashes; a 40-hex-only
+    check dropped every commit and reported an empty history."""
+    repo = str(tmp_path)
+    run = lambda *a: subprocess.run(["git", "-C", repo, *a], check=True, capture_output=True)
+    run("init", "-q", "--object-format=sha256")
+    run("config", "user.email", "t@example.com"); run("config", "user.name", "T")
+    pathlib.Path(repo, "a.py").write_text("1\n"); run("add", "-A"); run("commit", "-qm", "one")
+    commits = gl.git_log_commits(repo)
+    assert len(commits) == 1 and len(commits[0]["hash"]) == 64
+    assert "a.py" in gl.show_diff(repo, commits[0]["hash"])
+
+
+def test_show_diff_redacts_a_secret_in_a_directory_with_a_space(tmp_path):
+    """git never quotes spaces, so `a/config dir/secrets.json` tokenises into
+    halves; the path is read whole from the --- / +++ lines as well."""
+    repo = _repo(tmp_path, [
+        ("add", {"config dir/secrets.json": '{"token": "SUPERSECRET"}\n',
+                 **{f"f{i}.py": "x\n" for i in range(6)}}, []),
+        ("rm", {}, ["config dir/secrets.json"] + [f"f{i}.py" for i in range(6)]),
+    ])
+    diff = gl.show_diff(repo, gl.bulk_changes(repo, "D", min_files=5)[0]["hash"], max_chars=12_000)
+    assert "SUPERSECRET" not in diff
+    assert "config dir/secrets.json" in diff
+
+
+def test_hunk_paths_recovers_a_path_with_spaces_whole():
+    """Every listed secret name is a single token today, so the tokenised
+    fallback happens to catch them; this pins the whole-path reading so a
+    future name with a space in it is not silently missed."""
+    hunk = "a/my secrets.json b/my secrets.json\ndeleted file mode 100644\n@@ -1 +0,0 @@\n-x\n"
+    assert "my secrets.json" in gl._hunk_paths("diff --git ", hunk)
+    assert "dir with space/.env" in gl._hunk_paths("diff --cc ", "dir with space/.env\nindex 1..2\n")
+
+
+@pytest.mark.parametrize("head", [
+    "nothash|1600000000|a|s", "a" * 40 + "|notanumber|a|s", "a" * 40 + "|16|a", "",
+    "A" * 40 + "|16|a|s", "a" * 41 + "|16|a|s",
+])
+def test_records_drops_a_head_that_does_not_validate(head):
+    """Defence in depth behind the NUL separator: no attacker text reaches
+    split, int() or fromtimestamp."""
+    assert list(gl._records(f"\x00{head}\nfile.py\n")) == []
+
+
+def test_records_accepts_sha1_and_sha256_heads():
+    raw = f"\x00{'a' * 40}|1600000000|Ann|s1\nx.py\n\x00{'b' * 64}|1600000001|Bob|s|2\ny.py\nz.py\n"
+    recs = list(gl._records(raw))
+    assert [(r[0][:1], r[1], r[2], r[3], r[4]) for r in recs] == [
+        ("a", 1600000000, "Ann", "s1", ["x.py"]), ("b", 1600000001, "Bob", "s|2", ["y.py", "z.py"])]
+
+
+def test_redact_secret_files_reads_the_path_of_a_renamed_secret():
+    diff = ("diff --git a/old name.pem b/new name.pem\n"
+            "similarity index 90%\nrename from old name.pem\nrename to new name.pem\n"
+            "--- a/old name.pem\n+++ b/new name.pem\n@@ -1 +1 @@\n-LEAK\n+LEAK2\n")
+    out = gl.redact_secret_files(diff)
+    assert "LEAK" not in out
+    assert "diff --git a/old name.pem b/new name.pem" in out
+
+
+def test_show_diff_still_redacts_when_the_user_forces_git_colour(tmp_path, monkeypatch):
+    """color.ui=always wraps every header in escape codes, so a line-anchored
+    header match found nothing and redaction dropped to zero."""
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "color.ui")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "always")
+    repo = _repo(tmp_path, [
+        ("add", {".env": "TOKEN=SUPERSECRET\n", **{f"f{i}.py": "x\n" for i in range(6)}}, []),
+        ("rm", {}, [".env"] + [f"f{i}.py" for i in range(6)]),
+    ])
+    diff = gl.show_diff(repo, gl.bulk_changes(repo, "D", min_files=5)[0]["hash"], max_chars=12_000)
+    assert "SUPERSECRET" not in diff
+    assert "\x1b[" not in diff
+
+
+def test_repo_root_accepts_a_path_that_differs_only_in_case(tmp_path):
+    """macOS APFS is case-insensitive by default; comparing strings refused
+    ~/Code/repo for an on-disk ~/code/repo."""
+    repo = _repo(_mkdir(tmp_path / "root"), [("first", {"a.py": "1\n"}, [])])
+    swapped = str(tmp_path / "ROOT")
+    if not os.path.isdir(swapped):
+        pytest.skip("case-sensitive filesystem")
+    assert gl.repo_root(swapped) == os.path.realpath(repo)
+
+
+def test_repo_root_explains_a_directory_that_is_not_a_repo(tmp_path):
+    with pytest.raises(SystemExit) as e:
+        gl.repo_root(str(tmp_path))
+    assert "not a git repository" in str(e.value)
+
+
+@pytest.mark.parametrize("path", [
+    "token.json", "credentials.yml", "secret.json", "secrets.toml",
+    "prod.tfvars", "terraform.tfstate", "terraform.tfstate.backup", "putty.ppk",
+])
+def test_is_secret_path_covers_the_second_review_pass(path):
+    assert gl.is_secret_path(path) is True

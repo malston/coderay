@@ -21,14 +21,19 @@ from datetime import datetime, timezone
 
 from crack.core import DEFAULT_SKIP_NAMES, DEFAULT_SKIP_SUFFIXES
 
-SEP = "\x1e"  # ASCII record separator: marks the start of each commit
-
-# coderay-q2r.35. git allows SEP inside a commit subject, so a hostile repo can
-# split one log entry into two and choose the hash field of the second. A hash
-# that is not 40 hex characters is a forgery and its record is dropped; show_diff
-# also puts --end-of-options before the hash, so even a hash that got through
-# could never be read as a git option.
-HEX_HASH = re.compile(r"[0-9a-f]{40}")
+# coderay-q2r.35. The record separator is NUL: git refuses it in a commit
+# message and no filesystem stores it in a path, so a hostile subject cannot
+# split one log entry into two and choose the fields of the second (0x1e, the
+# ASCII record separator, was allowed inside a subject and did exactly that).
+# Each record head is then validated whole before anything is unpacked or
+# parsed: a hash of 40 hex (SHA-1) or 64 hex (SHA-256), a numeric timestamp,
+# an author without `|`, and the subject. show_diff peels its argument to a
+# commit and passes --end-of-options, so a hash could neither be read as a git
+# option nor name a blob (`git show <blob>` prints it raw, with no diff header
+# for the redactor to anchor on).
+SEP = "\x00"
+HEX_HASH = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
+_RECORD_HEAD = re.compile(r"([0-9a-f]{40}(?:[0-9a-f]{24})?)\|(\d{1,12})\|([^|]*)\|(.*)", re.DOTALL)
 
 # coderay-q2r.36. Every header form `git show -p` emits for a file: plain diffs,
 # and the combined diffs a merge prints. Anchored to line start so a removed
@@ -36,24 +41,31 @@ HEX_HASH = re.compile(r"[0-9a-f]{40}")
 _HUNK_HEADER = re.compile(r"(?m)^(diff --(?:git|cc|combined) )")
 
 
+def _records(raw):
+    """(hash, timestamp, author, subject, files) per validated record."""
+    for entry in raw.split(SEP)[1:]:
+        head, *files = entry.strip("\n").split("\n")
+        m = _RECORD_HEAD.fullmatch(head)
+        if not m:
+            continue
+        h, ts, author, subject = m.groups()
+        yield h, int(ts), author, subject, [f for f in files if f]
+
+
 def git_log_commits(repo_path):
     """One dict per commit: hash, month, author, subject, files (listing 6.2)."""
     raw = subprocess.check_output(
         ["git", "-C", repo_path, "log",
-         f"--pretty=format:{SEP}%H|%at|%an|%s", "--name-only"],
+         f"--pretty=format:%x00%H|%at|%an|%s", "--name-only"],
         text=True, errors="replace",
     )
     commits = []
-    for entry in raw.split(SEP)[1:]:
-        head, *files = entry.strip().split("\n")
-        h, ts, author, subject = head.split("|", 3)
-        if not HEX_HASH.fullmatch(h):
-            continue
-        dt = datetime.fromtimestamp(int(ts), timezone.utc)
+    for h, ts, author, subject, files in _records(raw):
+        dt = datetime.fromtimestamp(ts, timezone.utc)
         commits.append({
             "hash": h, "month": dt.strftime("%Y-%m"),
             "author": author, "subject": subject,
-            "files": [f for f in files if f],
+            "files": files,
         })
     return commits
 
@@ -82,19 +94,14 @@ def bulk_changes(repo_path, status, min_files=10):
     """
     raw = subprocess.check_output(
         ["git", "-C", repo_path, "log", f"--diff-filter={status}",
-         "--name-only", f"--pretty=format:{SEP}%H|%at|%an|%s"],
+         "--name-only", f"--pretty=format:%x00%H|%at|%an|%s"],
         text=True, errors="replace",
     )
     out = []
-    for entry in raw.split(SEP)[1:]:
-        head, *files = entry.strip().split("\n")
-        files = [f for f in files if f]
+    for h, ts, author, subject, files in _records(raw):
         if len(files) < min_files:
             continue
-        h, ts, author, subject = head.split("|", 3)
-        if not HEX_HASH.fullmatch(h):
-            continue
-        dt = datetime.fromtimestamp(int(ts), timezone.utc)
+        dt = datetime.fromtimestamp(ts, timezone.utc)
         out.append({
             "hash": h, "date": dt.strftime("%Y-%m-%d"), "month": dt.strftime("%Y-%m"),
             "author": author, "subject": subject,
@@ -241,11 +248,31 @@ def redact_secret_files(diff_text):
     out = [parts[0]]
     for header, hunk in zip(parts[1::2], parts[2::2]):
         path = hunk.split("\n", 1)[0]
-        if any(is_secret_path(_unquote(p)) for p in path.split() if p):
+        if any(is_secret_path(p) for p in _hunk_paths(header, hunk)):
             out.append(f"{header}{path}\n[contents omitted: credential-bearing file]\n")
         else:
             out.append(header + hunk)
     return "".join(out)
+
+
+def _hunk_paths(header, hunk):
+    """Every path a hunk header names, spaces intact.
+
+    git never quotes a space, so `diff --git a/x y b/x y` cannot be tokenised;
+    splitting on the last ` b/` recovers both sides whole, and a combined
+    (`--cc`) header carries its one path as the rest of the line. The tokenised
+    form stays as a fallback.
+    """
+    first = hunk.split("\n", 1)[0]
+    paths = set()
+    if header.startswith("diff --git "):
+        a, sep, b = first.rpartition(" b/")
+        if sep:
+            paths.update((_unquote(a), _unquote(b)))
+    else:
+        paths.add(_unquote(first))
+    paths.update(_unquote(p) for p in first.split() if p)
+    return {p for p in paths if p}
 
 
 def _unquote(token):
@@ -260,8 +287,8 @@ def show_diff(repo_path, commit_hash, max_chars=4000, stat=True):
     The patch body is filtered before truncation, so a credential-bearing file
     never reaches the caller regardless of where the cut lands.
     """
-    cmd = ["git", "-C", repo_path, "show", "-p", *(["--stat"] if stat else []),
-           "--end-of-options", commit_hash]
+    cmd = ["git", "-C", repo_path, "show", "-p", "--no-color", *(["--stat"] if stat else []),
+           "--end-of-options", f"{commit_hash}^{{commit}}"]
     raw = redact_secret_files(subprocess.check_output(cmd, text=True, errors="replace"))
     if len(raw) > max_chars:
         raw = raw[:max_chars] + "\n... [diff truncated]"
@@ -275,9 +302,14 @@ def repo_root(repo_path):
     would otherwise be analysed as its parent, under the wrong name, and the
     parent's full history would go to the model (coderay-q2r.38).
     """
-    top = subprocess.check_output(
-        ["git", "-C", repo_path, "rev-parse", "--show-toplevel"], text=True).strip()
-    if os.path.realpath(top) != os.path.realpath(repo_path):
+    probe = subprocess.run(["git", "-C", repo_path, "rev-parse", "--show-toplevel"],
+                           capture_output=True, text=True)
+    if probe.returncode != 0:
+        raise SystemExit(f"{repo_path}: {probe.stderr.strip() or 'not a git repository'}")
+    top = probe.stdout.strip()
+    # samefile, not string equality: a case-insensitive filesystem accepts
+    # ~/Code/repo for an on-disk ~/code/repo, and git reports the on-disk case.
+    if not os.path.samefile(top, repo_path):
         raise SystemExit(f"{repo_path} is not the root of a git repository "
                          f"(git resolves it to {top}); pass the repository root")
     return os.path.realpath(top)
