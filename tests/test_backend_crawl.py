@@ -172,3 +172,24 @@ def test_build_bundle_keeps_an_uppercase_source_extension(tmp_path):
     bundle, stats = bc.build_bundle(repo)
     assert stats["counts"]["route"] == 1
     assert "urlpatterns = []" in bundle
+
+
+def test_build_bundle_skips_a_virtualenv_named_env(tmp_path):
+    """coderay-q2r.59. `python -m venv env` in the target put Django's own
+    urls.py in the route count; SKIP_DIRS is DEFAULT_SKIP_DIR plus the
+    backend's extras, not a hand-written subset of it."""
+    repo = _repo(tmp_path, {
+        "app/urls.py": "ok\n",
+        "env/lib/python3.12/site-packages/django/contrib/admin/urls.py": "ignored\n",
+        "spec/controllers/users_controller_spec.rb": "ignored\n",
+    })
+    bundle, stats = bc.build_bundle(repo)
+    assert stats["counts"] == {"route": 1}
+    assert "ignored" not in bundle
+
+
+def test_classify_treats_a_rails_spec_as_a_test():
+    """coderay-q2r.59. `_spec.rb` is the RSpec convention and was not in the
+    test-marker tuple, so a spec beside the controllers counted as a handler."""
+    assert bc.classify("app/controllers/users_controller_spec.rb") is None
+    assert bc.classify("app/controllers/users_controller.rb") == "handler"
