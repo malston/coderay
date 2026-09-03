@@ -104,8 +104,12 @@ DEFAULT_MAX_FILE_BYTES = 500_000
 # for their extension.
 DEFAULT_SKIP_NAMES = frozenset({
     '.env', '.env.local', '.env.production', '.netrc', '.npmrc', '.pypirc',
-    'credentials', 'credentials.json', 'service-account.json',
-    'id_rsa', 'id_ed25519', '.htpasswd', 'terraform.tfvars',
+    'credentials', 'credentials.json', 'service-account.json', 'client_secret.json',
+    'id_rsa', 'id_ed25519', 'id_ecdsa', 'id_dsa', '.htpasswd', 'terraform.tfvars',
+    # coderay-q2r.37: pure-credential names the list missed while it was only
+    # crawler noise. Never source, so skipping them costs the crawl nothing.
+    'secrets.yml', 'secrets.yaml', 'secrets.json',
+    '.git-credentials', '.pgpass', 'kubeconfig',
 })
 DEFAULT_SKIP_SUFFIXES = ('.pem', '.key', '.p12', '.pfx', '.keystore', '.jks')
 

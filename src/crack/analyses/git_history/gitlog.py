@@ -14,6 +14,7 @@ else here is the compression the three prompts need:
 Everything reads git through `subprocess`; nothing here calls an LLM.
 """
 import os
+import re
 import subprocess
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
@@ -21,6 +22,18 @@ from datetime import datetime, timezone
 from crack.core import DEFAULT_SKIP_NAMES, DEFAULT_SKIP_SUFFIXES
 
 SEP = "\x1e"  # ASCII record separator: marks the start of each commit
+
+# coderay-q2r.35. git allows SEP inside a commit subject, so a hostile repo can
+# split one log entry into two and choose the hash field of the second. A hash
+# that is not 40 hex characters is a forgery and its record is dropped; show_diff
+# also puts --end-of-options before the hash, so even a hash that got through
+# could never be read as a git option.
+HEX_HASH = re.compile(r"[0-9a-f]{40}")
+
+# coderay-q2r.36. Every header form `git show -p` emits for a file: plain diffs,
+# and the combined diffs a merge prints. Anchored to line start so a removed
+# body line that happens to read `-diff --git ...` is not mistaken for one.
+_HUNK_HEADER = re.compile(r"(?m)^(diff --(?:git|cc|combined) )")
 
 
 def git_log_commits(repo_path):
@@ -34,6 +47,8 @@ def git_log_commits(repo_path):
     for entry in raw.split(SEP)[1:]:
         head, *files = entry.strip().split("\n")
         h, ts, author, subject = head.split("|", 3)
+        if not HEX_HASH.fullmatch(h):
+            continue
         dt = datetime.fromtimestamp(int(ts), timezone.utc)
         commits.append({
             "hash": h, "month": dt.strftime("%Y-%m"),
@@ -67,7 +82,7 @@ def bulk_changes(repo_path, status, min_files=10):
     """
     raw = subprocess.check_output(
         ["git", "-C", repo_path, "log", f"--diff-filter={status}",
-         "--name-only", f"--pretty=format:{SEP}%h|%at|%an|%s"],
+         "--name-only", f"--pretty=format:{SEP}%H|%at|%an|%s"],
         text=True, errors="replace",
     )
     out = []
@@ -77,6 +92,8 @@ def bulk_changes(repo_path, status, min_files=10):
         if len(files) < min_files:
             continue
         h, ts, author, subject = head.split("|", 3)
+        if not HEX_HASH.fullmatch(h):
+            continue
         dt = datetime.fromtimestamp(int(ts), timezone.utc)
         out.append({
             "hash": h, "date": dt.strftime("%Y-%m-%d"), "month": dt.strftime("%Y-%m"),
@@ -220,17 +237,21 @@ def redact_secret_files(diff_text):
     contents go. Filtering here rather than with a git pathspec keeps the stat
     intact, which an `:(exclude)` would also strip.
     """
-    head, sep, rest = diff_text.partition("diff --git ")
-    if not sep:
-        return diff_text
-    out = [head]
-    for chunk in rest.split("diff --git "):
-        path = chunk.split("\n", 1)[0]
-        if any(is_secret_path(p.lstrip("ab/")) for p in path.split() if p):
-            out.append(f"diff --git {path}\n[contents omitted: credential-bearing file]\n")
+    parts = _HUNK_HEADER.split(diff_text)  # [preamble, header, hunk, header, hunk, ...]
+    out = [parts[0]]
+    for header, hunk in zip(parts[1::2], parts[2::2]):
+        path = hunk.split("\n", 1)[0]
+        if any(is_secret_path(_unquote(p)) for p in path.split() if p):
+            out.append(f"{header}{path}\n[contents omitted: credential-bearing file]\n")
         else:
-            out.append("diff --git " + chunk)
+            out.append(header + hunk)
     return "".join(out)
+
+
+def _unquote(token):
+    """A header path token as a plain path: git C-quotes paths with non-ASCII,
+    quotes or control characters, and a/ b/ are prefixes, not a character set."""
+    return token.strip('"').removeprefix("a/").removeprefix("b/")
 
 
 def show_diff(repo_path, commit_hash, max_chars=4000, stat=True):
@@ -239,10 +260,31 @@ def show_diff(repo_path, commit_hash, max_chars=4000, stat=True):
     The patch body is filtered before truncation, so a credential-bearing file
     never reaches the caller regardless of where the cut lands.
     """
-    cmd = ["git", "-C", repo_path, "show", "-p", commit_hash]
-    if stat:
-        cmd.insert(4, "--stat")
+    cmd = ["git", "-C", repo_path, "show", "-p", *(["--stat"] if stat else []),
+           "--end-of-options", commit_hash]
     raw = redact_secret_files(subprocess.check_output(cmd, text=True, errors="replace"))
     if len(raw) > max_chars:
         raw = raw[:max_chars] + "\n... [diff truncated]"
     return raw
+
+
+def repo_root(repo_path):
+    """The repository root, or SystemExit if `repo_path` is not it.
+
+    `git -C` walks up to the enclosing .git, so a plain folder inside any repo
+    would otherwise be analysed as its parent, under the wrong name, and the
+    parent's full history would go to the model (coderay-q2r.38).
+    """
+    top = subprocess.check_output(
+        ["git", "-C", repo_path, "rev-parse", "--show-toplevel"], text=True).strip()
+    if os.path.realpath(top) != os.path.realpath(repo_path):
+        raise SystemExit(f"{repo_path} is not the root of a git repository "
+                         f"(git resolves it to {top}); pass the repository root")
+    return os.path.realpath(top)
+
+
+def is_shallow(repo_path):
+    """True for a --depth clone, whose log is a fragment of the history (coderay-q2r.38)."""
+    return subprocess.check_output(
+        ["git", "-C", repo_path, "rev-parse", "--is-shallow-repository"],
+        text=True).strip() == "true"

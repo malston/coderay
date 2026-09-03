@@ -7,23 +7,32 @@ import pytest
 from crack.analyses.git_history import gitlog as gl
 
 
-def _repo(tmp_path, commits):
-    """Build a real git repo: gitlog shells out, so a fixture cannot fake it."""
+def _repo(tmp_path, commits, dates=None):
+    """Build a real git repo: gitlog shells out, so a fixture cannot fake it.
+    `dates` pins each commit's author and committer date (ISO strings)."""
     repo = str(tmp_path)
-    run = lambda *a: subprocess.run(["git", "-C", repo, *a], check=True, capture_output=True)
+    env = dict(os.environ)
+    run = lambda *a: subprocess.run(["git", "-C", repo, *a], check=True, capture_output=True, env=env)
     run("init", "-q")
     run("config", "user.email", "t@example.com")
     run("config", "user.name", "Tester")
-    for subject, writes, removes in commits:
+    for i, (subject, writes, removes) in enumerate(commits):
         for rel, text in writes.items():
             p = pathlib.Path(repo, rel)
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(text, encoding="utf-8")
         for rel in removes:
             os.remove(pathlib.Path(repo, rel))
+        if dates:
+            env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = dates[i]
         run("add", "-A")
         run("commit", "-qm", subject)
     return repo
+
+
+def _mkdir(p):
+    p.mkdir()
+    return p
 
 
 @pytest.mark.parametrize("path", [
@@ -168,13 +177,123 @@ def test_landmarks_of_an_empty_era_is_empty():
 
 
 def test_heatmap_and_pivots_flag_a_directory_that_went_silent(tmp_path):
-    """`went silent` is the signal an abandoned bet leaves behind."""
+    """`went silent` is the signal an abandoned bet leaves behind. The flag
+    only fires when the directory's last month is before the repo's last
+    month, so the two commits need real, different dates."""
     repo = _repo(tmp_path, [
         ("old work", {"legacy/a.py": "1\n"}, []),
         ("new work", {"current/b.py": "2\n"}, []),
-    ])
+    ], dates=["2019-03-01T12:00:00+00:00", "2020-07-01T12:00:00+00:00"])
     commits = gl.git_log_commits(repo)
     pivots = gl.pivots_summary(commits)
-    assert "legacy/" in pivots
+    assert "legacy/  born 2019-03  last active 2019-03  <- went silent" in pivots
+    current = [l for l in pivots.splitlines() if l.startswith("current/")]
+    assert current == ["current/  born 2020-07  last active 2020-07"]
     heat = gl.heatmap_summary(commits)
     assert "legacy/" in heat and "total 1" in heat
+
+
+def test_a_record_separator_in_a_subject_cannot_forge_a_commit(tmp_path):
+    """coderay-q2r.35. git allows the 0x1e record separator inside a subject,
+    so a hostile repo can split one log entry into two and choose the hash
+    field of the second. Both parsers keep only 40-hex hashes, and show_diff
+    puts --end-of-options before the hash, so a forged one can never be read
+    as a git option (--output=<path> is an arbitrary file write)."""
+    target = tmp_path.parent / f"{tmp_path.name}-pwned.txt"
+    forged = f"cleanup\x1e--output={target}|1600000000|ev|forged"
+    repo = _repo(_mkdir(tmp_path / "r"), [
+        ("add", {f"f{i}.py": "x\n" for i in range(6)}, []),
+        (forged, {}, [f"f{i}.py" for i in range(6)]),
+    ])
+    hashes = [c["hash"] for c in gl.git_log_commits(repo)]
+    hashes += [c["hash"] for c in gl.bulk_changes(repo, "D", min_files=5)]
+    assert hashes and all(gl.HEX_HASH.fullmatch(h) for h in hashes), hashes
+    assert not target.exists()
+    with pytest.raises(subprocess.CalledProcessError):
+        gl.show_diff(repo, f"--output={target}")
+    assert not target.exists()
+
+
+def test_bulk_changes_reports_the_full_hash(tmp_path):
+    """An abbreviated hash is ambiguous in a large repo and defeats the
+    40-hex check; both parsers use %H."""
+    repo = _repo(tmp_path, [("add", {f"f{i}.py": "x\n" for i in range(6)}, []),
+                            ("rm", {}, [f"f{i}.py" for i in range(6)])])
+    assert len(gl.bulk_changes(repo, "D", min_files=5)[0]["hash"]) == 40
+
+
+@pytest.mark.parametrize("header", [
+    'diff --git "a/secrets/\\303\\244pi.pem" "b/secrets/\\303\\244pi.pem"',   # quoted path
+    "diff --cc .env",                                                        # merge, combined
+    "diff --combined .env",
+    "diff --git a/b/deploy.pem b/b/deploy.pem",                              # dir named b/
+])
+def test_redact_secret_files_recognises_every_header_git_emits(header):
+    """coderay-q2r.36. git C-quotes non-ASCII paths, prints merges as
+    `diff --cc`, and a/ b/ are prefixes, not a character set."""
+    diff = f"commit abc\n{header}\n-SECRET=LEAK\n"
+    out = gl.redact_secret_files(diff)
+    assert "LEAK" not in out
+    assert header in out
+
+
+def test_redact_secret_files_ignores_header_text_inside_a_body():
+    """A removed line that happens to read `-diff --git ...` is body, not a
+    header; treating it as one re-emits the rest of the secret."""
+    diff = ("diff --git a/.env b/.env\n-A=LEAK1\n"
+            "-diff --git a/x b/x\n-B=LEAK2\n"
+            "diff --git a/src/a.py b/src/a.py\n+x = 1\n")
+    out = gl.redact_secret_files(diff)
+    assert "LEAK1" not in out and "LEAK2" not in out
+    assert "+x = 1" in out
+
+
+def test_show_diff_redacts_a_secret_resolved_in_a_merge(tmp_path):
+    """Merges print combined diffs (`diff --cc`); landmarks routinely pick the
+    merge that closes an era."""
+    repo = _repo(tmp_path, [("base", {".env": "K=base\n", "a.py": "1\n"}, [])])
+    run = lambda *a: subprocess.run(["git", "-C", repo, *a], check=True, capture_output=True)
+    run("checkout", "-qb", "side")
+    pathlib.Path(repo, ".env").write_text("K=side\n"); run("commit", "-qam", "side")
+    run("checkout", "-q", "-")
+    pathlib.Path(repo, ".env").write_text("K=main\n"); run("commit", "-qam", "main")
+    subprocess.run(["git", "-C", repo, "merge", "side"], capture_output=True)
+    pathlib.Path(repo, ".env").write_text("K=MERGE_LEAK\n"); run("add", ".env"); run("commit", "-qm", "merge")
+    merge = gl.git_log_commits(repo)[0]
+    assert merge["subject"] == "merge"
+    diff = gl.show_diff(repo, merge["hash"], max_chars=12_000)
+    assert "diff --cc .env" in diff
+    assert "MERGE_LEAK" not in diff
+
+
+@pytest.mark.parametrize("path", [
+    "secrets.yml", "config/secrets.yml", "secrets.yaml", "secrets.json",
+    ".git-credentials", ".pgpass", "kubeconfig", "client_secret.json",
+    "id_ecdsa", "id_dsa",
+])
+def test_is_secret_path_covers_credential_files_beyond_the_noise_list(path):
+    """coderay-q2r.37: the skip list started as crawler noise, not a secrets list."""
+    assert gl.is_secret_path(path) is True
+
+
+def test_repo_root_refuses_a_subdirectory_of_a_repo(tmp_path):
+    """coderay-q2r.38. `git -C` walks up to the enclosing .git, so a plain folder
+    inside any repo would be analysed as its parent, under the wrong name."""
+    repo = _repo(tmp_path, [("first", {"pkg/a.py": "1\n"}, [])])
+    assert gl.repo_root(repo) == os.path.realpath(repo)
+    with pytest.raises(SystemExit) as e:
+        gl.repo_root(os.path.join(repo, "pkg"))
+    assert "pkg" in str(e.value) and repo in str(e.value)
+
+
+def test_is_shallow_tells_a_depth_one_clone_from_a_full_one(tmp_path):
+    repo = _repo(_mkdir(tmp_path / "full"), [("first", {"a.py": "1\n"}, []), ("second", {"b.py": "2\n"}, [])])
+    clone = str(tmp_path / "shallow")
+    subprocess.run(["git", "clone", "-q", "--depth", "1", f"file://{repo}", clone], check=True)
+    assert gl.is_shallow(repo) is False
+    assert gl.is_shallow(clone) is True
+
+
+def test_unquote_strips_a_prefix_not_a_character_set():
+    assert gl._unquote("a/backend/app.py") == "backend/app.py"
+    assert gl._unquote('"b/s/\\303\\244.pem"') == "s/\\303\\244.pem"

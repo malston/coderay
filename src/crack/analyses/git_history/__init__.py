@@ -8,6 +8,7 @@ from pocketflow import Flow
 from crack.core import OverviewNode
 from crack.core.runner import repo_name_of, run_analysis
 from .nodes import FetchHistory, NameEras, ProfileEras, Graveyard
+from .gitlog import repo_root
 # This analysis builds its page from structured data rather than markdown
 # blobs, so it keeps its own renderer; crack.core.render defers to these.
 from .render import render_html, render_markdown  # noqa: F401
@@ -62,4 +63,5 @@ def run(args) -> None:
     # parser in scope, and threading one through isn't worth it for one check.
     if not os.path.isdir(args.repo_path):
         raise SystemExit(f"{args.repo_path} is not a directory")
+    repo_root(args.repo_path)  # coderay-q2r.38
     run_analysis(sys.modules[__name__], args)

@@ -115,3 +115,16 @@ def test_overview_spec_name_matches_the_name_the_page_is_rendered_with(tmp_path,
     spec = git_history.overview_spec({"repo_path": ".", "eras": [], "graves": [], "commits": []})
     assert spec["name"] == repo_name_of(".") == "toy_repo"
     assert spec["name"] != os.path.basename(".")
+
+
+def test_run_refuses_a_subdirectory_of_a_repo(tmp_path):
+    """coderay-q2r.38: caught before any LLM call, naming both paths."""
+    import subprocess
+    repo = str(tmp_path)
+    for a in (["init", "-q"], ["config", "user.email", "t@example.com"],
+              ["config", "user.name", "T"], ["commit", "-q", "--allow-empty", "-m", "x"]):
+        subprocess.run(["git", "-C", repo, *a], check=True, capture_output=True)
+    os.mkdir(os.path.join(repo, "sub"))
+    with pytest.raises(SystemExit) as e:
+        git_history.run(argparse.Namespace(repo_path=os.path.join(repo, "sub"), out=None))
+    assert "sub" in str(e.value)
