@@ -31,7 +31,7 @@ A five-stage pipeline (BuildBundle, Inventory, TechStack, TraceRequest, Overview
 
 - Overlays four sources that no single file holds together: process declarations (compose, Kubernetes manifests, `Procfile`, platform config), environment variable names from `.env` files, the union of `package.json` dependencies, and Terraform. SDK `import` lines found by `git grep` are the proof a connection is live rather than merely configured.
 - Renders three views: every node sorted into four bands (run, rent, call, client), the real technology behind each box's label, and one request traced hop by hop with its variants.
-- Expects a multi-service application. Pointed at a repository with none of those sources, the run stops before it spends an LLM call.
+- Expects a multi-service application. The run stops before it spends an LLM call only when the whole bundle is empty; a repo with no config files but some dependencies or SDK imports still proceeds, which is how the CDK case below reports `0 config files` and carries on.
 - Known limitations, worth reading before you spend a run:
   - Infrastructure written in a general-purpose language is invisible. AWS CDK and Pulumi stacks are ordinary `.ts`/`.py` programs, and SAM `template.yaml` is an ordinary YAML file, so none of them are classified. A CDK repository reports `0 config files` while its stacks sit in `infra/lib/`. Tracked as `coderay-q2r.10`.
   - Credential values are stripped from the bundle before it is sent, by key name (`password`, `token`, `secret`, and similar), by connection-string position (`postgres://user:pw@host`), and for every value under a Kubernetes `Secret`. Names, service topology, images and ports survive. This is a redactor, not a secret scanner: a credential under an unguessable key name in a file that is not a `Secret` can still get through, so treat the bundle as sensitive.
@@ -45,7 +45,7 @@ A five-stage pipeline (FindRoutes, ApiMenu, TraceActions, EndpointSequence, Over
 - Renders four views: every endpoint grouped by feature and sized against the biggest group, a short tour of the groups that say the most about the product, one user gesture traced across service lanes, and a message-by-message sequence diagram of a single endpoint. The tour is omitted rather than rendered empty when the model writes none.
 - Expects a web API. Pointed at a repository with no surface files, the run stops before it spends an LLM call.
 - Known limitation, worth reading before you spend a run:
-  - When the model's endpoint pick cannot be read, the sequence diagram falls back to the largest handler on disk. If that also finds nothing, the diagram is drawn without the handler source and nothing in the output says so. Check that the sequence section names an endpoint you recognise.
+  - When the model's endpoint pick cannot be read, the sequence diagram falls back to the largest Next.js `pages/api/` handler. Only Next.js: a Rails, Django, Express, tRPC or GraphQL repo has no candidates, so the diagram is drawn with no handler source at all and the model writes it from the route list alone, inventing its `file:line` references. Nothing in the page says so. Check that the sequence section names an endpoint you recognise before trusting it.
 
 ### Schema
 

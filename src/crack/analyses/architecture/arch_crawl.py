@@ -70,67 +70,125 @@ SECRET_KEY_RE = re.compile(
     r'session|cookie|licen[cs]e|webhook)', re.I)
 
 # key: value / key = value / key=value, keeping the indent and the separator so
-# the redacted file still parses as the format it came from. The key length is
-# bounded: unbounded, it backtracks a character at a time down a long line with
-# no separator, which is quadratic on a minified config file.
+# the redacted line still reads as the format it came from. The key length is
+# bounded to keep the pattern's cost linear on a long line.
 _ASSIGN_RE = re.compile(r'^(?P<head>\s*-?\s*"?(?P<key>[A-Za-z_][\w.\-]{0,127})"?\s*[:=]\s*)'
                         r'(?P<value>\S.*)$')
 
-# A credential embedded in a connection string, which no key name reveals.
-# Every run is length-bounded. Unbounded, this sub scans from each of a long
-# line's positions, consumes the rest of it looking for '://', and backtracks:
-# quadratic on a minified config file.
-_URL_CRED_RE = re.compile(r'(?P<scheme>[a-zA-Z][\w+.\-]{0,31}://[^\s:/@]{1,255}:)'
+# `key:` with nothing after it, which introduces a nested block or sequence.
+_BARE_KEY_RE = re.compile(r'^(?P<head>\s*-?\s*"?(?P<key>[A-Za-z_][\w.\-]{0,127})"?\s*:)\s*$')
+
+# A YAML block or folded scalar: the value is on the following, deeper lines.
+_BLOCK_SCALAR_RE = re.compile(r'^[|>][+-]?\d*\s*(#.*)?$')
+
+# A credential embedded in a connection string, which no key name reveals. The
+# user segment allows zero characters: redis://:password@host is the standard
+# passwordless-username form. Every run is length-bounded -- unbounded, this sub
+# scans from each of a long line's positions looking for '://', which is
+# quadratic and took a minute on a 200k-char file.
+_URL_CRED_RE = re.compile(r'(?P<scheme>[a-zA-Z][\w+.\-]{0,31}://[^\s:/@]{0,255}:)'
                           r'(?P<pw>[^\s@/]{1,255})(?=@)')
 
 # A Secret's keys are arbitrary, so nothing about the key name marks the value.
-# Track the block instead: every value under it is a credential by definition.
+# The document is scanned for `kind: Secret` before any line is redacted,
+# because YAML does not order mapping keys and a serializer that sorts them
+# emits data: before kind:.
 _SECRET_KIND_RE = re.compile(r'^\s*kind:\s*["\']?Secret\b', re.I)
 _SECRET_DATA_RE = re.compile(r'^\s*(data|stringData):\s*$')
 _DOC_BREAK_RE = re.compile(r'^(---|\.\.\.)\s*$')
 
 
+def _indent(line):
+    return len(line) - len(line.lstrip())
+
+
+def _documents(lines):
+    """Split on YAML document breaks, yielding each break as its own chunk."""
+    current = []
+    for line in lines:
+        if _DOC_BREAK_RE.match(line.rstrip('\n\r')):
+            if current:
+                yield current
+            yield [line]
+            current = []
+        else:
+            current.append(line)
+    if current:
+        yield current
+
+
+def _redact_document(lines):
+    # Whole-document scan first: `kind: Secret` may appear after `data:`.
+    in_secret_doc = any(_SECRET_KIND_RE.match(l.rstrip('\n\r')) for l in lines)
+    out = []
+    data_indent = None      # indent of a Secret's `data:` key while inside it
+    swallow_indent = None   # indent of a redacted key whose value runs on below
+
+    for line in lines:
+        stripped = line.rstrip('\n\r')
+        eol = line[len(stripped):]
+        if not stripped.strip():
+            out.append(line)
+            continue
+        indent = _indent(stripped)
+
+        # Lines deeper than a key we already redacted ARE that key's value.
+        if swallow_indent is not None:
+            if indent > swallow_indent:
+                continue
+            swallow_indent = None
+
+        # Leaving the Secret's data: block, so stop redacting everything.
+        if data_indent is not None and indent <= data_indent:
+            data_indent = None
+
+        if in_secret_doc and data_indent is None and _SECRET_DATA_RE.match(stripped):
+            data_indent = indent
+            out.append(line)
+            continue
+
+        under_secret_data = data_indent is not None
+
+        m = _ASSIGN_RE.match(stripped)
+        if m and (under_secret_data or SECRET_KEY_RE.search(m.group('key'))):
+            if _BLOCK_SCALAR_RE.match(m.group('value')):
+                swallow_indent = indent   # `key: |` -- the secret is below
+            out.append(m.group('head') + REDACTED + eol)
+            continue
+
+        bare = _BARE_KEY_RE.match(stripped)
+        if bare and (under_secret_data or SECRET_KEY_RE.search(bare.group('key'))):
+            swallow_indent = indent       # `tokens:` with the secrets nested below
+            out.append(bare.group('head') + ' ' + REDACTED + eol)
+            continue
+
+        out.append(_URL_CRED_RE.sub(lambda x: x.group('scheme') + REDACTED, line))
+    return out
+
+
 def _redact(text):
     """Strip credential values out of a config file, keeping its shape.
-
-    This function and its call in build_bundle are coderay's, not the port
-    source's (coderay-q2r.14). Everything else in this module is a verbatim
-    copy; keep the diff to this one seam so a re-port stays mechanical.
 
     The bundle is sent to a third-party LLM API, so a password in a compose
     `environment:` block or a committed `.tfvars` would leave the machine. What
     the analysis needs from these files is the topology -- services, images,
     ports, resources, and the NAMES of the things they are wired to -- never a
-    value. Names, structure and indentation survive; values that look like
-    credentials do not.
+    value. Names, structure and indentation survive; values under a key that
+    reads like a credential, and every value in a Kubernetes Secret, do not.
+
+    This function and its call in build_bundle are coderay's, not the port
+    source's (coderay-q2r.14). Everything else in this module is a verbatim
+    copy; keep the diff to this one seam so a re-port stays mechanical.
 
     ponytail: key-name patterns plus Secret-block tracking, not a secret
-    scanner. A credential under an unguessable key name in a non-Secret file
-    still gets through; reach for detect-secrets or gitleaks if that matters.
+    scanner. A credential under an unguessable key name in a file that is not a
+    Secret still gets through; reach for detect-secrets or gitleaks if that
+    matters. A redacted line is not guaranteed to re-parse -- the value match
+    runs to end of line, so a trailing quote or inline map goes with it.
     """
-    out, in_secret_doc, in_secret_data = [], False, False
-    for line in text.splitlines(keepends=True):
-        stripped = line.rstrip('\n\r')
-
-        if _DOC_BREAK_RE.match(stripped):
-            in_secret_doc = in_secret_data = False
-            out.append(line)
-            continue
-        if _SECRET_KIND_RE.match(stripped):
-            in_secret_doc = True
-        elif in_secret_doc and _SECRET_DATA_RE.match(stripped):
-            in_secret_data = True
-            out.append(line)
-            continue
-
-        m = _ASSIGN_RE.match(stripped)
-        if m and (in_secret_data or SECRET_KEY_RE.search(m.group('key'))):
-            out.append(m.group('head') + REDACTED + line[len(stripped):])
-            continue
-        if m and in_secret_doc and not _SECRET_DATA_RE.match(stripped):
-            in_secret_data = False
-
-        out.append(_URL_CRED_RE.sub(lambda x: x.group('scheme') + REDACTED, line))
+    out = []
+    for doc in _documents(text.splitlines(keepends=True)):
+        out.extend(_redact_document(doc))
     return "".join(out)
 
 

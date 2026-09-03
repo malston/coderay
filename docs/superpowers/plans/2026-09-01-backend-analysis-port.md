@@ -1347,7 +1347,7 @@ Then run:
 scripts/regen_golden.py backend
 ```
 
-Expected: `wrote tests/fixtures/golden/backend/index.html and .../index.md from ... @ 34f0ad2`. The HTML should be 244 lines and the markdown 59.
+Expected: `wrote tests/fixtures/golden/backend/index.html and .../index.md from ... @ 34f0ad2`. The HTML should be 248 lines and the markdown 59.
 
 - [ ] **Step 7: Run tests to verify they pass**
 

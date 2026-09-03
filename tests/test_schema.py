@@ -109,3 +109,21 @@ def test_the_footer_escapes_the_schema_path():
                              "table_list": [], "migration_names": []})
     assert "<script>" not in footer
     assert "&lt;script&gt;" in footer
+
+
+def test_the_migration_note_says_which_of_the_two_reasons_applies():
+    """coderay-q2r.23. The note is rendered whenever the section is empty, so
+    it must not claim the deliberate reason for the other case.
+
+    A count at or above the floor is the distinguishing input: below it, both
+    the old and the new note read the same.
+    """
+    migration = next(s for s in schema.SECTIONS if s.key == "migration_md")
+    few = {"migration_names": ["a", "b"]}
+    many = {"migration_names": [f"m{i}" for i in range(300)]}
+
+    assert "too few" in migration.skip_note(few)
+    assert "too few" not in migration.skip_note(many)
+    assert "300" in migration.skip_note(many)
+    assert "too few" not in migration.md_skip_note(many)
+    assert "300" in migration.md_skip_note(many)

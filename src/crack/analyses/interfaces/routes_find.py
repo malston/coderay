@@ -122,9 +122,10 @@ def read_files(repo, paths, max_chars=120_000, max_files=8):
     repo (the model often gives a path that's right but for a leading dir).
 
     `paths` is model output and the model has been reading the target repo's own
-    untrusted files, so a path that leaves the repo is refused rather than read:
-    a leading slash is stripped, but `../` climbs and symlinks out are not the
-    analysis's business (coderay-q2r.16)."""
+    untrusted files, so a path that leaves the repo is refused rather than read.
+    A leading slash was already stripped upstream, which neutralises an absolute
+    path; `_within` adds the rest, refusing `../` climbs and symlinks that
+    resolve outside the repo (coderay-q2r.16)."""
     index = None
     resolved, parts, total = [], [], 0
     for raw in paths[:max_files]:

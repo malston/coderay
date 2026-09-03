@@ -8,7 +8,8 @@ from pocketflow import Flow
 from crack.core import OverviewNode
 from crack.core.render import Section, Theme, esc, md
 from crack.core.runner import repo_name_of, run_analysis
-from .nodes import FindSchema, SchemaTour, TraceFlows, TableDeepDive, MigrationActs
+from .nodes import (FindSchema, SchemaTour, TraceFlows, TableDeepDive,
+                    MigrationActs, MIGRATION_FLOOR)
 
 NAME = "schema"
 
@@ -16,12 +17,16 @@ ENV_DEFAULTS = {}
 
 def _migration_skip_note(shared):
     n = len(shared.get("migration_names", []))
-    return (f"skipped &mdash; only {n} migrations found "
-            "(too few, or history squashed)")
+    if n < MIGRATION_FLOOR:
+        return (f"skipped &mdash; only {n} migrations found "
+                "(too few, or history squashed)")
+    return f"no acts written &mdash; the pass over {n} migrations produced none"
 
 def _migration_md_skip_note(shared):
     n = len(shared.get("migration_names", []))
-    return f"_Skipped: only {n} migrations found._\n"
+    if n < MIGRATION_FLOOR:
+        return f"_Skipped: only {n} migrations found._\n"
+    return f"_No acts written: the pass over {n} migrations produced none._\n"
 
 SECTIONS = [
     Section("01", "The tour",

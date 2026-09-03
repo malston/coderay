@@ -27,7 +27,7 @@ def fill(template, **kwargs):
 
 
 def extract_mermaid(md, kind=None):
-    """Pull the body of the first ```mermaid fence, or "" when there is none.
+    """Pull the body of the first matching ```mermaid fence, or "" if none match.
 
     `kind` narrows it to a diagram type ("erDiagram", "sequenceDiagram"): a
     reply that opens with a flowchart and puts the ERD second would otherwise

@@ -45,7 +45,8 @@ def test_classify_is_blind_to_infrastructure_written_in_a_general_purpose_langua
     (ordinary .ts/.py programs) and SAM/Pulumi templates (ordinary .yaml outside
     a k8s directory) match nothing. A CDK repo reports `0 config files` while
     its stacks sit in infra/lib/. Inherited from the port source and
-    deliberately not fixed here, because arch_crawl.py is copied verbatim. When
+    deliberately not fixed here: _classify is part of the verbatim copy (only
+    _redact and its call site are coderay's). When
     upstream fixes it this test fails, which is the signal to re-port and
     invert it.
     """
@@ -54,8 +55,11 @@ def test_classify_is_blind_to_infrastructure_written_in_a_general_purpose_langua
 
 @pytest.mark.parametrize("rel", ["k8s/api.yaml", "manifests/web.yml", "charts/api/values.yaml"])
 def test_classify_reads_a_manifest_directory_at_the_repo_root(rel):
-    """Was the second half of coderay-q2r.10, fixed upstream and re-ported at
-    pin 34f0ad2, alongside the same fix to backend's crawl (coderay-q2r.7).
+    """Fixed upstream in 4a74f7e and re-ported at pin 34f0ad2, alongside the
+    same fix to backend's crawl (coderay-q2r.7) and to interfaces.
+
+    Never had a bead of its own -- coderay-q2r.10 covers only the CDK, Pulumi
+    and SAM classifier gap, and is still open for it.
 
     The k8s rules match their surrounding slashes ('/k8s/', '/charts/'), and
     os.path.relpath never produces a leading one, so a manifest directory at
@@ -99,6 +103,47 @@ def test_redact_removes_a_secret_value(line, secret):
     out = ac._redact(line)
     assert secret not in out
     assert ac.REDACTED in out
+
+
+@pytest.mark.parametrize("label,text,secret", [
+    # The value is on the lines BELOW the key, so a same-line match writes
+    # [REDACTED] over the `|` indicator and leaves the secret sitting under it.
+    ("yaml block scalar", 'api_key: |\n  sk-live-DEADBEEFSECRET\n', "sk-live-DEADBEEFSECRET"),
+    ("yaml folded scalar", 'password: >\n  hunter2SECRET\n', "hunter2SECRET"),
+    ("sequence under a secret key", 'tokens:\n  - ghp_aaaaSECRET\n', "ghp_aaaaSECRET"),
+    ("value wrapped to the next line", '{\n  "apiKey":\n    "sk-live-SECRET"\n}\n', "sk-live-SECRET"),
+    # kubectl emits keys alphabetically, so data: arrives before kind: and a
+    # tracker armed only after seeing kind: never fires.
+    ("kubectl-ordered Secret",
+     'apiVersion: v1\ndata:\n  blorp: aGVsbG9SECRET\nkind: Secret\n', "aGVsbG9SECRET"),
+    ("block scalar inside a Secret",
+     'kind: Secret\nstringData:\n  tls.key: |\n    MIIEowSECRETKEY\n', "MIIEowSECRETKEY"),
+    # redis://:password@host is the standard passwordless-username form, and
+    # neither REDIS_URL nor AMQP matches any secret-word pattern.
+    ("connection string with no username",
+     'REDIS_URL: redis://:hunter2SECRET@localhost:6379/0\n', "hunter2SECRET"),
+])
+def test_redact_reaches_a_secret_the_key_name_alone_would_miss(label, text, secret):
+    """Every case here leaked past the first version of _redact.
+
+    Each one sits under a key SECRET_KEY_RE already covers, or inside a
+    Kubernetes Secret, so these are failures of the mechanism _redact claims to
+    have rather than the documented ceiling. Found reviewing coderay-q2r.14.
+    """
+    assert secret not in ac._redact(text), label
+
+
+def test_redact_stops_at_the_end_of_a_secret_data_block():
+    """The Secret's own metadata is topology the analysis exists to report.
+
+    Redacting to end of document would take the name and namespace with it, so
+    the model could no longer say which secret it is or where it lives.
+    """
+    out = ac._redact("kind: Secret\ndata:\n  blorp: aGVsbG9SECRET\n"
+                     "metadata:\n  name: my-app\n  namespace: prod\n")
+    assert "aGVsbG9SECRET" not in out
+    assert "name: my-app" in out
+    assert "namespace: prod" in out
 
 
 @pytest.mark.parametrize("line", [
@@ -151,12 +196,14 @@ def test_redact_stops_at_the_end_of_the_secret_block():
 
 
 def test_redact_is_linear_on_a_long_line_with_no_separator():
-    """The key pattern must stay bounded.
+    """_URL_CRED_RE's runs must stay bounded.
 
-    Unbounded, _ASSIGN_RE consumes the whole line as a candidate key, fails to
-    find the : or =, and backtracks one character at a time, which is quadratic.
-    A 200k-char minified config took seconds. The bound leaves a ~100x margin
-    here, so this fails on a genuine regression and not on a slow machine.
+    It is an unanchored sub, so it retries from every position on the line;
+    unbounded, each attempt consumes the rest of the line looking for "://"
+    before failing, which is quadratic. A 200k-char minified config took 64
+    seconds. (_ASSIGN_RE is anchored and stays linear either way -- measured --
+    so its bound is cheap insurance, not what this test protects.) The margin
+    here is ~100x, so it fails on a genuine regression and not a slow machine.
     """
     import time
     line = "s" * 200_000
@@ -204,13 +251,21 @@ def test_sdk_imports_report_zero_outside_a_git_checkout(tmp_path):
     find, which is what separates the two cases; tmp_path is not a git
     checkout, so the count is zero anyway. Inherited from the port source and
     deliberately not fixed here.
+
+    The assertion is on the MISSING SIGNAL, not on the count. Fixing q2r.15
+    means making a non-git target distinguishable, and the natural fix -- say
+    so while still reporting no lines -- leaves sdk_lines at zero. So this
+    asserts that nothing in stats tells the two apart, which is what the bead
+    actually complains about, and it flips the moment that is addressed.
     """
     repo = _repo(tmp_path, {
         "docker-compose.yml": "services: {}\n",
         "src/pay.ts": "import Stripe from 'stripe';\n",
     })
-    _bundle, stats = ac.build_bundle(repo)
+    bundle, stats = ac.build_bundle(repo)
     assert stats["sdk_lines"] == 0
+    assert not any("git" in k or "avail" in k or "error" in k for k in stats), stats
+    assert "SDK IMPORT LINES" not in bundle
 
 
 def test_build_bundle_overlays_the_four_sources_and_counts_them(tmp_path):

@@ -1,6 +1,6 @@
 # Agent Instructions
 
-Crack runs three PocketFlow analyses: a multi-chapter tour, a server-side backend flow analysis, a multi-service architecture map, an API surface guide, and a data-model tour. See `CLAUDE.md` for build/test commands, architecture, and project conventions -- read it before making changes.
+Crack runs five PocketFlow analyses: a multi-chapter tour, a server-side backend flow analysis, a multi-service architecture map, an API surface guide, and a data-model tour. See `CLAUDE.md` for build/test commands, architecture, and project conventions -- read it before making changes.
 
 This project uses **bd** (beads) for issue tracking; see the managed Beads sections below for commands and workflow. Run `bd prime` for full workflow context.
 
@@ -61,7 +61,7 @@ BuildBundle -> Inventory -> TechStack -> TraceRequest -> OverviewNode
 ```
 
 - `src/crack/analyses/architecture/arch_crawl.py` overlays four sources into one bundle: process declarations (compose, k8s, `Procfile`, platform config), env var names from `.env` files, with credential values redacted out of every other source by `_redact` (coderay-q2r.14, the one deliberate divergence from the port source in that module), the union of `package.json` dependencies, and Terraform, plus SDK import lines from `git grep` as proof a connection is live.
-- Inventory runs first and its numbered node list is reused by TechStack and TraceRequest, so all three passes name the same graph.
+- Inventory runs first among the LLM passes, and its numbered node list is reused by TechStack and TraceRequest, so all three name the same graph.
 - Renders three views: every node banded run/rent/call/client, the technology behind each label, and one request traced hop by hop.
 
 **Interfaces** (five sequential nodes: four in `src/crack/analyses/interfaces/nodes.py` plus the shared `OverviewNode`, wired in `build_flow()` in `src/crack/analyses/interfaces/__init__.py`):
@@ -71,8 +71,8 @@ FindRoutes -> ApiMenu -> TraceActions -> EndpointSequence -> OverviewNode
 ```
 
 - `src/crack/analyses/interfaces/routes_find.py` finds entry-point files by framework convention and concatenates them, aggregators first. `read_files` resolves LLM-picked source paths and refuses any that leave the repo (`_within`, coderay-q2r.16, the one deliberate divergence in that module).
-- The only four-section analysis, and the only one using the engine's `when_empty="omit"` (the tour) and a Section's own `prefix`/`cards` hooks (the sequence diagram and its card).
-- EndpointSequence makes two LLM calls: one picks the endpoint and its source files, one draws the diagram from them. The pick goes through `crack.core.yaml_call` (coderay-q2r.18, the second divergence in this analysis), so a malformed or empty reply retries with a varied tail instead of dropping straight to the fallback, and a transport error reaches the node's own `max_retries` instead of being swallowed.
+- The only analysis using the engine's `when_empty="omit"` (the tour) and a Section's own `prefix`/`cards` hooks (the sequence diagram and its card). Four sections, like schema.
+- EndpointSequence makes two LLM calls: one picks the endpoint and its source files, one draws the diagram from them. The pick goes through `crack.core.yaml_call` (coderay-q2r.18, one of three divergences in this analysis, with q2r.16 and q2r.17), so a malformed or empty reply retries with a varied tail instead of dropping straight to the fallback, and a transport error reaches the node's own `max_retries` instead of being swallowed.
 
 **Schema** (six sequential nodes: five in `src/crack/analyses/schema/nodes.py` plus the shared `OverviewNode`, wired in `build_flow()` in `src/crack/analyses/schema/__init__.py`):
 
@@ -81,8 +81,8 @@ FindSchema -> SchemaTour -> TraceFlows -> TableDeepDive -> MigrationActs -> Over
 ```
 
 - `src/crack/analyses/schema/schema_find.py` locates the schema by convention (Prisma, Rails, raw SQL, or concatenated `models.py`) and reads the migration directory with the most timestamped entries.
-- SchemaTour runs first: its ER diagram names the core tables the flows and deep-dive passes then reuse, filtered against the table names actually declared in the schema so an invented entity never reaches them.
-- The only analysis with a flag of its own (`--schema`), the only one that retitles the page from LLM output (`THEME.page_name`), and the only one using `when_empty="skip-note"`. TableDeepDive batches four tables per call, which is why its `ENV_DEFAULTS` is empty where the other card analyses raise `LLM_MAX_OUTPUT_TOKENS`.
+- SchemaTour runs first among the LLM passes: its ER diagram names the core tables the flows and deep-dive passes then reuse, filtered against the table names actually declared in the schema so an invented entity never reaches them.
+- The only card-family analysis with a flag of its own (`--schema`; tour has `--instructions` and `--dry-run`), the only one that retitles the page from LLM output (`THEME.page_name`), and the only one using `when_empty="skip-note"`. TableDeepDive batches four tables per call, which is why its `ENV_DEFAULTS` is empty where the other card analyses raise `LLM_MAX_OUTPUT_TOKENS`.
 
 ## Conventions & Patterns
 

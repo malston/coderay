@@ -88,4 +88,7 @@ def test_the_same_mermaid_build_carries_the_same_hash():
 
     card = sri(_card_html("backend"))
     tour = sri(tour_render.MERMAID_SCRIPT)
+    # Without this, deleting every integrity attribute leaves two empty sets
+    # and the comparison below passes.
+    assert card and tour, f"no mermaid integrity hash: card {card}, tour {tour}"
     assert card == tour, f"card engine {card} vs tour {tour}"

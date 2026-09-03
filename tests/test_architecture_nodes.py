@@ -22,11 +22,13 @@ def test_build_bundle_populates_the_codebase_and_the_stats(tmp_path):
 
 
 def test_build_bundle_refuses_a_repo_with_no_architecture_sources(tmp_path):
-    """The guard is live here, unlike backend's (coderay-q2r.8).
-
-    arch_crawl prepends no header, so an ordinary single-binary repo really
+    """arch_crawl prepends no header, so an ordinary single-binary repo really
     does produce an empty bundle and the assertion stops the run before it
     spends three LLM calls on nothing.
+
+    Backend's guard was dead for the opposite reason until coderay-q2r.8 was
+    fixed upstream and re-ported; both are live now, and
+    test_backend_nodes.py holds the other half of the pair.
     """
     repo = _repo(tmp_path, {"README.md": "# a single-binary tool\n"})
     with pytest.raises(AssertionError, match="No architecture sources found"):

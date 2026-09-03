@@ -147,9 +147,19 @@ def _pick_endpoint(menu, routes):
     replaces is the duplication CLAUDE.md names, which was a real cache/retry
     defect in a prior epic."""
     def normalize(data):
-        data = data or {}
+        # A list or a bare scalar is truthy, so `or {}` does not catch it and
+        # .get() would raise AttributeError -- which yaml_call does not catch
+        # and exec's `except AssertionError` does not either, killing the run
+        # instead of retrying and then falling back.
+        assert isinstance(data, dict), f"pick was {type(data).__name__}, not a mapping"
+        files = data.get("files") or []
+        # A scalar `files:` is a plausible reply for a single file, and iterating
+        # a string yields its characters. Those one-character "paths" then hit
+        # read_files' suffix matcher, which resolves them to arbitrary repo
+        # files, and the diagram is drawn from source unrelated to the endpoint.
+        assert isinstance(files, list), f"files was {type(files).__name__}, not a list"
         endpoint = str(data.get("endpoint", "")).strip()
-        paths = [str(p) for p in (data.get("files") or []) if p]
+        paths = [str(p) for p in files if p]
         assert endpoint or paths, "pick named neither an endpoint nor any files"
         return endpoint, paths
 

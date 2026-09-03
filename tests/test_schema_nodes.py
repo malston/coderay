@@ -189,3 +189,26 @@ def test_the_card_nodes_retry_a_reply_with_no_cards(monkeypatch, node_cls, key, 
                                   "table-deep-dive.md", "migration-acts.md"])
 def test_every_prompt_loads(name):
     assert n.load_prompt(name).strip()
+
+
+def test_migration_acts_retries_a_reply_with_no_act_cards(monkeypatch):
+    """coderay-q2r.23. This was the only LLM node in the three ports with no
+    assertion on its output.
+
+    Without it an empty reply flowed through to the renderer, which keys its
+    skip note on the section being empty and so announced the deliberate
+    too-few reason for a history that was not too few.
+    """
+    calls = []
+
+    def reply(prompt):
+        calls.append(prompt)
+        return "" if len(calls) < 3 else CARDS
+
+    monkeypatch.setattr(n, "call_llm", reply)
+    node = n.MigrationActs()
+    node.wait = 0
+    shared = {"migration_names": [f"0{i:03d}_change" for i in range(1, 7)]}
+    node.run(shared)
+    assert len(calls) == 3
+    assert shared["migration_md"] == CARDS.strip()

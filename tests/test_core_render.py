@@ -105,7 +105,7 @@ def test_mermaid_runs_at_security_level_strict():
     already decoded to the raw characters. securityLevel decides what happens
     next, and 'loose' does not sanitise. tour has always used 'strict' and the
     card engine now matches it. Deliberate divergence from the port source,
-    tracked as coderay-q2r.11 and reproduced by scripts/regen_golden.py.
+    was coderay-q2r.11, now closed and reproduced by scripts/regen_golden.py.
     """
     import pathlib as _p
 

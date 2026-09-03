@@ -291,3 +291,63 @@ def test_the_module_does_not_carry_its_own_yaml_parser():
     The duplicate was a real cache/retry defect once before.
     """
     assert not hasattr(n, "parse_yaml")
+
+
+@pytest.mark.parametrize("body,shape", [
+    ("- a\n- b", "list"),
+    ("just a bare string", "scalar"),
+    ("42", "number"),
+])
+def test_a_pick_that_is_not_a_mapping_retries_and_then_falls_back(
+        tmp_path, monkeypatch, body, shape):
+    """Well-formed YAML of the wrong shape must not kill the run.
+
+    `data or {}` guards None but not shape: a list is truthy, so .get() raised
+    AttributeError, which yaml_call does not catch and exec's `except
+    AssertionError` did not either. PocketFlow then re-raised it and the whole
+    interfaces run died on a bad endpoint pick that the fallback exists to
+    absorb. The diagram call below succeeds, so a surviving crash can only come
+    from the pick.
+    """
+    repo = _repo(tmp_path, {"pages/api/book.ts": "export default book\n"})
+
+    def reply(prompt):
+        if "sequence diagram" in prompt:
+            return f"```yaml\n{body}\n```"
+        return "```mermaid\nsequenceDiagram\n  a->>b: hi\n```"
+
+    _fake_llm(monkeypatch, reply)
+    shared = {"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "",
+              "route_files": ["pages/api/book.ts"]}
+    _sequence_node().run(shared)
+    assert "sequenceDiagram" in shared["sequence_md"]
+    assert shared["sequence_files"] == ["pages/api/book.ts"]
+
+
+def test_a_scalar_files_reply_is_rejected_rather_than_iterated_per_character(
+        tmp_path, monkeypatch):
+    """`files: path/to/one.ts` is a plausible reply, and iterating a string
+    yields its characters.
+
+    Those one-character paths reach read_files' suffix matcher, which resolves
+    each against the repo index -- "s" matches the first file ending in s -- so
+    the diagram gets drawn from files unrelated to the endpoint, with a card
+    header naming the endpoint and a stdout line reporting a plausible file
+    count. `decoy.ts` below is what a per-character read would pull in; the
+    fallback picks the largest pages/api handler instead.
+    """
+    repo = _repo(tmp_path, {"pages/api/aaa.ts": "small\n",
+                            "pages/api/zzz.ts": "much longer handler\n" * 20,
+                            "decoy.ts": "unrelated\n"})
+
+    def reply(prompt):
+        if "sequence diagram" in prompt:
+            return '```yaml\nendpoint: "POST /x"\nfiles: src/pages/api/checkout.ts\n```'
+        return "```mermaid\nsequenceDiagram\n  a->>b: hi\n```"
+
+    _fake_llm(monkeypatch, reply)
+    shared = {"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "",
+              "route_files": ["pages/api/aaa.ts", "pages/api/zzz.ts"]}
+    _sequence_node().run(shared)
+    assert shared["sequence_files"] == ["pages/api/zzz.ts"]
+    assert "decoy.ts" not in shared["sequence_files"]

@@ -22,6 +22,12 @@ from . import schema_find as sf
 
 PROMPTS_DIR = resources.files("crack.analyses.schema") / "prompts"
 
+# Below this many migrations MigrationActs skips its LLM call rather than
+# inviting the model to invent a roadmap. The section's skip note reads it
+# too, so the note can tell that deliberate skip apart from a pass that ran
+# and produced nothing (coderay-q2r.23).
+MIGRATION_FLOOR = 4
+
 
 def load_prompt(name):
     return read_prompt(PROMPTS_DIR, name)
@@ -192,13 +198,18 @@ class MigrationActs(Node):
         return shared["migration_names"]
 
     def exec(self, migration_names):
-        if len(migration_names) < 4:
+        if len(migration_names) < MIGRATION_FLOOR:
             # Too few (or squashed) to reconstruct a roadmap — §7.6 says don't
             # ask the LLM to hallucinate one.
             return None
         prompt = fill(load_prompt("migration-acts.md"),
                       migration_names="\n".join(migration_names))
-        return call_llm(prompt).strip()
+        md = call_llm(prompt).strip()
+        # The other three LLM nodes assert this; without it an empty reply
+        # renders the deliberate too-few note and states a false reason
+        # (coderay-q2r.23).
+        assert "###" in md, "migration-acts produced no `###` act cards"
+        return md
 
     def post(self, shared, prep_res, exec_res):
         shared["migration_md"] = exec_res

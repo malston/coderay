@@ -119,7 +119,12 @@ def test_find_migrations_ignores_files_with_no_timestamp(tmp_path):
 
 def test_find_migrations_picks_the_directory_with_the_most_entries(tmp_path):
     """A repo can hold several migration directories; the real history is the
-    biggest. The decoy sorts first, so taking the first one found is wrong.
+    biggest.
+
+    find_migrations compares counts, so what this pins is that it compares at
+    all: the decoy holds one entry and the real history three. Traversal order
+    is not the discriminator -- os.walk gives no ordering guarantee, so a test
+    resting on it would be pinning the filesystem, not the code.
     """
     repo = _repo(tmp_path, {
         "aaa/migrations/0001_initial.py": "x\n",
