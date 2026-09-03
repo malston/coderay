@@ -21,10 +21,11 @@ GOLDEN = pathlib.Path(__file__).parent / "fixtures" / "golden"
 DIAGRAM_KEY = {"backend": "pipeline_diagram", "architecture": "arch_diagram",
                "interfaces": "sequence_md", "schema": "erd"}
 
-# git-history builds its page from structured data rather than markdown blobs
-# and carries no single diagram key, so it joins the byte-for-byte checks but
-# not the diagram-payload ones.
-GOLDEN_ANALYSES = sorted(DIAGRAM_KEY) + ["git-history"]
+# git-history and product-intent build their pages from structured data rather
+# than markdown blobs and carry no top-level diagram key, so they join the
+# byte-for-byte checks but not the diagram-payload ones; each has its own
+# payload guard and live escape test below.
+GOLDEN_ANALYSES = sorted(DIAGRAM_KEY) + ["git-history", "product-intent"]
 DIAGRAM_ANALYSES = sorted(DIAGRAM_KEY)
 
 @pytest.mark.parametrize("name", GOLDEN_ANALYSES)
@@ -167,3 +168,44 @@ def test_git_history_render_survives_a_skipped_era_and_a_grave_outside_every_era
     assert "ERA 3</div>\n          <div class=\"card-name\">Going multi-tenant" in html
     assert "### Era 3: Going multi-tenant" in md
     assert "Ghost era" in html and "Ghost era" in md          # still listed among the eras
+
+
+def test_the_product_intent_fixture_still_carries_its_payload():
+    """Fixture guard, not escaping coverage. Payloads sit in a competitor name
+    and a dimension name (_esc), the pain and variant prose (md), and the
+    positioning diagram (_html.escape)."""
+    d = GOLDEN / "product-intent"
+    shared = json.loads((d / "shared.json").read_text(encoding="utf-8"))
+    assert any("<script>" in c["name"] for c in shared["positioning"]["competitors"])
+    assert any("<script>" in dim["name"] for dim in shared["positioning"]["dimensions"])
+    assert "</pre><script>" in shared["positioning"]["diagram"]
+    assert "<script>" in shared["pain"]
+    html = (d / "index.html").read_text(encoding="utf-8")
+    assert "<script>alert" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "&lt;/pre&gt;&lt;script&gt;" in html
+
+
+def test_product_intent_render_escapes_every_slot_it_is_handed():
+    """Live re-render through the bespoke renderer's own _esc, md, md_block
+    and the diagram escape."""
+    d = GOLDEN / "product-intent"
+    shared = json.loads((d / "shared.json").read_text(encoding="utf-8"))
+    payload = "</pre><script>alert(1)</script>"
+    shared["pain"] = shared["variant"] = payload
+    pos = shared["positioning"]
+    pos["competitors"][0]["name"] = payload
+    pos["competitors"][0]["cells"][0] = {"verdict": payload, "detail": payload}
+    pos["dimensions"][0] = {"name": payload, "definition": payload}
+    pos["sacrifices"] = [payload]
+    pos["gains"] = [payload]
+    pos["why_incumbents_cannot_copy"] = payload
+    pos["diagram"] = payload
+    shared["surprises"]["present"][0] = {"headline": payload, "where": payload, "bet": payload}
+    shared["surprises"]["absent"][0] = {"headline": payload, "evidence": payload, "tradeoff": payload}
+    html = render.render_html(ANALYSES["product-intent"], payload, shared)
+    body = html.split("</head>", 1)[1]
+    assert "<script>" not in body
+    assert "</pre><script>" not in html
+    assert "&lt;/pre&gt;&lt;script&gt;" in body
+    render.render_markdown(ANALYSES["product-intent"], payload, shared)  # must not raise

@@ -79,42 +79,26 @@ CARD_DIVERGENCES = [
 
 # The bespoke renderers ship their own copy of the CDN loading and mermaid
 # config, so the same two fixes have to be re-applied there (coderay-q2r.11 for
-# securityLevel, coderay-q2r.19 for pinning and SRI).
-_SRI = [
-    ('<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/'
-     'cdn-release@11.9.0/build/styles/github-dark.min.css">',
-     '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/'
-     'cdn-release@11.9.0/build/styles/github-dark.min.css"\n'
-     '  integrity="sha384-wH75j6z1lH97ZOpMOInqhgKzFkAInZPPSPlZpYKYTOqsaizPvhQZmAtLcPKXpLyH" '
-     'crossorigin="anonymous">'),
-    ('<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/'
-     'build/highlight.min.js"></script>',
-     '<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/'
-     'build/highlight.min.js"\n'
-     '  integrity="sha384-F/bZzf7p3Joyp5psL90p/p89AZJsndkSoGwRpXcZhleCWhd8SnRuoYo4d0yirjJp" '
-     'crossorigin="anonymous"></script>'),
-    ('<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>',
-     '<script src="https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js"\n'
-     '  integrity="sha384-EOXBFmc3gx5mb+vn0vPvvGqACToJD24hhacX5Yx+8NUUQrHIle/Qi5Bg9o3zKwW2" '
-     'crossorigin="anonymous"></script>'),
-]
+# securityLevel, coderay-q2r.19 for pinning and SRI). Keyed by analysis because
+# each loads a different set of scripts: git-history has highlight.js as well,
+# product-intent only mermaid. crack.core.render defers to their render_html,
+# so regen reaches them unchanged; only the divergence set differs.
+_HLJS_CSS, _HLJS_JS, _MERMAID = CARD_DIVERGENCES[1], CARD_DIVERGENCES[2], CARD_DIVERGENCES[3]
+_STRICT = (
+    "  if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: 'neutral', "
+    "securityLevel: 'loose' });",
+    "  // 'strict' sanitises LLM-authored diagram labels; see coderay-q2r.11.\n"
+    "  if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: 'neutral', "
+    "securityLevel: 'strict' });")
 
-BESPOKE_DIVERGENCES = _SRI + [
-    ("  if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: 'neutral', "
-     "securityLevel: 'loose' });",
-     "  // 'strict' sanitises LLM-authored diagram labels; see coderay-q2r.11.\n"
-     "  if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: 'neutral', "
-     "securityLevel: 'strict' });"),
-]
-
-# Analyses whose page is built by their own render_html rather than the card
-# engine. crack.core.render defers to them, so regen reaches them unchanged;
-# only the divergence set differs.
-BESPOKE = {"git-history", "product-intent"}
+BESPOKE_DIVERGENCES = {
+    "git-history": [_HLJS_CSS, _HLJS_JS, _MERMAID, _STRICT],
+    "product-intent": [_MERMAID, _STRICT],
+}
 
 
 def divergences_for(analysis_name):
-    return BESPOKE_DIVERGENCES if analysis_name in BESPOKE else CARD_DIVERGENCES
+    return BESPOKE_DIVERGENCES.get(analysis_name, CARD_DIVERGENCES)
 
 
 def _apply_divergences(html, divergences):

@@ -1,6 +1,6 @@
 # Agent Instructions
 
-Crack runs six PocketFlow analyses: a multi-chapter tour, a server-side backend flow analysis, a multi-service architecture map, an API surface guide, a data-model tour, and a git-history story. See `CLAUDE.md` for build/test commands, architecture, and project conventions -- read it before making changes.
+Crack runs seven PocketFlow analyses: a multi-chapter tour, a server-side backend flow analysis, a multi-service architecture map, an API surface guide, a data-model tour, a git-history story, and a product-intent brief. See `CLAUDE.md` for build/test commands, architecture, and project conventions -- read it before making changes.
 
 This project uses **bd** (beads) for issue tracking; see the managed Beads sections below for commands and workflow. Run `bd prime` for full workflow context.
 
@@ -32,7 +32,7 @@ cp -rf source dest          # NOT: cp -r source dest
 
 ## Architecture Overview
 
-Crack dispatches to six analyses, each a PocketFlow pipeline:
+Crack dispatches to seven analyses, each a PocketFlow pipeline:
 
 **Tour** (five sequential nodes, `src/crack/analyses/tour/nodes.py`, wired in `src/crack/analyses/tour/flow.py`):
 
@@ -90,7 +90,7 @@ FindSchema -> SchemaTour -> TraceFlows -> TableDeepDive -> MigrationActs -> Over
 FetchHistory -> NameEras -> ProfileEras -> Graveyard -> OverviewNode
 ```
 
-- The one bespoke-renderer analysis so far (product-intent will be the second): it declares its own `render_html`/`render_markdown` and `crack/core/render.py` defers to them, so it has no `SECTIONS` or `THEME`. `scripts/regen_golden.py` still reaches it through that delegation, but its divergence set is separate (`BESPOKE_DIVERGENCES`) because its mermaid line does not carry the card engine's `flowchart` option.
+- The first of the two bespoke-renderer analyses (product-intent is the other): it declares its own `render_html`/`render_markdown` and `crack/core/render.py` defers to them, so it has no `SECTIONS` or `THEME`. `scripts/regen_golden.py` still reaches it through that delegation, but the bespoke divergence sets are per-analysis (`BESPOKE_DIVERGENCES`, keyed by name) because their mermaid line does not carry the card engine's `flowchart` option and they load different scripts.
 - `src/crack/analyses/git_history/gitlog.py` is the only module that reads commit history from `git` (the architecture crawler shells out to `git grep` for SDK imports). Its seams: `redact_secret_files` strips credential-bearing file bodies from every diff before it reaches a prompt, keeping the path and the `--stat` entry, and recognises every header form `git show` emits, quoted paths and merge `diff --cc` included (coderay-q2r.34, q2r.36); the log record separator is NUL, which git refuses in a message, every record head is validated whole before parsing, and `show_diff` peels its argument to a commit behind `--end-of-options`, because the old 0x1e separator was legal inside a subject and let a hostile commit forge a record whose hash was `--output=<path>` (an arbitrary file write) or a raw blob (q2r.35); `repo_root` refuses a subdirectory, since `git -C` walks up to the enclosing repo, and `FetchHistory` warns on a shallow clone (q2r.38).
 - `NameEras` and `ProfileEras` parse JSON through `crack.core.json_call`; `Graveyard` calls `call_llm` directly because its output is prose.
 

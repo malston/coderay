@@ -1,0 +1,89 @@
+{
+  "repo_path": "/tmp/toy_repo",
+  "codebase": "(omitted)",
+  "pain": "You're debugging why signups dropped, but the numbers live in three tabs. Your real competitor is Alt-Tab. <script>alert(1)</script>",
+  "variant": "It's Google Analytics, but every chart is a saved SQL query you can read. <b onmouseover=alert(1)>hover</b>",
+  "positioning": {
+    "competitors": [
+      {
+        "name": "toy_repo",
+        "cells": [
+          {
+            "verdict": "Yes",
+            "detail": "Charts are SQL you can open."
+          },
+          {
+            "verdict": "Open",
+            "detail": "MIT, single binary."
+          },
+          {
+            "verdict": "One file",
+            "detail": "A SQLite database on your laptop."
+          }
+        ]
+      },
+      {
+        "name": "Mixpanel <script>alert(1)</script>",
+        "cells": [
+          {
+            "verdict": "No",
+            "detail": "Charts are a proprietary query builder."
+          },
+          {
+            "verdict": "Closed",
+            "detail": "SaaS only."
+          },
+          {
+            "verdict": "Whole service",
+            "detail": "Their warehouse, their schema."
+          }
+        ]
+      }
+    ],
+    "dimensions": [
+      {
+        "name": "Readable queries",
+        "definition": "Can a user see the SQL behind a chart?"
+      },
+      {
+        "name": "Source <script>alert(1)</script>",
+        "definition": "Is the code public?"
+      },
+      {
+        "name": "Where data lives",
+        "definition": "Whose disk holds the events?"
+      }
+    ],
+    "sacrifices": [
+      "No hosted version.",
+      "No real-time dashboards."
+    ],
+    "gains": [
+      "Every number is auditable.",
+      "Works on a plane."
+    ],
+    "why_incumbents_cannot_copy": "A hosted analytics vendor sells the warehouse. Shipping a local file would give away the thing they bill for.\n\nTheir sales motion depends on seat counts, and a single file has no seats.",
+    "diagram": "flowchart LR\n  A[\"Local file\"] --> B[\"No warehouse bill\"]\n  B --> C[\"</pre><script>alert(1)</script>\"]"
+  },
+  "surprises": {
+    "present": [
+      {
+        "headline": "A query planner explainer",
+        "where": "src/explain.py",
+        "bet": "The product is betting that users want to understand their numbers, not just see them."
+      },
+      {
+        "headline": "Offline-first sync",
+        "where": "src/sync/",
+        "bet": "Analysts work on planes more than vendors think."
+      }
+    ],
+    "absent": [
+      {
+        "headline": "No user accounts",
+        "evidence": "no users table, no session middleware, no login route",
+        "tradeoff": "Stays a personal tool. Risk: a team cannot share a dashboard without sharing the file."
+      }
+    ]
+  }
+}

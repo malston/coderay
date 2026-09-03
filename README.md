@@ -4,7 +4,7 @@ Crack runs analyses on a codebase and generates written overviews: multi-chapter
 
 ## What this ships
 
-Six analyses, each implemented as a [PocketFlow](https://github.com/The-Pocket/PocketFlow) workflow:
+Seven analyses, each implemented as a [PocketFlow](https://github.com/The-Pocket/PocketFlow) workflow:
 
 ### Tour
 
@@ -66,11 +66,22 @@ A five-stage pipeline (FetchHistory, NameEras, ProfileEras, Graveyard, OverviewN
 - Builds its page from structured data rather than markdown blobs, so it ships its own renderer instead of the shared card engine.
 - Needs a git checkout. Pointed at a directory that is not one, `git log` fails and the run stops with git's own message.
 
+### Product intent
+
+A five-stage pipeline (FetchRepo, PainScene, VariantSentence, CompetitivePositioning, SurprisesAndAbsences) that reverse-engineers the product story from the source:
+
+- Writes the pain scene a user is in before the product exists, and the one-sentence "It's X, but Y" variant that passes the reproduce-it test.
+- Positions the product against its real competitors in a side-by-side table, with what it gives up, what it gets, and why incumbents cannot copy the move.
+- Lists what is surprisingly present in the code and what is missing on purpose, each read as a bet.
+- `--include` and `--exclude` take `.gitignore`-style patterns to narrow the crawl. The crawl keeps whole files until a fixed budget is spent and says how many it dropped.
+- Ships its own renderer, like git-history. Text-only: the port source's generated illustration is not included.
+
 ### A note on what leaves your machine
 
 Every analysis sends repository content to an LLM provider. Three rules hold across all of them:
 
 - Files discovered by the crawl are read only if they resolve inside the target repository, so a checked-in symlink pointing at `~/.aws/credentials` is refused rather than read.
+- `product-intent` sends a budgeted bundle of whole source files to the model, the same property as the tour; the crawler's skip list applies, so credential-bearing files are never read.
 - `git-history` sends commit diffs to the model. The body of a credential-bearing file (`.env*`, `*.pem`, `terraform.tfvars` and the rest of the crawler's skip list) is stripped from those diffs first, while its path and the `--stat` line stay, since a secret being deleted is itself worth reporting.
 - The `architecture` bundle strips credential values by key name, by position in a connection string, from Kubernetes `name`/`value` env pairs, and from every value in a Kubernetes `Secret`. This is a redactor, not a secret scanner: a credential under an unguessable key name in a file that is not a `Secret` can still get through.
 - `crack schema --schema <path>` is exempt from the containment rule, because that path is yours rather than the repository's.
@@ -93,6 +104,8 @@ crack interfaces path/to/repo  # API surface and endpoint sequence
 crack schema path/to/repo     # data model and migration history
 # OR
 crack git-history path/to/repo  # the product story in the commit log
+# OR
+crack product-intent path/to/repo  # the product story in the source
 ```
 
 If a **tour** run fails partway through (a bad LLM response after retries, a network error), the files, abstractions, and chapters completed so far are written to `run_state.json` in the target output directory, so you can see how far it got without rerunning the whole pipeline. The other analyses do not do this: a failed run leaves an empty output directory.

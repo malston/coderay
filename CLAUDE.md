@@ -76,7 +76,7 @@ CI runs `pytest` on every push/PR via `.github/workflows/tests.yml`. To cut a re
 
 ## Architecture Overview
 
-Crack dispatches to six analyses, each a PocketFlow pipeline:
+Crack dispatches to seven analyses, each a PocketFlow pipeline:
 
 **Tour** (five sequential nodes, `src/crack/analyses/tour/nodes.py`, wired in `src/crack/analyses/tour/flow.py`):
 
@@ -134,9 +134,19 @@ FindSchema -> SchemaTour -> TraceFlows -> TableDeepDive -> MigrationActs -> Over
 FetchHistory -> NameEras -> ProfileEras -> Graveyard -> OverviewNode
 ```
 
-- The one bespoke-renderer analysis so far (product-intent will be the second): it declares its own `render_html`/`render_markdown` and `crack/core/render.py` defers to them, so it has no `SECTIONS` or `THEME`. `scripts/regen_golden.py` still reaches it through that delegation, but its divergence set is separate (`BESPOKE_DIVERGENCES`) because its mermaid line does not carry the card engine's `flowchart` option.
+- The first of the two bespoke-renderer analyses (product-intent is the other): it declares its own `render_html`/`render_markdown` and `crack/core/render.py` defers to them, so it has no `SECTIONS` or `THEME`. `scripts/regen_golden.py` still reaches it through that delegation, but the bespoke divergence sets are per-analysis (`BESPOKE_DIVERGENCES`, keyed by name) because their mermaid line does not carry the card engine's `flowchart` option and they load different scripts.
 - `src/crack/analyses/git_history/gitlog.py` is the only module that reads commit history from `git` (the architecture crawler shells out to `git grep` for SDK imports). Its seams: `redact_secret_files` strips credential-bearing file bodies from every diff before it reaches a prompt, keeping the path and the `--stat` entry, and recognises every header form `git show` emits, quoted paths and merge `diff --cc` included (coderay-q2r.34, q2r.36); the log record separator is NUL, which git refuses in a message, every record head is validated whole before parsing, and `show_diff` peels its argument to a commit behind `--end-of-options`, because the old 0x1e separator was legal inside a subject and let a hostile commit forge a record whose hash was `--output=<path>` (an arbitrary file write) or a raw blob (q2r.35); `repo_root` refuses a subdirectory, since `git -C` walks up to the enclosing repo, and `FetchHistory` warns on a shallow clone (q2r.38).
 - `NameEras` and `ProfileEras` parse JSON through `crack.core.json_call`; `Graveyard` calls `call_llm` directly because its output is prose.
+
+**Product intent** (five sequential nodes in `src/crack/analyses/product_intent/nodes.py`, wired in `build_flow()` in `src/crack/analyses/product_intent/__init__.py`; no `OverviewNode`):
+
+```text
+FetchRepo -> PainScene -> VariantSentence -> CompetitivePositioning -> SurprisesAndAbsences
+```
+
+- The second bespoke-renderer analysis, and the only one with no shared overview: it renders four independent extractions (the pain scene, the one-sentence variant, a competitive positioning table with a mermaid diagram, and the surprises-and-absences lists) with its own `render_html`/`render_markdown`.
+- `FetchRepo` reads the repo through `bundle()`, which keeps whole files in `list_files` order until a 650k-char budget is spent and reports how many it dropped (coderay-q2r.47; the port source concatenated everything with no cap). `--include`/`--exclude` are `.gitignore`-style patterns passed to `list_files`. An empty bundle stops the run before any LLM call.
+- Ported text-only: the port source's `IllustratePain` node (a Gemini image of the pain scene written beside the report) is not included, so shared core carries no image provider and `init_shared` needs no `out_dir`. `CompetitivePositioning.normalize` also requires every competitor to carry a `name` (coderay-q2r.48).
 
 Full architecture rationale and past review findings: `.full-review/*.md` (a comprehensive code review that produced the fixes now on `main`).
 
