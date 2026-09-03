@@ -175,3 +175,14 @@ def test_find_schema_keeps_whole_model_files_and_drops_the_tail(tmp_path):
     assert found["kind"] == "models"
     assert "of 5 found" in found["path"]
     assert "# ===== TRUNCATED" not in found["text"]   # whole files, fewer of them
+
+
+def test_find_schema_refuses_a_schema_symlinked_to_an_in_repo_credential_file(tmp_path):
+    """coderay-q2r.56. `db/schema.rb -> ../.env` resolves inside the repo, so
+    within_repo alone let the .env body into every deep-dive batch."""
+    import os
+    repo = _repo(tmp_path / "repo", {"README.md": "# hi\n", ".env": "TOKEN=hunter2\n"})
+    os.makedirs(os.path.join(repo, "db"), exist_ok=True)
+    os.symlink(os.path.join(repo, ".env"), os.path.join(repo, "db", "schema.rb"))
+
+    assert "hunter2" not in sf.find_schema(repo)["text"]

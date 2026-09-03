@@ -463,3 +463,16 @@ def test_build_bundle_refuses_a_config_file_symlinked_out_of_the_repo(tmp_path):
 
     bundle, _stats = ac.build_bundle(repo)
     assert "OUTSIDE-SECRET-CONTENT" not in bundle
+
+
+def test_build_bundle_refuses_a_config_file_symlinked_to_an_in_repo_credential_file(tmp_path):
+    """coderay-q2r.56. `docker-compose.yml -> ../id_rsa` resolves inside the
+    repo, so within_repo let the key body through. A bare key line has no
+    `key=value` shape, so _redact cannot catch it either; only refusing the
+    read does."""
+    repo = _repo(tmp_path / "repo", {"README.md": "# hi\n",
+                                     "id_rsa": "BEGIN-HUNTER2-PRIVATE-KEY\n"})
+    os.symlink(os.path.join(repo, "id_rsa"), os.path.join(repo, "docker-compose.yml"))
+
+    bundle, _stats = ac.build_bundle(repo)
+    assert "HUNTER2" not in bundle

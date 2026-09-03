@@ -124,3 +124,20 @@ def test_list_files_accepts_an_uppercase_keep_ext_override(tmp_path):
     (tmp_path / "helpers.R").write_text("y <- 2\n")
     names = {os.path.basename(p) for p in list_files(str(tmp_path), keep_ext={".R"})}
     assert names == {"analysis.r", "helpers.R"}
+
+
+def test_readable_refuses_only_a_symlink_whose_target_is_credential_named(tmp_path):
+    """coderay-q2r.56. The crawlers that pick files by their own name still
+    read a real .env on purpose (architecture, for variable names), so the
+    target-name check applies to symlinks alone."""
+    from crack.core import readable
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    (repo / ".env").write_text("SECRET=1\n")
+    (repo / "src" / "real.py").write_text("x = 1\n")
+    (repo / "src" / "config.py").symlink_to(repo / ".env")
+    (repo / "src" / "alias.py").symlink_to(repo / "src" / "real.py")
+
+    assert readable(repo, repo / ".env")                    # a real credential file, read on purpose
+    assert readable(repo, repo / "src" / "alias.py")        # a legitimate in-repo symlink
+    assert not readable(repo, repo / "src" / "config.py")   # a symlink that renames one

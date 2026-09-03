@@ -150,3 +150,31 @@ def test_crawl_routes_refuses_a_route_file_symlinked_out_of_the_repo(tmp_path):
     assert "OUTSIDE-SECRET-CONTENT" not in routes
     assert "app/urls.py" in files          # still discovered, deliberately unread
     assert kept == ["config/routes.rb"]
+
+
+def test_crawl_routes_refuses_a_route_file_symlinked_to_an_in_repo_credential_file(tmp_path):
+    """coderay-q2r.56. within_repo follows the link and finds the target inside
+    the repo, so `app/urls.py -> ../.env` passed and the .env body reached the
+    prompt. The target's own name has to pass the credential skip too, the way
+    list_files already demands (coderay-q2r.52)."""
+    repo = _repo(tmp_path / "repo", {"config/routes.rb": "Rails.routes\n",
+                                     ".env": "TOKEN=hunter2\n"})
+    os.makedirs(os.path.join(repo, "app"), exist_ok=True)
+    os.symlink(os.path.join(repo, ".env"), os.path.join(repo, "app", "urls.py"))
+
+    routes, files, kept = rf.crawl_routes(repo)
+    assert "hunter2" not in routes
+    assert "app/urls.py" in files
+    assert kept == ["config/routes.rb"]
+
+
+def test_read_files_refuses_a_symlink_to_an_in_repo_credential_file(tmp_path):
+    """coderay-q2r.56. The model names a source-looking path; the repo made it a
+    symlink to its own .env."""
+    repo = _repo(tmp_path / "repo", {"pages/api/login.ts": "x\n", ".env": "TOKEN=hunter2\n"})
+    os.makedirs(os.path.join(repo, "src"), exist_ok=True)
+    os.symlink(os.path.join(repo, ".env"), os.path.join(repo, "src", "config.ts"))
+
+    text, resolved = rf.read_files(repo, ["src/config.ts"])
+    assert resolved == []
+    assert "hunter2" not in text

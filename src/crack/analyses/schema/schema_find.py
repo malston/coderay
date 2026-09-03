@@ -17,7 +17,7 @@ Everything here is plain filesystem walking; nothing calls an LLM.
 import os
 import re
 
-from crack.core import within_repo
+from crack.core import readable
 
 # Directories that never hold a schema (mirrors utils.crawl's skip set, minus
 # `migrations`, which we DO want to find).
@@ -49,8 +49,9 @@ def _walk(root):
 def _read(path, repo=None, limit=None):
     # The schema file may be a symlink out of the target repo, and it is
     # embedded in the tour prompt, the flows prompt and every deep-dive batch
-    # (coderay-q2r.28).
-    if repo is not None and not within_repo(repo, path):
+    # (coderay-q2r.28), and a symlink to an in-repo credential file is refused
+    # by its target name (coderay-q2r.56).
+    if repo is not None and not readable(repo, path):
         return ""
     try:
         text = open(path, encoding='utf-8', errors='replace').read()
