@@ -92,3 +92,21 @@ def test_the_same_mermaid_build_carries_the_same_hash():
     # and the comparison below passes.
     assert card and tour, f"no mermaid integrity hash: card {card}, tour {tour}"
     assert card == tour, f"card engine {card} vs tour {tour}"
+
+
+@pytest.mark.parametrize("label", sorted(_sources()))
+def test_every_renderer_initialises_mermaid_at_strict(label):
+    """coderay-q2r.11 was a P1: 'loose' does not sanitise, and every diagram
+    label on these pages is LLM-authored from the target repo's own files.
+
+    Mermaid reads the element's textContent, which the browser has already
+    decoded back to raw characters, so HTML escaping is undone before mermaid
+    sees it and securityLevel is what actually decides. Each renderer carries
+    its own copy of this line, so each needs checking -- the card engine's fix
+    did not reach the bespoke ones.
+    """
+    html = _sources()[label]
+    if "mermaid.initialize" not in html:
+        pytest.skip(f"{label} does not initialise mermaid")
+    assert "securityLevel: 'strict'" in html
+    assert "securityLevel: 'loose'" not in html

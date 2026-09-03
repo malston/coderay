@@ -21,7 +21,11 @@ GOLDEN = pathlib.Path(__file__).parent / "fixtures" / "golden"
 DIAGRAM_KEY = {"backend": "pipeline_diagram", "architecture": "arch_diagram",
                "interfaces": "sequence_md", "schema": "erd"}
 
-GOLDEN_ANALYSES = sorted(DIAGRAM_KEY)
+# git-history builds its page from structured data rather than markdown blobs
+# and carries no single diagram key, so it joins the byte-for-byte checks but
+# not the diagram-payload ones.
+GOLDEN_ANALYSES = sorted(DIAGRAM_KEY) + ["git-history"]
+DIAGRAM_ANALYSES = sorted(DIAGRAM_KEY)
 
 @pytest.mark.parametrize("name", GOLDEN_ANALYSES)
 def test_golden_html(name):
@@ -35,7 +39,7 @@ def test_golden_markdown(name):
     shared = json.loads((d / "shared.json").read_text(encoding="utf-8"))
     assert render.render_markdown(ANALYSES[name], "toy_repo", shared) == (d / "index.md").read_text(encoding="utf-8")
 
-@pytest.mark.parametrize("name", GOLDEN_ANALYSES)
+@pytest.mark.parametrize("name", DIAGRAM_ANALYSES)
 def test_the_golden_fixtures_still_carry_their_payload(name):
     """A fixture check, NOT escaping coverage: it reads the committed bytes, so
     no renderer change can fail it.
@@ -70,7 +74,7 @@ def test_the_golden_fixtures_still_carry_their_payload(name):
     assert "&lt;/pre&gt;&lt;script&gt;" in html
 
 
-@pytest.mark.parametrize("name", GOLDEN_ANALYSES)
+@pytest.mark.parametrize("name", DIAGRAM_ANALYSES)
 def test_render_escapes_the_diagram_it_is_handed(name):
     """The golden files are static; this re-renders to catch a live regression."""
     d = GOLDEN / name
@@ -80,7 +84,7 @@ def test_render_escapes_the_diagram_it_is_handed(name):
     assert "</pre><script>" not in html
 
 
-@pytest.mark.parametrize("name", GOLDEN_ANALYSES)
+@pytest.mark.parametrize("name", DIAGRAM_ANALYSES)
 def test_render_escapes_a_diagram_inside_a_card_body(name):
     """The golden fixture's mermaid payload sits above the first `###` header,
     so split_cards drops it before it ever reaches md_rich/_mermaidize (see

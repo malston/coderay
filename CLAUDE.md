@@ -76,7 +76,7 @@ CI runs `pytest` on every push/PR via `.github/workflows/tests.yml`. To cut a re
 
 ## Architecture Overview
 
-Crack dispatches to five analyses, each a PocketFlow pipeline:
+Crack dispatches to six analyses, each a PocketFlow pipeline:
 
 **Tour** (five sequential nodes, `src/crack/analyses/tour/nodes.py`, wired in `src/crack/analyses/tour/flow.py`):
 
@@ -128,12 +128,22 @@ FindSchema -> SchemaTour -> TraceFlows -> TableDeepDive -> MigrationActs -> Over
 - SchemaTour runs first among the LLM passes: its ER diagram names the core tables the flows and deep-dive passes then reuse, filtered against the table names actually declared in the schema so an invented entity never reaches them.
 - The only card-family analysis with a flag of its own (`--schema`; tour has `--instructions` and `--dry-run`), the only one that retitles the page from LLM output (`THEME.page_name`), and the only one using `when_empty="skip-note"`. TableDeepDive batches four tables per call, which is why its `ENV_DEFAULTS` is empty where the other card analyses raise `LLM_MAX_OUTPUT_TOKENS`.
 
+**Git history** (five sequential nodes: four in `src/crack/analyses/git_history/nodes.py` plus the shared `OverviewNode`, wired in `build_flow()` in `src/crack/analyses/git_history/__init__.py`):
+
+```text
+FetchHistory -> NameEras -> ProfileEras -> Graveyard -> OverviewNode
+```
+
+- The first of the two bespoke-renderer analyses: it declares its own `render_html`/`render_markdown` and `crack/core/render.py` defers to them, so it has no `SECTIONS` or `THEME`. `scripts/regen_golden.py` still reaches it through that delegation, but its divergence set is separate (`BESPOKE_DIVERGENCES`) because its mermaid line does not carry the card engine's `flowchart` option.
+- `src/crack/analyses/git_history/gitlog.py` is the only module that shells out to `git`. `redact_secret_files` strips credential-bearing file bodies from every diff before it reaches a prompt (coderay-q2r.34, the one deliberate divergence in that module), keeping the path and the `--stat` entry.
+- `NameEras` and `ProfileEras` parse JSON through `crack.core.json_call`; `Graveyard` calls `call_llm` directly because its output is prose.
+
 Full architecture rationale and past review findings: `.full-review/*.md` (a comprehensive code review that produced the fixes now on `main`).
 
 ## Conventions & Patterns
 
 - Card-family analyses (`backend`, `architecture`, `interfaces` and `schema`) declare `SECTIONS` and `THEME` and are rendered by `crack/core/render.py`. An analysis whose page shape does not fit declares its own `render_html` and `render_markdown` instead, and `crack/core/render.py` steps aside for it. Tour uses neither path: it predates the contract and writes its own multi-file output directly from `run()`, via `write_index_md`, `write_index_html` and `write_chapter_files`.
 - Untrusted input (the target repo's own files, and anything the LLM echoes back from them) must be escaped before it reaches HTML/Mermaid output. This bit the project once (a confirmed stored-XSS bug); see `.full-review/02a-security.md` before touching rendering code.
-- LLM YAML parsing goes through `crack.core.yaml_call`, not a bespoke `parse_yaml`/`.format()` combo in pipeline nodes -- that duplication was a real bug (a cache/retry defect) fixed in a prior epic. Reuse `crack.core.yaml_call` and `crack.core.fill()` for new LLM-calling code.
+- LLM structured output goes through `crack.core.yaml_call` or `crack.core.json_call`, not a bespoke `parse_yaml`/`parse_json`/`.format()` combo in pipeline nodes -- that duplication was a real bug (a cache/retry defect) fixed in a prior epic. Reuse those and `crack.core.fill()` for new LLM-calling code. Both share one `_REPLY_ERRORS` tuple that includes `TypeError`/`AttributeError`, because `normalize()` is handed whatever the model returned and a wrong-shaped reply used to escape every retry (coderay-q2r.33).
 - Any file-content budget (`preview_budget`, `codebase_budget`) must be enforced by capping _how many files_ are included, not by raising a per-file floor -- that inversion was the root cause of two Critical scalability bugs.
 - Tests live in `tests/`, run via plain `pytest`, no network/API key required -- LLM calls are faked at the `call_llm`/`yaml_call` boundary, not mocked deeper in the call stack.

@@ -2,6 +2,7 @@
 `{slots}`, pull a fenced ```yaml block, and retry a structured call when a
 flaky model drops a field or returns malformed YAML.
 """
+import json
 import re
 
 import yaml
@@ -40,12 +41,61 @@ def extract_mermaid(md, kind=None):
     return ""
 
 
+def parse_json(text):
+    """Decode the first JSON value in a reply. Starts after a ```json fence if
+    present, but uses raw_decode (not a closing-fence regex) so a nested code or
+    ```mermaid block inside a string value can't truncate the parse. Raises so a
+    bad reply retries."""
+    m = re.search(r"```json[ \t]*\n", text)
+    search = text[m.end():] if m else text
+    decoder = json.JSONDecoder()
+    for i, ch in enumerate(search):
+        if ch in "[{":
+            try:
+                obj, _ = decoder.raw_decode(search[i:])
+                return obj
+            except ValueError:
+                continue
+    raise AssertionError(f"No JSON found in LLM response. Got:\n{text[:500]}")
+
+
 def parse_yaml(text):
     """Extract and parse a ```yaml fenced block. Raises so a bad reply retries."""
     m = re.search(r"```yaml\s*\n(.*?)```", text, re.DOTALL)
     if not m:
         raise ValueError(f"LLM response missing ```yaml fence. Got:\n{text[:500]}")
     return yaml.safe_load(m.group(1))
+
+
+# What a bad REPLY can raise, as opposed to a broken transport. TypeError and
+# AttributeError are here because normalize() sees whatever the model returned:
+# `"name" in 42` raises TypeError and `[].get(...)` raises AttributeError, and
+# without them a wrong-shaped reply skips all four retries AND the caller's
+# fallback, killing the run. That was coderay-q2r.18, fixed then at the call
+# site; this is the root (coderay-q2r.33). Transport errors are deliberately
+# NOT here -- they belong to the node's own max_retries.
+_REPLY_ERRORS = (AssertionError, ValueError, KeyError, TypeError, AttributeError,
+                 yaml.YAMLError)
+
+
+def json_call(prompt, normalize, retries=4):
+    """Call the model, parse its JSON reply, and validate/normalize it.
+
+    The JSON twin of yaml_call: on a bad or incomplete reply -- a flaky model
+    drops a required field on a very large prompt -- retry with a changed tail,
+    which nudges the model to return the whole schema and dodges the response
+    cache so the retry is genuinely fresh. Network errors are NOT caught; they
+    bubble up to the node's own max_retries."""
+    last = None
+    for k in range(retries):
+        tail = "" if k == 0 else (
+            f"\n\nReturn COMPLETE JSON with every required top-level field. (retry {k})")
+        try:
+            return normalize(parse_json(call_llm(prompt + tail)))
+        except _REPLY_ERRORS as e:
+            print(f"  json_call attempt {k + 1}/{retries} failed: {e}")
+            last = e
+    raise AssertionError(f"json_call gave up after {retries} tries. Last error: {last}")
 
 
 def yaml_call(prompt, normalize, retries=4):
@@ -64,7 +114,7 @@ def yaml_call(prompt, normalize, retries=4):
             f"escape any double quote inside it as \\\". (retry {k})")
         try:
             return normalize(parse_yaml(call_llm(prompt + tail)))
-        except (AssertionError, yaml.YAMLError, ValueError, KeyError) as e:
+        except _REPLY_ERRORS as e:
             print(f"  yaml_call attempt {k + 1}/{retries} failed: {e}")
             last = e
     raise AssertionError(f"yaml_call gave up after {retries} tries. Last error: {last}")

@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>toy_repo: git history</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css"
+  integrity="sha384-wH75j6z1lH97ZOpMOInqhgKzFkAInZPPSPlZpYKYTOqsaizPvhQZmAtLcPKXpLyH" crossorigin="anonymous">
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"
+  integrity="sha384-F/bZzf7p3Joyp5psL90p/p89AZJsndkSoGwRpXcZhleCWhd8SnRuoYo4d0yirjJp" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js"
+  integrity="sha384-EOXBFmc3gx5mb+vn0vPvvGqACToJD24hhacX5Yx+8NUUQrHIle/Qi5Bg9o3zKwW2" crossorigin="anonymous"></script>
+<script>
+  // Disable auto-run SYNCHRONOUSLY, before DOMContentLoaded — otherwise Mermaid
+  // renders every diagram itself, and our loop below would re-process the
+  // already-rendered SVG and wipe it.
+  // 'strict' sanitises LLM-authored diagram labels; see coderay-q2r.11.
+  if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'strict' });
+</script>
+<script>
+  window.addEventListener('load', async function () {
+    // Syntax-highlight code blocks. (Mermaid pres have no <code>, so they're skipped.)
+    if (window.hljs) { try { hljs.highlightAll(); } catch (e) {} }
+    // Render each diagram, but validate first with parse() so a diagram the model
+    // got wrong is silently DROPPED — no "Syntax error" box, no orphan graphics.
+    // A data-driven page can't guarantee valid Mermaid; a missing diagram beats
+    // an error box.
+    if (!window.mermaid) return;
+    var blocks = document.querySelectorAll('pre.mermaid');
+    for (var i = 0; i < blocks.length; i++) {
+      var el = blocks[i], src = el.textContent;
+      try {
+        if ((await mermaid.parse(src, { suppressErrors: true })) === false) { el.remove(); continue; }
+        var out = await mermaid.render('mmd' + i, src);
+        el.innerHTML = out.svg;
+      } catch (e) {
+        el.remove();
+      }
+    }
+  });
+</script>
+<style>
+  :root {
+    --bg: #f7f8fa; --surface: #fff; --text: #101828; --muted: #667085;
+    --faint: #98a2b3; --rule: #e4e7ec; --line: #eef0f3;
+    --accent: #3b82f6; --accent-soft: #eff6ff;
+    --good: #16a34a; --stone: #9aa4b2; --stone-bg: #f2f4f7;
+    --shadow: 0 1px 2px rgba(16,24,40,.05); --shadow-lg: 0 8px 26px rgba(16,24,40,.10);
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    font-size: 13.5px; line-height: 1.5; background: var(--bg); color: var(--text);
+    margin: 0; -webkit-font-smoothing: antialiased; }
+  code, .mono { font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; }
+  main { max-width: 1240px; margin: 0 auto; padding: 0 24px 56px; }
+
+  /* Hero */
+  .hero { background: radial-gradient(120% 140% at 50% 0%, #1d2939 0%, #0c111d 70%);
+    color: #fff; padding: 46px 20px 42px; text-align: center; }
+  .hero-inner { max-width: 1120px; margin: 0 auto; }
+  .hero-diagram { margin: 26px 0 4px; }
+  .hero-diagram-cap { font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--accent); margin: 0 2px 9px; }
+  .timeline { display: flex; gap: 4px; align-items: stretch; }
+  .tl-era { min-width: 0; padding: 15px 13px; border-radius: 8px; color: #fff; overflow: hidden; }
+  .tl-name { font-weight: 800; font-size: .92rem; letter-spacing: -.01em; line-height: 1.2;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tl-meta { font-size: .66rem; opacity: .9; margin-top: 4px; font-family: 'JetBrains Mono', monospace;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @media (max-width: 640px) { .timeline { flex-direction: column; } }
+  .eyebrow { display: inline-flex; align-items: center; gap: 7px; color: #93c5fd;
+    font-size: .68rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
+  .eyebrow::before { content: ''; width: 16px; height: 2px; background: var(--accent); border-radius: 2px; }
+  .hero h1 { font-size: 1.9rem; font-weight: 800; letter-spacing: -.025em; margin: 12px 0 10px; }
+  .hero .sub { font-size: .94rem; color: #cbd5e1; margin: 0 auto; line-height: 1.55; }
+
+  /* Section header with a scroll hint */
+  .sec-head { display: flex; align-items: baseline; gap: 10px; margin: 42px 2px 14px; }
+  .sec-n { font-family: 'JetBrains Mono', monospace; font-size: .68rem; font-weight: 700;
+    color: var(--accent); }
+  .sec-label { display: flex; align-items: center; gap: 9px; font-size: .68rem; font-weight: 700;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  .sec-label::before { content: ''; width: 3px; height: 14px; background: var(--accent); border-radius: 2px; }
+  .sec-note { font-size: .8rem; color: var(--faint); }
+  .scroll-hint { margin-left: auto; font-size: .68rem; font-weight: 600; color: var(--faint); letter-spacing: .04em; }
+
+  /* Friendly "start here" welcome + per-section intros */
+  .intro { background: var(--surface); border: 1px solid var(--rule); border-left: 4px solid var(--accent);
+    border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px 24px; margin: 30px 0 4px; }
+  .intro-label { font-size: .68rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 10px; }
+  .intro p { margin: .5em 0; font-size: .96rem; color: #344054; line-height: 1.7; }
+  .intro p:first-child { margin-top: 0; }
+  .intro strong { color: var(--text); }
+  .sec-intro { font-size: .9rem; color: #475467; line-height: 1.6; margin: -6px 2px 12px; }
+  .sec-intro p { margin: 0; }
+
+  /* Horizontal rails */
+  .rail { display: flex; gap: 16px; align-items: stretch; overflow-x: auto;
+    scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch;
+    padding: 4px 2px 18px; margin: 0; list-style: none; }
+  .rail::-webkit-scrollbar { height: 9px; }
+  .rail::-webkit-scrollbar-track { background: var(--line); border-radius: 5px; }
+  .rail::-webkit-scrollbar-thumb { background: #cbd2dc; border-radius: 5px; }
+  .rail::-webkit-scrollbar-thumb:hover { background: var(--stone); }
+
+  /* Cards scroll up/down inside a fixed frame */
+  .scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+  .scroll::-webkit-scrollbar { width: 9px; }
+  .scroll::-webkit-scrollbar-track { background: transparent; }
+  .scroll::-webkit-scrollbar-thumb { background: #dce0e7; border-radius: 5px; }
+  .scroll::-webkit-scrollbar-thumb:hover { background: var(--stone); }
+
+  /* Shared card frame */
+  .card { scroll-snap-align: start; background: var(--surface); border: 1px solid var(--rule);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    display: flex; flex-direction: column; overflow: hidden; }
+  .card-top { flex-shrink: 0; padding: 15px 20px 13px; border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, #fbfcfe, #fff); }
+  .card-num { font-family: 'JetBrains Mono', monospace; font-size: .64rem; font-weight: 700;
+    letter-spacing: .12em; color: var(--accent); }
+  .card-name { font-size: 1.12rem; font-weight: 800; letter-spacing: -.01em; margin: 3px 0 7px; }
+  .card-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .chip { font-family: 'JetBrains Mono', monospace; font-size: .66rem; color: var(--muted);
+    background: var(--stone-bg); padding: 2px 7px; border-radius: 5px; }
+
+  /* Section 1 — eras (natural height; only scrolls if a description is huge) */
+  .era { flex: 0 0 500px; width: 500px; }
+  .era .scroll { max-height: 72vh; }
+  .era-body { padding: 15px 20px 18px; }
+  .era-desc { color: #344054; font-size: .85rem; line-height: 1.6; }
+  .era-desc p { margin: 0 0 .55em; }
+  .turning { font-size: .8rem; color: var(--muted); background: var(--accent-soft);
+    border-radius: 8px; padding: 10px 12px; margin: 10px 0 0; }
+  .turning b { color: #1e3a8a; }
+  .turning .hash { font-family: 'JetBrains Mono', monospace; font-size: .72rem;
+    background: #dbeafe; padding: 1px 5px; border-radius: 4px; color: #1e40af; }
+
+  /* Section 2 — cast & mood (fixed frame, inner scroll) */
+  .profile { flex: 0 0 440px; width: 440px; height: 66vh; min-height: 460px; max-height: 720px;
+    border-top: 3px solid var(--accent); }
+  .cm { padding: 6px 20px 16px; }
+  .cm:first-child { padding-top: 14px; }
+  .cm h4 { font-size: .62rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--faint); margin: 14px 0 9px; }
+  .cm:first-child h4 { margin-top: 0; }
+  .cm h4 span { font-weight: 500; letter-spacing: 0; text-transform: none; font-size: .68rem; }
+  .bar { margin: 8px 0; }
+  .bar-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .bar-top .lab { font-size: .82rem; font-weight: 600; color: var(--text); }
+  .bar-top .val { font-family: 'JetBrains Mono', monospace; font-size: .68rem; color: var(--faint); }
+  .bar-track { height: 5px; background: var(--stone-bg); border-radius: 3px; margin: 4px 0 3px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 3px; }
+  .cast .bar-fill { background: linear-gradient(90deg, #60a5fa, #3b82f6); }
+  .mood .bar-fill { background: linear-gradient(90deg, #4ade80, #16a34a); }
+  .bar-note { font-size: .76rem; color: var(--muted); line-height: 1.5; }
+  .cm-narr { font-size: .78rem; color: var(--faint); font-style: italic; line-height: 1.55;
+    margin-top: 10px; padding-top: 9px; border-top: 1px dashed var(--line); }
+
+  /* Section 3 — graveyard (fixed frame, inner scroll) */
+  .grave { flex: 0 0 400px; width: 400px; height: 66vh; min-height: 460px; max-height: 720px;
+    border-top: 3px solid var(--stone); border-radius: 5px 5px var(--radius) var(--radius); }
+  .grave-meta { flex-shrink: 0; font-family: 'JetBrains Mono', monospace; font-size: .66rem;
+    color: var(--faint); padding: 14px 18px 11px; border-bottom: 1px solid var(--line); }
+  .grave-body { padding: 13px 18px 16px; font-size: .82rem; }
+  .grave-body p { margin: .55em 0; color: #344054; line-height: 1.6; }
+  .grave-body p:first-child { margin-top: 0; }
+  .grave-body strong { color: var(--text); }
+  .grave-body em { color: var(--muted); font-style: italic; }
+
+  /* Code + Mermaid inside cards */
+  pre { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 11px 13px;
+    overflow-x: auto; margin: 11px 0; }
+  pre code { padding: 0; font-size: .74rem; line-height: 1.55; }
+  /* let highlight.js color the tokens, but keep our own dark pre background */
+  pre code.hljs { background: transparent; padding: 0; color: #e2e8f0; }
+  pre.mermaid { background: var(--stone-bg); color: inherit; text-align: center; padding: 12px; }
+  pre.mermaid svg { max-width: 100%; height: auto; }
+  code { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: .84em;
+    background: var(--stone-bg); color: var(--text); padding: 1px 5px; border-radius: 4px; }
+
+  footer { color: var(--faint); font-size: .74rem; text-align: center; margin-top: 44px;
+    padding-top: 18px; border-top: 1px solid var(--rule); }
+  @media (max-width: 560px) {
+    .era, .profile, .grave { flex-basis: 86vw; width: 86vw; }
+  }
+</style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <span class="eyebrow">Git History</span>
+      <h1>toy_repo</h1>
+      <p class="sub">toy_repo is nine years of one product changing its mind twice.</p>
+    </div>
+  </header>
+  <main>
+    <section class="hero-diagram">
+      <div class="hero-diagram-cap">The product's life &mdash; 2 eras, sized by commit volume</div>
+      <div class="timeline"><div class="tl-era" style="flex:4821;background:#3b82f6"><div class="tl-name">The blog engine &lt;script&gt;alert(1)&lt;/script&gt;</div><div class="tl-meta">2013-05 &rarr; 2016-02 &middot; 4,821 commits</div></div><div class="tl-era" style="flex:9134;background:#8b5cf6"><div class="tl-name">Going multi-tenant</div><div class="tl-meta">2016-03 &rarr; 2019-11 &middot; 9,134 commits</div></div></div>
+    </section>
+    <div class="sec-head">
+      <span class="sec-n">01</span>
+      <div class="sec-label">The eras</div>
+      <div class="scroll-hint">swipe &rarr;</div>
+    </div>
+    <div class="sec-intro"><p>Two acts, split by the arrival of members.</p>
+</div>
+    <ul class="rail eras">
+      <li class="card era">
+        <div class="card-top">
+          <div class="card-num">ERA 1</div>
+          <div class="card-name">The blog engine &lt;script&gt;alert(1)&lt;/script&gt;</div>
+          <div class="card-meta"><span class="chip">2013-05 &rarr; 2016-02</span><span class="chip">4,821 commits</span></div>
+        </div>
+        <div class="scroll">
+          <div class="era-body">
+            <div class="era-desc"><p>One Ghost-shaped product, one author, publishing only.</p>
+</div>
+            
+            <div class="turning"><b>Turning point:</b> The first paid theme lands and billing appears in <code>core/server/</code>.</div>
+          </div>
+        </div>
+      </li>
+      <li class="card era">
+        <div class="card-top">
+          <div class="card-num">ERA 2</div>
+          <div class="card-name">Going multi-tenant</div>
+          <div class="card-meta"><span class="chip">2016-03 &rarr; 2019-11</span><span class="chip">9,134 commits</span></div>
+        </div>
+        <div class="scroll">
+          <div class="era-body">
+            <div class="era-desc"><p>Members, subscriptions and a second runtime.</p>
+</div>
+            
+            <div class="turning"><b>Turning point:</b> <code>apps/</code> is born and the monolith stops growing.</div>
+          </div>
+        </div>
+      </li>
+    </ul>
+
+    <div class="sec-head">
+      <span class="sec-n">02</span>
+      <div class="sec-label">Cast &amp; mood</div>
+      <div class="scroll-hint">swipe &rarr;</div>
+    </div>
+    <div class="sec-intro"><p>One founder, then a team.</p>
+</div>
+    <ul class="rail profiles">
+      <li class="card profile">
+        <div class="card-top">
+          <div class="card-num">ERA 1</div>
+          <div class="card-name">The blog engine &lt;script&gt;alert(1)&lt;/script&gt;</div>
+          <div class="card-meta"><span class="chip">2013-05 &rarr; 2016-02</span><span class="chip">4,821 commits</span></div>
+        </div>
+        <div class="scroll">
+          <div class="cm cast">
+            <h4>Cast <span>&middot; who drove it</span></h4>
+
+<div class="cm-narr">One founder writes 80% of it, at night.</div>
+          </div>
+          <div class="cm mood">
+            <h4>Mood <span>&middot; what the work was</span></h4>
+          <div class="bar"><div class="bar-top"><span class="lab">direct-to-master</span><span class="val">0%</span></div><div class="bar-track"><div class="bar-fill" style="width:0%"></div></div></div>
+<div class="cm-narr">Fast, unreviewed, and cheerful about it.</div>
+          </div>
+        </div>
+      </li>
+      <li class="card profile">
+        <div class="card-top">
+          <div class="card-num">ERA 2</div>
+          <div class="card-name">Going multi-tenant</div>
+          <div class="card-meta"><span class="chip">2016-03 &rarr; 2019-11</span><span class="chip">9,134 commits</span></div>
+        </div>
+        <div class="scroll">
+          <div class="cm cast">
+            <h4>Cast <span>&middot; who drove it</span></h4>
+
+<div class="cm-narr">A team of six, with review as the default.</div>
+          </div>
+          <div class="cm mood">
+            <h4>Mood <span>&middot; what the work was</span></h4>
+          <div class="bar"><div class="bar-top"><span class="lab">migration-heavy</span><span class="val">0%</span></div><div class="bar-track"><div class="bar-fill" style="width:0%"></div></div></div>
+<div class="cm-narr">Slower, and deliberately so.</div>
+          </div>
+        </div>
+      </li>
+    </ul>
+
+    <div class="sec-head">
+      <span class="sec-n">03</span>
+      <div class="sec-label">The graveyard</div>
+      <div class="scroll-hint">swipe &rarr;</div>
+    </div>
+    <div class="sec-intro"><p>Two bets that were cleanly withdrawn.</p>
+</div>
+    <ul class="rail graves">
+      <li class="card grave">
+        <div class="grave-meta">&#9738; 2018-04-11 &middot; 9f2c1ab &middot; 34 files &middot; core/frontend/ &middot; Going multi-tenant</div>
+        <div class="scroll"><div class="grave-body"><p><strong>What it was.</strong> A parallel AMP render path, kept in step with the main one by hand.</p>
+<pre><code>core/frontend/apps/amp/
+</code></pre>
+<p><strong>Why it died.</strong> Google stopped requiring it and nobody owned the duplication. &lt;script&gt;alert(1)&lt;/script&gt;</p>
+</div></div>
+      </li>
+      <li class="card grave">
+        <div class="grave-meta">&#9738; 2017-01-30 &middot; 3ba77de &middot; 12 files &middot; core/server/ &middot; Going multi-tenant</div>
+        <div class="scroll"><div class="grave-body"><p><strong>What it was.</strong> A one-shot WordPress importer.</p>
+</div></div>
+      </li>
+    </ul>
+
+    <footer>Reverse engineered from 2 commits of git history.</footer>
+  </main>
+</body>
+</html>

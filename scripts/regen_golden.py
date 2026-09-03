@@ -37,7 +37,17 @@ GOLDEN = pathlib.Path(__file__).resolve().parent.parent / "tests" / "fixtures" /
 # upstream commit rather than from crack's own renderer, which would make the
 # golden test check crack against itself. Each entry must still match, so a
 # divergence that upstream later adopts fails loudly here instead of rotting.
-DIVERGENCES = [
+# Places where crack deliberately differs from the port source. Every entry is
+# applied to the generated HTML, so the fixture keeps deriving from the pinned
+# upstream commit rather than from crack's own renderer, which would make the
+# golden test check crack against itself. Each entry must still match, so a
+# divergence that upstream later adopts fails loudly here instead of rotting.
+#
+# Keyed by analysis, because the bespoke renderers are not the card engine and
+# do not carry its exact strings: git_history's mermaid line has no `flowchart`
+# option, so the card entry cannot match it and a single shared list would
+# make the script exit on every analysis but one.
+CARD_DIVERGENCES = [
     # coderay-q2r.11: mermaid reads diagram source back out of textContent with
     # the HTML escaping already decoded, so 'loose', which does not sanitise,
     # leaves LLM-authored labels executable. tour has always used 'strict'.
@@ -72,8 +82,48 @@ DIVERGENCES = [
 ]
 
 
-def _apply_divergences(html):
-    for old, new in DIVERGENCES:
+# The bespoke renderers ship their own copy of the CDN loading and mermaid
+# config, so the same two fixes have to be re-applied there (coderay-q2r.11 for
+# securityLevel, coderay-q2r.19 for pinning and SRI).
+_SRI = [
+    ('<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/'
+     'cdn-release@11.9.0/build/styles/github-dark.min.css">',
+     '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/'
+     'cdn-release@11.9.0/build/styles/github-dark.min.css"\n'
+     '  integrity="sha384-wH75j6z1lH97ZOpMOInqhgKzFkAInZPPSPlZpYKYTOqsaizPvhQZmAtLcPKXpLyH" '
+     'crossorigin="anonymous">'),
+    ('<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/'
+     'build/highlight.min.js"></script>',
+     '<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/'
+     'build/highlight.min.js"\n'
+     '  integrity="sha384-F/bZzf7p3Joyp5psL90p/p89AZJsndkSoGwRpXcZhleCWhd8SnRuoYo4d0yirjJp" '
+     'crossorigin="anonymous"></script>'),
+    ('<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>',
+     '<script src="https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js"\n'
+     '  integrity="sha384-EOXBFmc3gx5mb+vn0vPvvGqACToJD24hhacX5Yx+8NUUQrHIle/Qi5Bg9o3zKwW2" '
+     'crossorigin="anonymous"></script>'),
+]
+
+BESPOKE_DIVERGENCES = _SRI + [
+    ("  if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: 'neutral', "
+     "securityLevel: 'loose' });",
+     "  // 'strict' sanitises LLM-authored diagram labels; see coderay-q2r.11.\n"
+     "  if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: 'neutral', "
+     "securityLevel: 'strict' });"),
+]
+
+# Analyses whose page is built by their own render_html rather than the card
+# engine. crack.core.render defers to them, so regen reaches them unchanged;
+# only the divergence set differs.
+BESPOKE = {"git-history", "product-intent"}
+
+
+def divergences_for(analysis_name):
+    return BESPOKE_DIVERGENCES if analysis_name in BESPOKE else CARD_DIVERGENCES
+
+
+def _apply_divergences(html, divergences):
+    for old, new in divergences:
         if old not in html:
             sys.exit(f"divergence no longer applies, upstream may have adopted it: {old!r}")
         html = html.replace(old, new)
@@ -120,7 +170,8 @@ def main():
 
     analysis = load(args.analysis)
     shared = json.loads(shared_path.read_text(encoding="utf-8"))
-    html = _apply_divergences(render.render_html(analysis, "toy_repo", shared))
+    html = _apply_divergences(render.render_html(analysis, "toy_repo", shared),
+                              divergences_for(args.analysis))
     (out_dir / "index.html").write_text(html, encoding="utf-8")
     (out_dir / "index.md").write_text(render.render_markdown(analysis, "toy_repo", shared), encoding="utf-8")
     print(f"wrote {out_dir}/index.html and {out_dir}/index.md from {args.sibling} @ {head[:7]}")

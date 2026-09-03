@@ -1,0 +1,140 @@
+{
+  "repo_path": "/tmp/toy_repo",
+  "commits": [],
+  "commits_asc": [
+    {
+      "month": "2013-05"
+    },
+    {
+      "month": "2019-11"
+    }
+  ],
+  "eras": [
+    {
+      "name": "The blog engine <script>alert(1)</script>",
+      "start": "2013-05",
+      "end": "2016-02",
+      "description": "One Ghost-shaped product, one author, publishing only.",
+      "turning_point": "The first paid theme lands and billing appears in `core/server/`."
+    },
+    {
+      "name": "Going multi-tenant",
+      "start": "2016-03",
+      "end": "2019-11",
+      "description": "Members, subscriptions and a second runtime.",
+      "turning_point": "`apps/` is born and the monolith stops growing."
+    }
+  ],
+  "profiles": [
+    {
+      "era": {
+        "name": "The blog engine <script>alert(1)</script>",
+        "start": "2013-05",
+        "end": "2016-02",
+        "description": "One Ghost-shaped product, one author, publishing only.",
+        "turning_point": "The first paid theme lands and billing appears in `core/server/`."
+      },
+      "commit_count": 4821,
+      "profile": {
+        "cast": {
+          "narrative": "One founder writes 80% of it, at night.",
+          "people": [
+            {
+              "name": "hannahwolfe",
+              "role": "everything"
+            },
+            {
+              "name": "ErisDS <script>alert(1)</script>",
+              "role": "core + release"
+            }
+          ]
+        },
+        "mood": {
+          "narrative": "Fast, unreviewed, and cheerful about it.",
+          "patterns": [
+            {
+              "label": "direct-to-master",
+              "detail": "No PR in the first 900 commits."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "era": {
+        "name": "Going multi-tenant",
+        "start": "2016-03",
+        "end": "2019-11",
+        "description": "Members, subscriptions and a second runtime.",
+        "turning_point": "`apps/` is born and the monolith stops growing."
+      },
+      "commit_count": 9134,
+      "profile": {
+        "cast": {
+          "narrative": "A team of six, with review as the default.",
+          "people": [
+            {
+              "name": "kevinansfield",
+              "role": "admin client"
+            }
+          ]
+        },
+        "mood": {
+          "narrative": "Slower, and deliberately so.",
+          "patterns": [
+            {
+              "label": "migration-heavy",
+              "detail": "Every release carries a schema step."
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "graves": [
+    {
+      "commit": {
+        "hash": "9f2c1ab",
+        "subject": "Remove the AMP renderer",
+        "author": "ErisDS",
+        "date": "2018-04-11",
+        "count": 34,
+        "scope": "core/frontend"
+      },
+      "era": {
+        "name": "Going multi-tenant",
+        "start": "2016-03",
+        "end": "2019-11",
+        "description": "Members, subscriptions and a second runtime.",
+        "turning_point": "`apps/` is born and the monolith stops growing."
+      },
+      "entry_md": "**What it was.** A parallel AMP render path, kept in step with the main one by hand.\n\n```\ncore/frontend/apps/amp/\n```\n\n**Why it died.** Google stopped requiring it and nobody owned the duplication. <script>alert(1)</script>\n"
+    },
+    {
+      "commit": {
+        "hash": "3ba77de",
+        "subject": "Drop the legacy importer",
+        "author": "hannahwolfe",
+        "date": "2017-01-30",
+        "count": 12,
+        "scope": "core/server"
+      },
+      "era": {
+        "name": "Going multi-tenant",
+        "start": "2016-03",
+        "end": "2019-11",
+        "description": "Members, subscriptions and a second runtime.",
+        "turning_point": "`apps/` is born and the monolith stops growing."
+      },
+      "entry_md": "**What it was.** A one-shot WordPress importer.\n"
+    }
+  ],
+  "overview": {
+    "welcome": "toy_repo is nine years of one product changing its mind twice.",
+    "intros": {
+      "The eras": "Two acts, split by the arrival of members.",
+      "Cast & mood": "One founder, then a team.",
+      "The graveyard": "Two bets that were cleanly withdrawn."
+    }
+  }
+}
