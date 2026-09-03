@@ -777,3 +777,14 @@ def test_anthropic_call_uses_streaming_not_create(monkeypatch):
     assert record["output_tokens"] == 50
     assert record["cache_read_tokens"] == 10
     assert record["cache_write_tokens"] == 5
+
+
+def test_truncated_response_is_its_own_error_and_says_how_to_raise_the_cap(monkeypatch):
+    """coderay-q2r.46. A truncation is deterministic (same prompt, same cap,
+    same cut), so callers need to tell it from a transient failure, and the
+    user needs to know which knob to turn."""
+    from crack.core.call_llm import ResponseTruncated
+    monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module("max_tokens"))
+    monkeypatch.setenv("LLM_MAX_OUTPUT_TOKENS", "16384")
+    with pytest.raises(ResponseTruncated, match=r"LLM_MAX_OUTPUT_TOKENS.*16384"):
+        call_llm("prompt")

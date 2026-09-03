@@ -55,3 +55,26 @@ def test_overview_node_leaves_empty_copy_when_the_call_keeps_failing(monkeypatch
                         max_retries=1, wait=0)
     node.run(shared)
     assert shared["overview"] == {"welcome": "", "intros": {}}
+
+def test_overview_node_reports_the_failure_instead_of_staying_silent(monkeypatch, capsys):
+    # coderay-q2r.13: exec_fallback used to discard the exception, so a rate
+    # limit on the last call of the run left the page without intro copy and
+    # printed nothing at all.
+    def boom(prompt):
+        raise RuntimeError("rate limited")
+    monkeypatch.setattr("crack.core.overview.call_llm", boom)
+    node = OverviewNode(lambda sh: {"name": "n", "what": "w", "sections": SECTIONS},
+                        max_retries=1, wait=0)
+    node.run({})
+    out = capsys.readouterr().out
+    assert "RuntimeError" in out
+    assert "rate limited" in out
+    assert "without" in out.lower()
+
+def test_overview_node_does_not_report_a_failure_on_success(monkeypatch, capsys):
+    monkeypatch.setattr("crack.core.overview.call_llm", lambda prompt: REPLY)
+    node = OverviewNode(lambda sh: {"name": "n", "what": "w", "sections": SECTIONS})
+    node.run({})
+    out = capsys.readouterr().out
+    assert "Overview written" in out
+    assert "failed" not in out.lower()

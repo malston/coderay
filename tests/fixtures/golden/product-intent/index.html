@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>toy_repo: product story</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js"
+  integrity="sha384-EOXBFmc3gx5mb+vn0vPvvGqACToJD24hhacX5Yx+8NUUQrHIle/Qi5Bg9o3zKwW2" crossorigin="anonymous"></script>
+<script>
+  // Disable auto-run synchronously so our loop controls rendering (see ch06).
+  // 'strict' sanitises LLM-authored diagram labels; see coderay-q2r.11.
+  if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'strict' });
+</script>
+<script>
+  window.addEventListener('load', async function () {
+    if (!window.mermaid) return;
+    var blocks = document.querySelectorAll('pre.mermaid');
+    for (var i = 0; i < blocks.length; i++) {
+      var el = blocks[i], src = el.textContent;
+      try {
+        // Validate first, so a diagram the model got wrong is dropped silently
+        // (no "Syntax error" box) instead of rendered.
+        if ((await mermaid.parse(src, { suppressErrors: true })) === false) { el.remove(); continue; }
+        var out = await mermaid.render('mmd' + i, src);
+        el.innerHTML = out.svg;
+      } catch (e) { el.remove(); }
+    }
+  });
+</script>
+<style>
+  :root {
+    --bg: #f8fafc;
+    --surface: #fff;
+    --text: #0f172a;
+    --muted: #64748b;
+    --rule: #e2e8f0;
+    --accent: #3b82f6;
+    --accent-soft: #eff6ff;
+    --good: #22c55e;
+    --warn: #f59e0b;
+    --warn-soft: #fffbeb;
+    --warn-ink: #92400e;
+    --danger: #ef4444;
+    --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+    --shadow-lg: 0 8px 24px rgba(15,23,42,.08), 0 2px 6px rgba(15,23,42,.04);
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    background: var(--bg); color: var(--text); margin: 0;
+    line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  code, .mono { font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; }
+  main { max-width: 920px; margin: 0 auto; padding: 0 24px 48px; }
+
+  /* Hero */
+  .hero {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: #fff; padding: 56px 24px 48px; text-align: center;
+    border-bottom: 1px solid var(--rule);
+  }
+  .hero-inner { max-width: 920px; margin: 0 auto; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    color: #93c5fd; font-size: .72rem; font-weight: 700;
+    letter-spacing: .18em; text-transform: uppercase;
+  }
+  .eyebrow::before { content: ''; width: 18px; height: 2px; background: var(--accent); }
+  .hero h1 {
+    font-size: 2.4rem; font-weight: 800; letter-spacing: -.025em;
+    margin: 16px 0 14px; color: #fff;
+  }
+  .hero h1 .name { color: #60a5fa; }
+  .hero .sub {
+    font-size: 1.05rem; color: #cbd5e1; max-width: 760px;
+    margin: 0 auto; line-height: 1.65;
+  }
+
+  /* Section labels */
+  .sec { margin: 40px 0 0; }
+  .sec:first-of-type { margin-top: 32px; }
+  .sec-label {
+    display: flex; align-items: center; gap: 10px;
+    font-size: .72rem; font-weight: 700; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 14px;
+  }
+  .sec-label::before {
+    content: ''; width: 3px; height: 16px;
+    background: var(--accent); border-radius: 2px;
+  }
+  .sec-intro { color: var(--muted); font-size: .92rem; margin: -4px 0 16px; }
+
+  /* Pain card */
+  .pain-card {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: var(--radius); padding: 18px 22px;
+    box-shadow: var(--shadow); border-left: 3px solid var(--danger);
+  }
+  .pain-card .pain-label {
+    font-size: .65rem; font-weight: 700; letter-spacing: .14em;
+    color: var(--danger); text-transform: uppercase; margin-bottom: 8px;
+  }
+  .pain-card .pain-body {
+    display: grid; grid-template-columns: 1fr; gap: 16px; align-items: center;
+  }
+  .pain-card.has-image .pain-body { grid-template-columns: 1fr 280px; }
+  @media (max-width: 640px) {
+    .pain-card.has-image .pain-body { grid-template-columns: 1fr; }
+  }
+  .pain-card p {
+    font-size: 1.02rem; line-height: 1.65; color: #334155;
+    margin: 0;
+  }
+  .pain-card img.pain-illustration {
+    width: 100%; height: auto; border-radius: 8px;
+    border: 1px solid var(--rule); background: #fff;
+  }
+
+  /* Two column cards (sacrifices / gains) */
+  .two-col {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  }
+  @media (max-width: 720px) { .two-col { grid-template-columns: 1fr; } }
+  .pos-card {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: var(--radius); padding: 16px 18px;
+    box-shadow: var(--shadow);
+  }
+  .pos-card h3 {
+    margin: 0 0 12px; font-size: .95rem; font-weight: 700;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .pos-card.sacrifices h3 { color: var(--warn-ink); }
+  .pos-card.sacrifices h3::before {
+    content: '–'; display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; background: var(--warn-soft);
+    color: var(--warn); border-radius: 50%; font-weight: 800;
+  }
+  .pos-card.gains h3 { color: #166534; }
+  .pos-card.gains h3::before {
+    content: '+'; display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; background: #f0fdf4;
+    color: var(--good); border-radius: 50%; font-weight: 800;
+  }
+  .pos-card ul { margin: 0; padding-left: 1.1em; }
+  .pos-card li { margin: .4em 0; color: #334155; font-size: .92rem; line-height: 1.55; }
+
+  /* Callout (why incumbents can't copy) */
+  .callout {
+    background: var(--warn-soft); border-left: 3px solid var(--warn);
+    border-radius: var(--radius); padding: 16px 20px; margin-top: 16px;
+  }
+  .callout-label {
+    font-size: .65rem; font-weight: 700; letter-spacing: .14em;
+    color: var(--warn-ink); text-transform: uppercase; margin-bottom: 6px;
+  }
+  .callout p { margin: .4em 0 0; color: #422006; font-size: .95rem; line-height: 1.65; }
+
+  /* Counter-positioning diagram */
+  .trap-diagram { margin-top: 16px; background: var(--surface); border: 1px solid var(--rule);
+    border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; }
+  .trap-diagram .diagram-label { font-size: .65rem; font-weight: 700; letter-spacing: .14em;
+    color: var(--muted); text-transform: uppercase; margin-bottom: 10px; }
+  pre.mermaid { background: transparent; text-align: center; margin: 0; padding: 4px; }
+  pre.mermaid svg { max-width: 100%; height: auto; }
+
+  /* Competitor matrix */
+  .dim-defs {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: var(--radius); padding: 14px 18px; margin-bottom: 12px;
+    box-shadow: var(--shadow); list-style: none;
+  }
+  .dim-defs li { margin: .35em 0; font-size: .9rem; color: #475569; }
+  .dim-defs li strong { color: var(--text); font-weight: 700; }
+  .matrix-wrap {
+    border: 1px solid var(--rule); border-radius: var(--radius);
+    overflow: hidden; box-shadow: var(--shadow); background: var(--surface);
+  }
+  table.matrix {
+    width: 100%; border-collapse: separate; border-spacing: 0;
+    font-size: .88rem;
+  }
+  table.matrix th, table.matrix td {
+    padding: 12px 14px; text-align: left; vertical-align: top;
+    border-bottom: 1px solid var(--rule);
+  }
+  table.matrix tr:last-child td { border-bottom: none; }
+  table.matrix th {
+    background: #f1f5f9; color: var(--muted);
+    font-size: .68rem; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  table.matrix td.row-head {
+    background: #fafbfc; font-weight: 700; color: var(--text);
+    white-space: nowrap; font-size: .95rem;
+  }
+  table.matrix td .verdict {
+    display: block; font-weight: 700; color: var(--text);
+    font-size: .92rem; margin-bottom: 3px;
+  }
+  table.matrix td .detail {
+    display: block; color: var(--muted); font-size: .82rem; line-height: 1.5;
+  }
+  table.matrix tr.you td { background: var(--accent-soft); }
+  table.matrix tr.you td.row-head { color: var(--accent); }
+  table.matrix tr.you td .verdict { color: var(--accent); }
+
+  /* Horizontal scrollable card rails for surprises and absences. */
+  .scroll-hint {
+    font-size: .68rem; color: var(--muted); margin-left: auto;
+    text-transform: none; letter-spacing: 0; font-weight: 500;
+  }
+  .card-rail {
+    display: flex; gap: 12px; overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    padding: 2px 2px 14px; margin: 0;
+    list-style: none;
+  }
+  .card-rail::-webkit-scrollbar { height: 7px; }
+  .card-rail::-webkit-scrollbar-track { background: transparent; }
+  .card-rail::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+  .card-rail::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  .card-rail > li {
+    scroll-snap-align: start;
+    min-width: 300px; max-width: 300px; flex-shrink: 0;
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: var(--radius); padding: 14px 16px;
+    box-shadow: var(--shadow);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .card-rail.surprises > li { border-left: 3px solid var(--accent); }
+  .card-rail.absences > li { border-left: 3px solid var(--warn); }
+  .card-rail .head {
+    display: flex; align-items: flex-start; gap: 10px;
+  }
+  .card-rail .num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 50%;
+    font-weight: 700; font-size: .72rem; flex-shrink: 0; margin-top: 1px;
+    color: #fff;
+  }
+  .card-rail.surprises .num { background: var(--accent); }
+  .card-rail.absences .num { background: var(--warn); }
+  .card-rail .headline {
+    font-weight: 700; font-size: .98rem; line-height: 1.35;
+  }
+  .card-rail .where {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .7rem; color: var(--muted); line-height: 1.5;
+    word-break: break-word;
+  }
+  .card-rail .body {
+    color: #475569; font-size: .88rem; line-height: 1.55;
+    margin-top: auto;
+  }
+
+  /* Inline code in body text */
+  code {
+    font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+    font-size: .85em; background: #f1f5f9; color: var(--text);
+    padding: 1px 6px; border-radius: 4px;
+  }
+  .surprise-list code, .absence-list code { font-size: .82em; }
+
+  footer {
+    color: var(--muted); font-size: .78rem; text-align: center;
+    margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--rule);
+  }
+</style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <span class="eyebrow">Product Story</span>
+      <h1><span class="name">toy_repo</span></h1>
+      <p class="sub">It's Google Analytics, but every chart is a saved SQL query you can read. &lt;b onmouseover=alert(1)&gt;hover&lt;/b&gt;</p>
+    </div>
+  </header>
+
+  <main>
+    <section class="sec">
+      <div class="sec-label">The Pain</div>
+      <div class="pain-card">
+        <div class="pain-label">↳ Why this exists</div>
+        <div class="pain-body">
+          <p>You're debugging why signups dropped, but the numbers live in three tabs. Your real competitor is Alt-Tab. &lt;script&gt;alert(1)&lt;/script&gt;</p>
+
+        </div>
+      </div>
+    </section>
+
+    <section class="sec">
+      <div class="sec-label">Where it sits</div>
+      <p class="sec-intro">The trade it makes versus the dominant alternative.</p>
+      <div class="two-col">
+        <div class="pos-card sacrifices">
+          <h3>What it gives up</h3>
+          <ul>
+            <li>No hosted version.</li>
+            <li>No real-time dashboards.</li>
+          </ul>
+        </div>
+        <div class="pos-card gains">
+          <h3>What it gets in return</h3>
+          <ul>
+            <li>Every number is auditable.</li>
+            <li>Works on a plane.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout">
+        <div class="callout-label">Why incumbents can't copy this</div>
+<p>A hosted analytics vendor sells the warehouse. Shipping a local file would give away the thing they bill for.</p>
+<p>Their sales motion depends on seat counts, and a single file has no seats.</p>
+
+      </div>
+      <div class="trap-diagram">
+        <div class="diagram-label">The trap, in one picture</div>
+        <pre class="mermaid">flowchart LR
+  A[&quot;Local file&quot;] --&gt; B[&quot;No warehouse bill&quot;]
+  B --&gt; C[&quot;&lt;/pre&gt;&lt;script&gt;alert(1)&lt;/script&gt;&quot;]</pre>
+      </div>
+    </section>
+
+    <section class="sec">
+      <div class="sec-label">Side by Side</div>
+      <p class="sec-intro">Four dimensions that actually split the field.</p>
+      <ul class="dim-defs">
+        <li><strong>Readable queries</strong>: Can a user see the SQL behind a chart?</li>
+        <li><strong>Source &lt;script&gt;alert(1)&lt;/script&gt;</strong>: Is the code public?</li>
+        <li><strong>Where data lives</strong>: Whose disk holds the events?</li>
+      </ul>
+      <div class="matrix-wrap">
+        <table class="matrix">
+          <thead><tr><th>Product</th><th>Readable queries</th><th>Source &lt;script&gt;alert(1)&lt;/script&gt;</th><th>Where data lives</th></tr></thead>
+          <tbody>
+            <tr class="you"><td class="row-head">toy_repo</td><td><span class="verdict">Yes</span><span class="detail">Charts are SQL you can open.</span></td><td><span class="verdict">Open</span><span class="detail">MIT, single binary.</span></td><td><span class="verdict">One file</span><span class="detail">A SQLite database on your laptop.</span></td></tr>
+            <tr><td class="row-head">Mixpanel &lt;script&gt;alert(1)&lt;/script&gt;</td><td><span class="verdict">No</span><span class="detail">Charts are a proprietary query builder.</span></td><td><span class="verdict">Closed</span><span class="detail">SaaS only.</span></td><td><span class="verdict">Whole service</span><span class="detail">Their warehouse, their schema.</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="sec">
+      <div class="sec-label">What the Code Reveals<span class="scroll-hint">scroll →</span></div>
+      <p class="sec-intro">Features hiding in the codebase that the README doesn't advertise. Each one is a bet about where the product is going.</p>
+      <ul class="card-rail surprises">
+        <li><div class="head"><span class="num">1</span><div class="headline">A query planner explainer</div></div><div class="where">src/explain.py</div><div class="body">The product is betting that users want to understand their numbers, not just see them.</div></li>
+        <li><div class="head"><span class="num">2</span><div class="headline">Offline-first sync</div></div><div class="where">src/sync/</div><div class="body">Analysts work on planes more than vendors think.</div></li>
+      </ul>
+    </section>
+
+    <section class="sec">
+      <div class="sec-label">Missing on Purpose<span class="scroll-hint">scroll →</span></div>
+      <p class="sec-intro">Features every competitor ships that this codebase deliberately doesn't. Strategy is choosing what not to do.</p>
+      <ul class="card-rail absences">
+        <li><div class="head"><span class="num">1</span><div class="headline">No user accounts</div></div><div class="where">no users table, no session middleware, no login route</div><div class="body">Stays a personal tool. Risk: a team cannot share a dashboard without sharing the file.</div></li>
+      </ul>
+    </section>
+
+    <footer>Reverse engineered from the codebase.</footer>
+  </main>
+</body>
+</html>

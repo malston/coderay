@@ -1,5 +1,6 @@
 import pytest
 
+import crack.core.llm as llm
 from crack.core.llm import extract_mermaid, parse_yaml
 
 
@@ -55,3 +56,73 @@ def test_render_and_llm_share_one_extract_mermaid():
     assert render.extract_mermaid is llm.extract_mermaid
     reply = "```mermaid\nflowchart LR\n  a-->b\n```\n```mermaid\nerDiagram\n  USER\n```"
     assert render.extract_mermaid(reply, "erDiagram").startswith("erDiagram")
+
+
+@pytest.mark.parametrize("call,bad,good", [
+    ("json_call", '```json\n[1, 2, 3]\n```', '```json\n[{"name": "era"}]\n```'),
+    ("yaml_call", '```yaml\n- 1\n- 2\n```', '```yaml\n- name: era\n```'),
+])
+def test_a_reply_of_the_wrong_shape_retries_rather_than_escaping(monkeypatch, call, bad, good):
+    """coderay-q2r.33. normalize() sees whatever the model returned.
+
+    `"name" in 1` raises TypeError, which the original tuple did not catch, so
+    all four retries were skipped and the caller's own except never matched.
+    That is the exact shape NameEras hits: a list of scalars where it expects a
+    list of era objects. The good reply on the third attempt is what proves the
+    retries actually ran rather than the error being swallowed.
+    """
+    import crack.core.llm as llm_module
+
+    calls = []
+
+    def fake(prompt):
+        calls.append(prompt)
+        return bad if len(calls) < 3 else good
+
+    monkeypatch.setattr(llm_module, "call_llm", fake)
+
+    def normalize(data):
+        assert "name" in data[0]        # TypeError while data[0] is an int
+        return data
+
+    assert getattr(llm_module, call)(prompt="p", normalize=normalize) == [{"name": "era"}]
+    assert len(calls) == 3, "the wrong-shaped replies must have been retried"
+
+
+@pytest.mark.parametrize("call", ["json_call", "yaml_call"])
+def test_a_transport_error_is_not_swallowed_by_the_retry_loop(monkeypatch, call):
+    """Transport errors belong to the node's own max_retries, not here."""
+    import crack.core.llm as llm_module
+
+    def boom(prompt):
+        raise RuntimeError("connection reset")
+
+    monkeypatch.setattr(llm_module, "call_llm", boom)
+    with pytest.raises(RuntimeError, match="connection reset"):
+        getattr(llm_module, call)(prompt="p", normalize=lambda d: d)
+
+
+def test_parse_json_survives_a_fenced_block_inside_a_string_value():
+    """raw_decode, not a closing-fence regex: a nested ``` inside a string value
+    would truncate a regex-based parse at the wrong place."""
+    from crack.core.llm import parse_json
+
+    reply = '```json\n{"note": "see ```mermaid\\ngraph LR\\n``` above", "n": 2}\n```'
+    assert parse_json(reply) == {"note": "see ```mermaid\ngraph LR\n``` above", "n": 2}
+
+
+@pytest.mark.parametrize("call", [llm.json_call, llm.yaml_call])
+def test_an_error_raised_inside_call_llm_is_not_retried_as_a_bad_reply(monkeypatch, call):
+    """coderay-q2r.41. A ValueError from the transport side (a non-numeric
+    LLM_MAX_OUTPUT_TOKENS, say) is not a malformed reply; retrying it with a
+    "return complete JSON" tail blames the model for a config error."""
+    calls = []
+
+    def boom(prompt):
+        calls.append(prompt)
+        raise ValueError("invalid literal for int() with base 10: 'lots'")
+
+    monkeypatch.setattr(llm, "call_llm", boom)
+    with pytest.raises(ValueError, match="lots"):
+        call("p", lambda x: x)
+    assert len(calls) == 1

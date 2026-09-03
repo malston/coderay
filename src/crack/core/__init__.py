@@ -3,6 +3,7 @@ prompt/YAML plumbing in llm.py."""
 # Re-exported for `from crack.core import <name>`; not used inside this module.
 from .call_llm import (  # noqa: F401
     DEFAULT_MAX_OUTPUT_TOKENS,
+    ResponseTruncated,
     call_llm,
     get_usage,
     max_output_tokens,
@@ -13,7 +14,9 @@ from .llm import (  # noqa: F401
     read_prompt,
     fill,
     extract_mermaid,
+    parse_json,
     parse_yaml,
+    json_call,
     yaml_call,
 )
 from .crawl import (  # noqa: F401
@@ -23,6 +26,8 @@ from .crawl import (  # noqa: F401
     DEFAULT_SKIP_DIR,
     DEFAULT_KEEP_NAMES,
     DEFAULT_MAX_FILE_BYTES,
+    DEFAULT_SKIP_NAMES,
+    DEFAULT_SKIP_SUFFIXES,
     within_repo,
 )
 from .env import env_defaults  # noqa: F401

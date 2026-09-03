@@ -104,10 +104,15 @@ DEFAULT_MAX_FILE_BYTES = 500_000
 # for their extension.
 DEFAULT_SKIP_NAMES = frozenset({
     '.env', '.env.local', '.env.production', '.netrc', '.npmrc', '.pypirc',
-    'credentials', 'credentials.json', 'service-account.json',
-    'id_rsa', 'id_ed25519', '.htpasswd', 'terraform.tfvars',
+    'credentials', 'credentials.json', 'service-account.json', 'client_secret.json',
+    'id_rsa', 'id_ed25519', 'id_ecdsa', 'id_dsa', '.htpasswd', 'terraform.tfvars',
+    # coderay-q2r.37: pure-credential names the list missed while it was only
+    # crawler noise. Never source, so skipping them costs the crawl nothing.
+    'secrets.yml', 'secrets.yaml', 'secrets.json', 'secrets.toml', 'secret.json',
+    'credentials.yml', 'credentials.yaml', 'token.json', '.git-credentials', '.pgpass', 'kubeconfig',
 })
-DEFAULT_SKIP_SUFFIXES = ('.pem', '.key', '.p12', '.pfx', '.keystore', '.jks')
+DEFAULT_SKIP_SUFFIXES = ('.pem', '.key', '.p12', '.pfx', '.keystore', '.jks', '.ppk',
+                         '.tfvars', '.tfstate', '.tfstate.backup')
 
 
 def within_repo(repo, path):
@@ -169,13 +174,21 @@ def list_files(root, *, keep_ext=DEFAULT_KEEP_EXT, skip_dirs=DEFAULT_SKIP_DIR,
     exclude_spec = _compile(exclude)
     real_root = os.path.realpath(root)
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in skip]
+        # Sorted so a budgeted caller includes the same files on every
+        # filesystem; os.walk otherwise yields subtrees in scandir order.
+        dirnames[:] = sorted(d for d in dirnames if d not in skip)
         for f in sorted(filenames):
             if not _wanted(f, keep_ext, keep_names):
                 continue
             path = os.path.join(dirpath, f)
             if not os.path.realpath(path).startswith(real_root + os.sep):
                 continue  # symlink resolving outside the repo root
+            # coderay-q2r.52: a symlink can rename a skipped file into a
+            # source-looking one (src/config.py -> ../.env), so the target's
+            # own name has to pass the filter too.
+            if os.path.islink(path) and not _wanted(os.path.basename(os.path.realpath(path)),
+                                                    keep_ext, keep_names):
+                continue
             rel = os.path.relpath(path, root)
             if include_spec is not None and not include_spec.match_file(rel):
                 continue

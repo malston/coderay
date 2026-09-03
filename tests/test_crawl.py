@@ -77,3 +77,19 @@ def test_list_files_skips_broken_symlink_instead_of_crashing(tmp_path):
     names = {os.path.basename(f) for f in files}
     assert "real.py" in names
     assert "dangling.py" not in names
+
+
+def test_list_files_skips_a_symlink_that_renames_a_credential_file(tmp_path):
+    """coderay-q2r.52. `_wanted` ran on the link's own name, so
+    `src/config.py -> ../.env` looked like source and the target was inside
+    the repo, and the whole .env was read and sent to the model."""
+    import os
+    from crack.core import list_files
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    (repo / ".env").write_text("SECRET=1\n")
+    (repo / "src" / "real.py").write_text("x = 1\n")
+    (repo / "src" / "config.py").symlink_to(repo / ".env")
+    (repo / "src" / "alias.py").symlink_to(repo / "src" / "real.py")   # a legitimate symlink stays
+    rels = sorted(os.path.relpath(p, repo) for p in list_files(str(repo)))
+    assert rels == ["src/alias.py", "src/real.py"]

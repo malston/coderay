@@ -5,6 +5,7 @@ import time
 from datetime import date
 
 from crack.core import ensure_priced, get_usage, reset_usage, resolve_provider_and_model
+from crack.core.env import env_defaults
 from crack.core.runner import run_flow
 from crack.analyses.tour.flow import create_tour_flow
 from crack.analyses.tour.nodes import PipelineState
@@ -29,6 +30,10 @@ def build_flow():
 def add_arguments(parser) -> None:
     parser.add_argument("--instructions", default="beginner-tutorial", choices=available_lenses())
     parser.add_argument("--dry-run", action="store_true")
+
+# A chapter can run past the 16384-token default on a large abstraction
+# (coderay-q2r.46); backend raises its cap the same way.
+ENV_DEFAULTS = {"LLM_MAX_OUTPUT_TOKENS": "32768"}
 
 def init_shared(args) -> PipelineState:
     return {"repo_path": args.repo_path, "instructions": args.instructions}
@@ -59,7 +64,8 @@ def run(args) -> None:
     wall_start = time.perf_counter()
 
     shared = init_shared(args)
-    run_flow(build_flow(), shared, out, dump_run_state)
+    with env_defaults(ENV_DEFAULTS):
+        run_flow(build_flow(), shared, out, dump_run_state)
 
     wall_seconds = time.perf_counter() - wall_start
 

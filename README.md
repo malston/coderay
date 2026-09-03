@@ -1,10 +1,10 @@
 # Crack
 
-Crack runs analyses on a codebase and generates written overviews: multi-chapter tours with diagrams and cross-references, request-flow summaries across server-side layers, a map of the services a system runs and rents, a guide to a product's API surface, or a tour of the data model and the migrations that shaped it. Point it at a repo and get HTML/Markdown pages explaining how the code works.
+Crack runs analyses on a codebase and generates written overviews: multi-chapter tours with diagrams and cross-references, request-flow summaries across server-side layers, a map of the services a system runs and rents, a guide to a product's API surface, a tour of the data model and the migrations that shaped it, or the product's story read out of its git log. Point it at a repo and get HTML/Markdown pages explaining how the code works.
 
 ## What this ships
 
-Five analyses, each implemented as a [PocketFlow](https://github.com/The-Pocket/PocketFlow) workflow:
+Seven analyses, each implemented as a [PocketFlow](https://github.com/The-Pocket/PocketFlow) workflow:
 
 ### Tour
 
@@ -57,11 +57,32 @@ A six-stage pipeline (FindSchema, SchemaTour, TraceFlows, TableDeepDive, Migrati
 - The migration section is skipped, with a note saying so, when fewer than four migrations are found. That is a real finding about the repository rather than a gap in the report, so it stays on the page.
 - Expects a schema. Pointed at a repository with none, the run stops before it spends an LLM call and tells you to try `--schema`.
 
+### Git history
+
+A five-stage pipeline (FetchHistory, NameEras, ProfileEras, Graveyard, OverviewNode) that reads a product's story out of its commit log:
+
+- Compresses the whole history into a directory-by-month survey, then asks the model to name three to five eras from it. Each era is then profiled one at a time, in order, so a later era can be contrasted with the ones before it.
+- The graveyard reads the biggest deletions -- the features the team built and later removed -- skipping vendored and build churn so `node_modules/` does not bury the real ones. `--max-graves` and `--grave-min-files` tune it.
+- Builds its page from structured data rather than markdown blobs, so it ships its own renderer instead of the shared card engine.
+- Needs a git checkout. Pointed at a directory that is not one, `git log` fails and the run stops with git's own message.
+
+### Product intent
+
+A five-stage pipeline (FetchRepo, PainScene, VariantSentence, CompetitivePositioning, SurprisesAndAbsences) that reverse-engineers the product story from the source:
+
+- Writes the pain scene a user is in before the product exists, and the one-sentence "It's X, but Y" variant that passes the reproduce-it test.
+- Positions the product against its real competitors in a side-by-side table, with what it gives up, what it gets, and why incumbents cannot copy the move.
+- Lists what is surprisingly present in the code and what is missing on purpose, each read as a bet.
+- `--include` and `--exclude` take `.gitignore`-style patterns to narrow the crawl. The crawl keeps whole files until a fixed budget is spent and says how many it dropped.
+- Ships its own renderer, like git-history. Text-only: the port source's generated illustration is not included.
+
 ### A note on what leaves your machine
 
 Every analysis sends repository content to an LLM provider. Three rules hold across all of them:
 
 - Files discovered by the crawl are read only if they resolve inside the target repository, so a checked-in symlink pointing at `~/.aws/credentials` is refused rather than read.
+- `product-intent` sends whole source files to the model, up to a fixed budget, in directory order rather than by LLM selection as the tour does. The crawler's skip list applies, so credential-named files (`.env*`, `*.pem`, `secrets.yml` and the rest) are never read; a key pasted inline in `config.py` still goes.
+- `git-history` sends commit diffs to the model. The body of a credential-bearing file (`.env*`, `*.pem`, `terraform.tfvars` and the rest of the crawler's skip list) is stripped from those diffs first, while its path and the `--stat` line stay, since a secret being deleted is itself worth reporting.
 - The `architecture` bundle strips credential values by key name, by position in a connection string, from Kubernetes `name`/`value` env pairs, and from every value in a Kubernetes `Secret`. This is a redactor, not a secret scanner: a credential under an unguessable key name in a file that is not a `Secret` can still get through.
 - `crack schema --schema <path>` is exempt from the containment rule, because that path is yours rather than the repository's.
 
@@ -81,6 +102,10 @@ crack architecture path/to/repo  # multi-service architecture map
 crack interfaces path/to/repo  # API surface and endpoint sequence
 # OR
 crack schema path/to/repo     # data model and migration history
+# OR
+crack git-history path/to/repo  # the product story in the commit log
+# OR
+crack product-intent path/to/repo  # the product story in the source
 ```
 
 If a **tour** run fails partway through (a bad LLM response after retries, a network error), the files, abstractions, and chapters completed so far are written to `run_state.json` in the target output directory, so you can see how far it got without rerunning the whole pipeline. The other analyses do not do this: a failed run leaves an empty output directory.
