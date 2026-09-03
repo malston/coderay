@@ -78,6 +78,35 @@ _ASSIGN_RE = re.compile(r'^(?P<head>\s*-?\s*"?(?P<key>[A-Za-z_][\w.\-]{0,127})"?
 # `key:` with nothing after it, which introduces a nested block or sequence.
 _BARE_KEY_RE = re.compile(r'^(?P<head>\s*-?\s*"?(?P<key>[A-Za-z_][\w.\-]{0,127})"?\s*:)\s*$')
 
+
+def _placeholder(head, value):
+    """REDACTED, carrying the closing quote when head swallowed the opening one.
+
+    The head pattern's `"?` eats the quote in `- "DB_PASSWORD=x"`, so the
+    value holds the unmatched partner. An odd quote count in head means the
+    value's trailing quote is closing it, and dropping it would leave a line
+    that no longer parses."""
+    for q in ('"', "'"):
+        if head.count(q) % 2 and value.endswith(q):
+            return REDACTED + q
+    return REDACTED
+
+
+def _nested_is_mapping(lines, i, indent):
+    """True if the block under lines[i] is a mapping rather than the key's value.
+
+    `tokens:` followed by `- ghp_...` holds the secret in its items, but a
+    compose `secrets:` block holds named entries whose own values are read
+    line by line. Only the first deeper line decides which."""
+    for line in lines[i + 1:]:
+        stripped = line.rstrip('\n\r')
+        if not stripped.strip():
+            continue
+        if _indent(stripped) <= indent:
+            return False
+        return bool(_ASSIGN_RE.match(stripped) or _BARE_KEY_RE.match(stripped))
+    return False
+
 # A YAML block or folded scalar: the value is on the following, deeper lines.
 _BLOCK_SCALAR_RE = re.compile(r'^[|>][+-]?\d*\s*(#.*)?$')
 
@@ -124,7 +153,7 @@ def _redact_document(lines):
     data_indent = None      # indent of a Secret's `data:` key while inside it
     swallow_indent = None   # indent of a redacted key whose value runs on below
 
-    for line in lines:
+    for i, line in enumerate(lines):
         stripped = line.rstrip('\n\r')
         eol = line[len(stripped):]
         if not stripped.strip():
@@ -153,13 +182,16 @@ def _redact_document(lines):
         if m and (under_secret_data or SECRET_KEY_RE.search(m.group('key'))):
             if _BLOCK_SCALAR_RE.match(m.group('value')):
                 swallow_indent = indent   # `key: |` -- the secret is below
-            out.append(m.group('head') + REDACTED + eol)
+            out.append(m.group('head') + _placeholder(m.group('head'), m.group('value')) + eol)
             continue
 
         bare = _BARE_KEY_RE.match(stripped)
         if bare and (under_secret_data or SECRET_KEY_RE.search(bare.group('key'))):
-            swallow_indent = indent       # `tokens:` with the secrets nested below
-            out.append(bare.group('head') + ' ' + REDACTED + eol)
+            if not under_secret_data and _nested_is_mapping(lines, i, indent):
+                out.append(line)          # compose `secrets:` -- the names are topology
+            else:
+                swallow_indent = indent   # `tokens:` with the secrets nested below
+                out.append(bare.group('head') + ' ' + REDACTED + eol)
             continue
 
         out.append(_URL_CRED_RE.sub(lambda x: x.group('scheme') + REDACTED, line))
@@ -176,15 +208,18 @@ def _redact(text):
     value. Names, structure and indentation survive; values under a key that
     reads like a credential, and every value in a Kubernetes Secret, do not.
 
-    This function and its call in build_bundle are coderay's, not the port
-    source's (coderay-q2r.14). Everything else in this module is a verbatim
-    copy; keep the diff to this one seam so a re-port stays mechanical.
+    The redaction seam is coderay's, not the port source's (coderay-q2r.14):
+    everything from REDACTED down to _redact, plus the _redact call in
+    build_bundle. It is purely additive -- no upstream line is edited except
+    that one call -- so a re-port stays mechanical: copy the module, re-add the
+    seam, re-point build_bundle.
 
     ponytail: key-name patterns plus Secret-block tracking, not a secret
     scanner. A credential under an unguessable key name in a file that is not a
     Secret still gets through; reach for detect-secrets or gitleaks if that
-    matters. A redacted line is not guaranteed to re-parse -- the value match
-    runs to end of line, so a trailing quote or inline map goes with it.
+    matters. A redacted line keeps its quoting but not its structure: the value
+    match runs to end of line, so an inline map or a trailing comment goes with
+    it.
     """
     out = []
     for doc in _documents(text.splitlines(keepends=True)):

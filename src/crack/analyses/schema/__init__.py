@@ -66,7 +66,6 @@ def _hero_prefix(shared):
             '    </section>\n')
 
 def _footer(shared):
-    from crack.core.render import esc
     return (f"Read from {esc(shared.get('schema_path', ''))} &middot; "
             f"{len(shared.get('table_list', []))} core tables &middot; "
             f"{len(shared.get('migration_names', []))} migrations.")

@@ -195,6 +195,35 @@ def test_redact_stops_at_the_end_of_the_secret_block():
     assert "LOG_LEVEL: debug" in out
 
 
+def test_redact_leaves_a_line_it_rewrote_still_parseable():
+    """The head pattern eats the opening quote, so [REDACTED] must carry the
+    closing one or the line comes out unbalanced."""
+    assert ac._redact('  - "DB_PASSWORD=hunter2"\n') == '  - "DB_PASSWORD=[REDACTED]"\n'
+    # A value that already carries both of its own quotes needs no help.
+    assert ac._redact('AWS_SECRET_ACCESS_KEY: "abc123"\n') == 'AWS_SECRET_ACCESS_KEY: [REDACTED]\n'
+
+
+def test_redact_keeps_a_named_block_under_a_secret_sounding_key():
+    """compose declares its secrets by NAME under a top-level `secrets:` key.
+
+    Swallowing everything nested under a key matching SECRET_KEY_RE takes that
+    whole block with it -- names, files and all -- which is the topology the
+    analysis exists to read. A nested mapping is structure; only a sequence or
+    a scalar under the key is the value.
+    """
+    compose = ("secrets:\n"
+               "  db_password:\n"
+               "    file: ./secrets/db.txt\n")
+    assert ac._redact(compose) == compose
+
+
+def test_redact_still_reaches_a_secret_nested_under_a_kept_block():
+    """Keeping the block does not mean trusting its leaves."""
+    out = ac._redact("auth:\n  api_token: hunter2SECRET\n  host: db.internal\n")
+    assert "hunter2SECRET" not in out
+    assert "host: db.internal" in out
+
+
 def test_redact_is_linear_on_a_long_line_with_no_separator():
     """_URL_CRED_RE's runs must stay bounded.
 

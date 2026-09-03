@@ -12,6 +12,8 @@ from typing import Callable, Optional
 
 from markdown_it import MarkdownIt
 
+from .llm import extract_mermaid  # noqa: F401  (re-exported for custom renderers)
+
 _MD = MarkdownIt("commonmark", {"html": False, "linkify": True, "breaks": False}).enable(["table"])
 
 @dataclass(frozen=True)
@@ -77,10 +79,6 @@ def md_rich(text):
 
 def esc(s):
     return _html.escape(str(s).strip())
-
-def extract_mermaid(text):
-    m = re.search(r"```mermaid\s*\n(.*?)```", text or "", re.DOTALL)
-    return m.group(1).strip() if m else ""
 
 def strip_mermaid(text):
     return re.sub(r"```mermaid\s*\n.*?```", "", text or "", flags=re.DOTALL).strip()

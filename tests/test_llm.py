@@ -45,3 +45,13 @@ def test_extract_mermaid_picks_the_diagram_type_it_is_asked_for():
 def test_extract_mermaid_returns_nothing_when_the_asked_for_type_is_absent():
     """Better an empty hero than someone else's diagram in it."""
     assert extract_mermaid("```mermaid\nflowchart LR\n  a --> b\n```", "erDiagram") == ""
+
+
+def test_render_and_llm_share_one_extract_mermaid():
+    """Two copies drifted once already: only llm's learned the `kind` argument,
+    so a caller reaching for render's got the first fence regardless."""
+    from crack.core import llm, render
+
+    assert render.extract_mermaid is llm.extract_mermaid
+    reply = "```mermaid\nflowchart LR\n  a-->b\n```\n```mermaid\nerDiagram\n  USER\n```"
+    assert render.extract_mermaid(reply, "erDiagram").startswith("erDiagram")
