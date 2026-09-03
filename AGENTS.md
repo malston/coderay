@@ -95,6 +95,16 @@ FetchHistory -> NameEras -> ProfileEras -> Graveyard -> OverviewNode
 - `NameEras` and `ProfileEras` parse JSON through `crack.core.json_call`; `Graveyard` calls `call_llm` directly because its output is prose.
 
 
+**Product intent** (five sequential nodes in `src/crack/analyses/product_intent/nodes.py`, wired in `build_flow()` in `src/crack/analyses/product_intent/__init__.py`; no `OverviewNode`):
+
+```text
+FetchRepo -> PainScene -> VariantSentence -> CompetitivePositioning -> SurprisesAndAbsences
+```
+
+- The second bespoke-renderer analysis; like tour, it has no shared overview. It renders four independent extractions (the pain scene, the one-sentence variant, a competitive positioning table with a mermaid diagram, and the surprises-and-absences lists) with its own `render_html`/`render_markdown`.
+- `FetchRepo` reads the repo through `bundle()`, which keeps whole files in `list_files` order until a 650k-char budget is spent and reports how many it dropped (coderay-q2r.47; the port source concatenated everything with no cap). `--include`/`--exclude` are `.gitignore`-style patterns passed to `list_files`. An empty bundle stops the run before any LLM call.
+- Ported text-only: the port source's `IllustratePain` node (a Gemini image of the pain scene written beside the report) is not included, so shared core carries no image provider and `init_shared` needs no `out_dir`. `CompetitivePositioning.normalize` also requires every competitor to carry a `name` (coderay-q2r.48).
+
 ## Conventions & Patterns
 
 - Card-family analyses (`backend`, `architecture`, `interfaces` and `schema`) declare `SECTIONS` and `THEME` and are rendered by `crack/core/render.py`. An analysis whose page shape does not fit declares its own `render_html` and `render_markdown` instead, and `crack/core/render.py` steps aside for it. Tour uses neither path: it predates the contract and writes its own multi-file output directly from `run()`, via `write_index_md`, `write_index_html` and `write_chapter_files`.
