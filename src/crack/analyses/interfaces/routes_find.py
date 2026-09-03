@@ -90,7 +90,7 @@ def crawl_routes(repo, max_chars=900_000):
         return 1
 
     files.sort(key=lambda r: (priority(r), r))
-    parts, total, kept = [], 0, 0
+    parts, total, kept = [], 0, []
     for rel in files:
         text = _read(os.path.join(repo, rel))
         if not text.strip():
@@ -100,7 +100,9 @@ def crawl_routes(repo, max_chars=900_000):
             continue
         parts.append(block)
         total += len(block)
-        kept += 1
+        kept.append(rel)
+    # `kept` is the list, not a count, so the caller can report what actually
+    # reached the bundle rather than what was merely found (coderay-q2r.24).
     return "\n".join(parts), files, kept
 
 

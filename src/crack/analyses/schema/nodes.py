@@ -40,7 +40,13 @@ def schema_table_names(schema_text):
     # writes create_table "users", with an underscore where CREATE TABLE has a
     # space, so \\s+ never matched it and Rails repos came back empty
     # (coderay-q2r.22).
-    for pat in (r'\bmodel\s+(\w+)', r'CREATE\s+TABLE\s+"?(\w+)"?',
+    # The SQL pattern skips an optional IF NOT EXISTS, an optional schema
+    # qualifier, and accepts ", ` or [ quoting. Without those, IF NOT EXISTS
+    # put "if" in the set and public.orders put "public" -- worse than a miss,
+    # because known filters the ER diagram against it (coderay-q2r.26).
+    for pat in (r'\bmodel\s+(\w+)',
+                r'CREATE\s+(?:\w+\s+)*?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?'
+                r'(?:[`"\[]?\w+[`"\]]?\s*\.\s*)?[`"\[]?(\w+)[`"\]]?',
                 r'\bcreate_table\s+["\':]?(\w+)',
                 r'class\s+(\w+)\s*\([^)]*Model'):
         names |= {m.group(1).lower() for m in re.finditer(pat, schema_text, re.IGNORECASE)}

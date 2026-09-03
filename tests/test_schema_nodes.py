@@ -212,3 +212,21 @@ def test_migration_acts_retries_a_reply_with_no_act_cards(monkeypatch):
     node.run(shared)
     assert len(calls) == 3
     assert shared["migration_md"] == CARDS.strip()
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("CREATE TABLE IF NOT EXISTS users (id int);", {"users"}),
+    ("CREATE TABLE public.orders (id int);", {"orders"}),
+    ("CREATE TABLE `items` (id int);", {"items"}),
+    ('CREATE TABLE "public"."evts" (id int);', {"evts"}),
+    ("CREATE UNLOGGED TABLE jobs (id int);", {"jobs"}),
+])
+def test_schema_table_names_reads_the_ordinary_sql_spellings(text, expected):
+    """coderay-q2r.26.
+
+    Two of these were worse than a miss: IF NOT EXISTS put "if" in the set and
+    public.orders put "public". `known` filters the ER diagram entities against
+    this set, so a keyword in it drops every real table and the deep dive falls
+    back to whatever the model happened to backtick.
+    """
+    assert n.schema_table_names(text) == expected

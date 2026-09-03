@@ -309,8 +309,8 @@ def test_build_bundle_overlays_the_four_sources_and_counts_them(tmp_path):
     })
     bundle, stats = ac.build_bundle(repo)
 
-    assert stats == {"config_files": 4, "env_vars": 2, "deps": 2,
-                     "integrations": 0, "sdk_lines": 0}
+    assert stats == {"config_files": 4, "config_files_found": 4, "truncated": False,
+                     "env_vars": 2, "deps": 2, "integrations": 0, "sdk_lines": 0}
     assert "PROCESS DECLARATION (compose / k8s): docker-compose.yml" in bundle
     assert "KUBERNETES MANIFESTS: deploy/k8s/api.yaml" in bundle
     assert "GATEWAY / PLATFORM CONFIG: Procfile" in bundle
@@ -376,7 +376,23 @@ def test_build_bundle_lists_the_integration_directories(tmp_path):
     assert "_utils" not in bundle
 
 
-def test_build_bundle_caps_the_total_size(tmp_path):
+def test_build_bundle_caps_the_total_size_and_says_it_truncated(tmp_path):
+    """A slice lands mid-line, so an unmarked bundle reads as a complete one."""
     repo = _repo(tmp_path, {"docker-compose.yml": "s" * 50_000})
-    bundle, _stats = ac.build_bundle(repo, max_chars=1_000)
-    assert len(bundle) == 1_000
+    bundle, stats = ac.build_bundle(repo, max_chars=1_000)
+    assert bundle.startswith("=" * 5)
+    assert "BUNDLE TRUNCATED" in bundle
+    assert stats["truncated"] is True
+    assert len(bundle) > 1_000        # the marker is appended after the slice
+
+
+def test_build_bundle_counts_only_files_whose_text_reached_the_bundle(tmp_path):
+    """An empty or unreadable config file is classified, then skipped by the
+    parts loop. Counting it makes the footer claim coverage that is not there
+    (coderay-q2r.27)."""
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n",
+                            "docker-compose.override.yml": ""})
+    bundle, stats = ac.build_bundle(repo)
+    assert stats["config_files"] == 1
+    assert stats["config_files_found"] == 2
+    assert bundle.count("===== PROCESS DECLARATION") == 1

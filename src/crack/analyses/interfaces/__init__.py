@@ -21,11 +21,22 @@ def _sequence_prefix(shared):
     return (f'    <div class="diagram"><pre class="mermaid">{esc(diagram)}</pre></div>\n'
             if diagram else "")
 
+UNGROUNDED_NOTE = (
+    "**No handler source was read for this endpoint.** The diagram below was "
+    "written from the route list alone, so its steps and any `file:line` "
+    "references are the model's inference, not something it read.")
+
 def _sequence_cards(shared, body_md):
-    """One hand-built card holding the sequence body, with the fence removed."""
+    """One hand-built card holding the sequence body, with the fence removed.
+
+    When no handler source reached the prompt the diagram is inference, and it
+    renders identically to a grounded one, so say so in the card rather than
+    only on stdout (coderay-q2r.25)."""
     body = strip_mermaid(body_md)
-    if not body:
+    if not body and shared.get("sequence_grounded", True):
         return ""
+    if not shared.get("sequence_grounded", True):
+        body = UNGROUNDED_NOTE + ("\n\n" + body if body else "")
     return card(esc(shared.get("sequence_endpoint") or "Sequence"), body)
 
 SECTIONS = [
@@ -74,7 +85,13 @@ def _hero_prefix(shared):
     )
 
 def _footer(shared):
-    return (f"Read from {len(shared.get('route_files', []))} route files &middot; "
+    found = len(shared.get("route_files", []))
+    # route_files_read is what reached the bundle; the rest were dropped by the
+    # size cap or read empty. Saying "read from N found files" overstates the
+    # provenance of the whole report (coderay-q2r.24).
+    read = len(shared.get("route_files_read", shared.get("route_files", [])))
+    of_found = "" if read == found else f" of {found} found"
+    return (f"Read from {read} route files{of_found} &middot; "
             f"{len(shared.get('group_names', []))} feature groups.")
 
 def _md_preamble(shared):

@@ -351,3 +351,43 @@ def test_a_scalar_files_reply_is_rejected_rather_than_iterated_per_character(
     _sequence_node().run(shared)
     assert shared["sequence_files"] == ["pages/api/zzz.ts"]
     assert "decoy.ts" not in shared["sequence_files"]
+
+
+def test_the_sequence_fallback_uses_a_non_nextjs_route_file(tmp_path, monkeypatch):
+    """coderay-q2r.25. Rails, Django, Go, tRPC and GraphQL had no candidates.
+
+    This repo has no pages/api at all, so the old filter returned nothing and
+    the diagram was drawn from the route list with no source. Both files are
+    route files; the larger one must win.
+    """
+    repo = _repo(tmp_path, {"config/routes.rb": "Rails.routes\n",
+                            "app/urls.py": "urlpatterns = []\n" * 40})
+
+    def reply(prompt):
+        if "sequence diagram" in prompt:
+            return "not yaml at all"
+        return "```mermaid\nsequenceDiagram\n  a->>b: hi\n```"
+
+    _fake_llm(monkeypatch, reply)
+    shared = {"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "",
+              "route_files": ["config/routes.rb", "app/urls.py"]}
+    _sequence_node().run(shared)
+    assert shared["sequence_files"] == ["app/urls.py"]
+    assert shared["sequence_grounded"] is True
+
+
+def test_a_diagram_drawn_with_no_handler_source_is_marked_ungrounded(tmp_path, monkeypatch):
+    """With no route file readable at all there is nothing to ground it in, and
+    that fact has to reach the page rather than only stdout."""
+    repo = _repo(tmp_path, {"config/routes.rb": "Rails.routes\n"})
+
+    def reply(prompt):
+        if "sequence diagram" in prompt:
+            return "not yaml at all"
+        return "```mermaid\nsequenceDiagram\n  a->>b: hi\n```"
+
+    _fake_llm(monkeypatch, reply)
+    shared = {"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "",
+              "route_files": []}          # nothing to fall back to
+    _sequence_node().run(shared)
+    assert shared["sequence_grounded"] is False

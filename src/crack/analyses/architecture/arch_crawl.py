@@ -302,6 +302,7 @@ def build_bundle(repo, max_chars=500_000):
                 buckets[kind].append((rel, _redact(_read(full))))
 
     parts = []
+    included = 0        # files whose text actually reached the bundle
     for kind, label in (('compose', 'PROCESS DECLARATION (compose / k8s)'),
                         ('k8s', 'KUBERNETES MANIFESTS'),
                         ('gateway', 'GATEWAY / PLATFORM CONFIG'),
@@ -309,6 +310,7 @@ def build_bundle(repo, max_chars=500_000):
         for rel, text in buckets[kind]:
             if text.strip():
                 parts.append(f"===== {label}: {rel} =====\n{text}\n")
+                included += 1
 
     if env_names:
         parts.append("===== ENVIRONMENT VARIABLE NAMES (values omitted) =====\n"
@@ -326,9 +328,20 @@ def build_bundle(repo, max_chars=500_000):
     if sdk:
         parts.append("===== SDK IMPORT LINES (git grep — file:line: import) =====\n" + sdk + "\n")
 
-    bundle = "\n".join(parts)[:max_chars]
+    whole = "\n".join(parts)
+    bundle = whole[:max_chars]
+    if len(whole) > max_chars:
+        # The slice lands mid-line, and without this the model reads a config
+        # file that simply stops as a complete one (coderay-q2r.27).
+        bundle += (f"\n\n===== BUNDLE TRUNCATED at {max_chars:,} of "
+                   f"{len(whole):,} chars -- the sources above are incomplete =====\n")
     stats = {
-        "config_files": sum(len(v) for v in buckets.values()),
+        # What reached the bundle, not what was classified: an empty or
+        # unreadable config file is skipped above and must not be counted
+        # (coderay-q2r.27).
+        "config_files": included,
+        "config_files_found": sum(len(v) for v in buckets.values()),
+        "truncated": len(whole) > max_chars,
         "env_vars": len(env_names),
         "deps": len(deps),
         "integrations": len(isubs),

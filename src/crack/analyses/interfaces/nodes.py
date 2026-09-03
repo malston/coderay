@@ -66,7 +66,9 @@ class FindRoutes(Node):
             "(Rails routes, Django urls, Next.js pages/api, tRPC, GraphQL, gRPC).")
         shared["routes"] = routes
         shared["route_files"] = files
-        print(f"  Surface: {kept} route files ({len(routes):,} chars)")
+        shared["route_files_read"] = kept
+        note = "" if len(kept) == len(files) else f" of {len(files)} found"
+        print(f"  Surface: {len(kept)} route files{note} ({len(routes):,} chars)")
 
 
 class ApiMenu(Node):
@@ -195,12 +197,16 @@ class EndpointSequence(Node):
         handler_source, resolved = rf.read_files(ctx["repo"], paths)
         if not handler_source.strip():
             # Fallback: the largest Next.js handler on disk.
-            # The leading slash is coderay's (coderay-q2r.16's sibling,
-            # coderay-q2r.17): route_files are repo-relative and never carry
-            # one, so a root-level pages/api -- the layout Next.js generates --
-            # matched nothing and the fallback silently never fired.
-            candidates = [f for f in ctx["route_files"]
-                          if "/pages/api/" in "/" + f.replace(os.sep, "/").lstrip("/")]
+            # Next.js handlers first: one file is one endpoint, so the largest
+            # is the richest single handler. Every other framework keeps its
+            # endpoints in shared manifests, which is still far better than
+            # nothing -- restricting the fallback to pages/api left Rails,
+            # Django, Go, tRPC and GraphQL repos drawing the diagram from the
+            # route list alone, with invented file:line refs and no marker
+            # (coderay-q2r.25). The leading slash is coderay-q2r.17.
+            nextjs = [f for f in ctx["route_files"]
+                      if "/pages/api/" in "/" + f.replace(os.sep, "/").lstrip("/")]
+            candidates = nextjs or list(ctx["route_files"])
             if candidates:
                 big = max(candidates, key=lambda f: os.path.getsize(os.path.join(ctx["repo"], f)))
                 handler_source, resolved = rf.read_files(ctx["repo"], [big])
@@ -212,11 +218,14 @@ class EndpointSequence(Node):
                       handler_source=handler_source or "(handler source unavailable)")
         md = call_llm(prompt).strip()
         assert "```mermaid" in md or "sequenceDiagram" in md, "no sequence diagram produced"
-        return {"md": md, "endpoint": endpoint, "files": resolved}
+        return {"md": md, "endpoint": endpoint, "files": resolved,
+                "grounded": bool(handler_source.strip())}
 
     def post(self, shared, prep_res, exec_res):
         shared["sequence_md"] = exec_res["md"]
         shared["sequence_endpoint"] = exec_res["endpoint"]
         shared["sequence_files"] = exec_res["files"]
+        shared["sequence_grounded"] = exec_res["grounded"]
         print(f"  Sequence: {exec_res['endpoint'] or 'endpoint'} "
-              f"(from {len(exec_res['files'])} source files)")
+              f"(from {len(exec_res['files'])} source files)"
+              + ("" if exec_res["grounded"] else " -- NO handler source, diagram is unverified"))

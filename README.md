@@ -29,7 +29,7 @@ A five-stage pipeline (BuildBundle, Pipeline, LayerCode, Trace, OverviewNode) th
 
 A five-stage pipeline (BuildBundle, Inventory, TechStack, TraceRequest, OverviewNode) that maps a multi-service system: the programs it runs, the services it rents, and the wires between them:
 
-- Overlays four sources that no single file holds together: process declarations (compose, Kubernetes manifests, `Procfile`, platform config), environment variable names from `.env` files, the union of `package.json` dependencies, and Terraform. SDK `import` lines found by `git grep` are the proof a connection is live rather than merely configured.
+- Overlays four sources that no single file holds together: process declarations (compose, Kubernetes manifests, `Procfile`, platform config), environment variable names from `.env` files, the union of `package.json` dependencies, and Terraform. SDK `import` lines found by `git grep` are the proof a connection is live rather than merely configured. Credential values are stripped before the bundle leaves the machine, and a bundle that hit its size cap says so rather than stopping mid-file.
 - Renders three views: every node sorted into four bands (run, rent, call, client), the real technology behind each box's label, and one request traced hop by hop with its variants.
 - Expects a multi-service application. The run stops before it spends an LLM call only when the whole bundle is empty; a repo with no config files but some dependencies or SDK imports still proceeds, which is how the CDK case below reports `0 config files` and carries on.
 - Known limitations, worth reading before you spend a run:
@@ -45,7 +45,7 @@ A five-stage pipeline (FindRoutes, ApiMenu, TraceActions, EndpointSequence, Over
 - Renders four views: every endpoint grouped by feature and sized against the biggest group, a short tour of the groups that say the most about the product, one user gesture traced across service lanes, and a message-by-message sequence diagram of a single endpoint. The tour is omitted rather than rendered empty when the model writes none.
 - Expects a web API. Pointed at a repository with no surface files, the run stops before it spends an LLM call.
 - Known limitation, worth reading before you spend a run:
-  - When the model's endpoint pick cannot be read, the sequence diagram falls back to the largest Next.js `pages/api/` handler. Only Next.js: a Rails, Django, Express, tRPC or GraphQL repo has no candidates, so the diagram is drawn with no handler source at all and the model writes it from the route list alone, inventing its `file:line` references. Nothing in the page says so. Check that the sequence section names an endpoint you recognise before trusting it.
+  - When the model's endpoint pick cannot be read, the sequence diagram falls back to the largest route file, preferring a Next.js `pages/api/` handler where there is one. If nothing readable is left, the diagram is written from the route list alone and its `file:line` references are the model's inference; the card says so in that case rather than reading like a grounded one.
 
 ### Schema
 

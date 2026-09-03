@@ -68,7 +68,7 @@ def test_crawl_routes_puts_aggregators_before_single_handlers(tmp_path):
         "zzz/urls.py": "urlpatterns = []\n",
     })
     routes, files, kept = rf.crawl_routes(repo)
-    assert kept == 3
+    assert kept == files          # nothing dropped, so read == found
     assert routes.index("zzz/urls.py") < routes.index("pages/api/aaa.ts")
 
 
@@ -77,8 +77,11 @@ def test_crawl_routes_caps_the_total_size(tmp_path):
         "zzz/urls.py": "u" * 5_000,
         "pages/api/big.ts": "b" * 5_000,
     })
-    routes, _files, kept = rf.crawl_routes(repo, max_chars=5_200)
-    assert kept == 1
+    routes, files, kept = rf.crawl_routes(repo, max_chars=5_200)
+    # kept is the list of files that reached the bundle, so the caller can
+    # report provenance honestly (coderay-q2r.24).
+    assert kept == ["zzz/urls.py"]
+    assert len(files) == 2
     # The aggregator is the one kept, not whichever came first on disk.
     assert "zzz/urls.py" in routes and "pages/api/big.ts" not in routes
 

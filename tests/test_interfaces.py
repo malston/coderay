@@ -144,3 +144,41 @@ def test_the_footer_counts_the_route_files_and_the_groups():
     footer = interfaces._footer({"route_files": ["a.rb", "b.py"], "group_names": ["G (1)"]})
     assert "2 route files" in footer
     assert "1 feature groups" in footer
+
+
+def test_the_footer_says_how_many_route_files_were_actually_read():
+    """coderay-q2r.24. Files dropped by the size cap were counted as read.
+
+    The distinguishing input is a run where the two differ; when they agree the
+    footer reads the same either way.
+    """
+    footer = interfaces._footer({"route_files": ["a.rb", "b.py", "c.ts"],
+                                 "route_files_read": ["a.rb"],
+                                 "group_names": ["G (1)"]})
+    assert "Read from 1 route files of 3 found" in footer
+
+
+def test_the_footer_stays_quiet_when_every_route_file_was_read():
+    footer = interfaces._footer({"route_files": ["a.rb"], "route_files_read": ["a.rb"],
+                                 "group_names": []})
+    assert "of 1 found" not in footer
+    assert "Read from 1 route files" in footer
+
+
+def test_the_sequence_card_says_when_the_diagram_had_no_handler_source():
+    """coderay-q2r.25. An ungrounded diagram renders identically to a real one.
+
+    The model writes it from the route list and invents its file:line refs, so
+    the page has to say so -- stdout scrolls past during a multi-minute run.
+    """
+    shared = {"sequence_endpoint": "POST /api/book", "sequence_grounded": False}
+    html = interfaces._sequence_cards(shared, "```mermaid\nsequenceDiagram\n  a->>b: x\n```")
+    assert "No handler source was read" in html
+    assert html, "an ungrounded diagram must still render a card carrying the warning"
+
+
+def test_the_sequence_card_carries_no_warning_on_a_grounded_run():
+    shared = {"sequence_endpoint": "POST /api/book", "sequence_grounded": True}
+    html = interfaces._sequence_cards(shared, "The write commits here.")
+    assert "No handler source" not in html
+    assert "The write commits here." in html
