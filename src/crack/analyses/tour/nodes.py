@@ -192,7 +192,7 @@ class ExtractGraph(Node):
         edges = []
         covered = 0
         for rel_path in selected:
-            extractor = REGISTRY.get(os.path.splitext(rel_path)[1])
+            extractor = REGISTRY.get(os.path.splitext(rel_path)[1].lower())
             if extractor is None:
                 continue
             text = safe_read(os.path.join(root, rel_path))

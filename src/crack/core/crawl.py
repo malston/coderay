@@ -45,7 +45,7 @@ DEFAULT_KEEP_EXT = frozenset({
     '.dart',
     # functional / niche
     '.ex', '.exs', '.erl', '.hs', '.clj', '.cljs',
-    '.ml', '.mli', '.r', '.R', '.jl', '.cr',
+    '.ml', '.mli', '.r', '.jl', '.cr',
     # smart contracts
     '.sol',
     # schema / IDL
@@ -133,11 +133,15 @@ def within_repo(repo, path):
 
 
 def _wanted(filename, keep_ext, keep_names):
-    if filename in DEFAULT_SKIP_NAMES or filename.endswith(DEFAULT_SKIP_SUFFIXES):
+    # Case-folded for the skip and extension checks so `credentials.JSON` is
+    # refused the same way `credentials.json` is; keep_names stays exact
+    # (Dockerfile, README).
+    lowered = filename.lower()
+    if lowered in DEFAULT_SKIP_NAMES or lowered.endswith(DEFAULT_SKIP_SUFFIXES):
         return False
     if filename in keep_names:
         return True
-    return os.path.splitext(filename)[1] in keep_ext
+    return os.path.splitext(lowered)[1] in keep_ext
 
 
 def _compile(patterns):
@@ -170,6 +174,7 @@ def list_files(root, *, keep_ext=DEFAULT_KEEP_EXT, skip_dirs=DEFAULT_SKIP_DIR,
     """
     out = []
     skip = set(skip_dirs)
+    keep_ext = {e.lower() for e in keep_ext}
     include_spec = _compile(include)
     exclude_spec = _compile(exclude)
     real_root = os.path.realpath(root)
@@ -181,13 +186,13 @@ def list_files(root, *, keep_ext=DEFAULT_KEEP_EXT, skip_dirs=DEFAULT_SKIP_DIR,
             if not _wanted(f, keep_ext, keep_names):
                 continue
             path = os.path.join(dirpath, f)
-            if not os.path.realpath(path).startswith(real_root + os.sep):
+            real = os.path.realpath(path)
+            if not real.startswith(real_root + os.sep):
                 continue  # symlink resolving outside the repo root
             # coderay-q2r.52: a symlink can rename a skipped file into a
             # source-looking one (src/config.py -> ../.env), so the target's
             # own name has to pass the filter too.
-            if os.path.islink(path) and not _wanted(os.path.basename(os.path.realpath(path)),
-                                                    keep_ext, keep_names):
+            if os.path.islink(path) and not _wanted(os.path.basename(real), keep_ext, keep_names):
                 continue
             rel = os.path.relpath(path, root)
             if include_spec is not None and not include_spec.match_file(rel):

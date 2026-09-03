@@ -42,8 +42,8 @@ def test_list_files_excludes_symlink_escaping_the_repo_root(tmp_path):
 
     outside = tmp_path / "outside"
     outside.mkdir()
-    (outside / "credentials").write_text("AKIA...\n")
-    (repo / "config.yaml").symlink_to(outside / "credentials")
+    (outside / "settings.py").write_text("AKIA...\n")
+    (repo / "config.yaml").symlink_to(outside / "settings.py")
 
     files = list_files(str(repo))
 
@@ -93,3 +93,34 @@ def test_list_files_skips_a_symlink_that_renames_a_credential_file(tmp_path):
     (repo / "src" / "alias.py").symlink_to(repo / "src" / "real.py")   # a legitimate symlink stays
     rels = sorted(os.path.relpath(p, repo) for p in list_files(str(repo)))
     assert rels == ["src/alias.py", "src/real.py"]
+
+
+def test_list_files_matches_extensions_case_insensitively(tmp_path):
+    """coderay-q2r.54: older PHP and Java trees carry `.PHP` and `.JAVA`; the
+    extension filter reads them as the same language as their lowercase form."""
+    (tmp_path / "index.PHP").write_text("<?php\n")
+    (tmp_path / "Main.JAVA").write_text("class Main {}\n")
+    names = {os.path.basename(p) for p in list_files(str(tmp_path))}
+    assert names == {"index.PHP", "Main.JAVA"}
+
+
+def test_list_files_keeps_r_scripts_in_either_case(tmp_path):
+    (tmp_path / "analysis.R").write_text("x <- 1\n")
+    (tmp_path / "helpers.r").write_text("y <- 2\n")
+    names = {os.path.basename(p) for p in list_files(str(tmp_path))}
+    assert names == {"analysis.R", "helpers.r"}
+
+
+def test_wanted_rejects_credential_shaped_names_in_any_case():
+    """The extension match is case-insensitive, so the credential skip has to
+    be too, or `credentials.JSON` slips through on the extension alone."""
+    for name in ("credentials.JSON", "SECRETS.YML", "token.JSON", "Service-Account.json"):
+        assert not crawl._wanted(name, crawl.DEFAULT_KEEP_EXT, crawl.DEFAULT_KEEP_NAMES), name
+    assert not crawl._wanted("server.PEM", crawl.DEFAULT_KEEP_EXT | {".pem"}, crawl.DEFAULT_KEEP_NAMES)
+
+
+def test_list_files_accepts_an_uppercase_keep_ext_override(tmp_path):
+    (tmp_path / "analysis.r").write_text("x <- 1\n")
+    (tmp_path / "helpers.R").write_text("y <- 2\n")
+    names = {os.path.basename(p) for p in list_files(str(tmp_path), keep_ext={".R"})}
+    assert names == {"analysis.r", "helpers.R"}

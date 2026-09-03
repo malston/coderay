@@ -113,3 +113,62 @@ def test_build_bundle_samples_handlers_and_prefers_core_names(tmp_path):
     assert stats["included"] == 1
     assert "app/views/message.py" in bundle
     assert "app/views/aaa0.py" not in bundle
+
+
+def test_build_bundle_refuses_a_symlink_escaping_the_repo(tmp_path):
+    """coderay-q2r.54: a checked-in urls.py that is a symlink to a file outside
+    the repo must not be read into the bundle."""
+    outside = tmp_path / "outside.py"
+    outside.write_text("OUTSIDE SECRET\n")
+    repo = _repo(tmp_path / "repo", {"app/views/a.py": "pass\n"})
+    (tmp_path / "repo" / "app" / "urls.py").symlink_to(outside)
+    bundle, stats = bc.build_bundle(repo)
+    assert "OUTSIDE SECRET" not in bundle
+    assert stats["counts"].get("route", 0) == 0
+
+
+def test_build_bundle_skips_a_symlink_that_renames_a_credential_file(tmp_path):
+    """coderay-q2r.54: app/urls.py -> ../.env carries a source name but a
+    credential body; the target's own name has to pass the skip list."""
+    repo = _repo(tmp_path, {".env": "TOKEN=hunter2\n", "app/views/a.py": "pass\n"})
+    (tmp_path / "app" / "urls.py").symlink_to(tmp_path / ".env")
+    bundle, stats = bc.build_bundle(repo)
+    assert "hunter2" not in bundle
+    assert stats["counts"].get("route", 0) == 0
+
+
+def test_build_bundle_includes_a_long_file_whole(tmp_path):
+    """coderay-q2r.54: the budget is enforced by how many files are included;
+    a file that fits arrives whole."""
+    body = "x" * 50_000 + "\nTAIL_MARKER\n"
+    repo = _repo(tmp_path, {"app/urls.py": body})
+    bundle, _ = bc.build_bundle(repo)
+    assert "TAIL_MARKER" in bundle
+
+
+def test_build_bundle_drops_an_oversized_file_whole(tmp_path):
+    """coderay-q2r.54: list_files' per-file size cap drops the file from the
+    bundle and its count."""
+    repo = _repo(tmp_path, {"app/urls.py": "x" * 600_000, "app/views/a.py": "pass\n"})
+    bundle, stats = bc.build_bundle(repo)
+    assert "LAYER ROUTE" not in bundle
+    assert stats["counts"].get("route", 0) == 0
+
+
+def test_build_bundle_skips_a_file_it_cannot_decode(tmp_path):
+    """coderay-q2r.54: an undecodable file is left out of the bundle; it still
+    counts toward its layer."""
+    repo = _repo(tmp_path, {"app/views/a.py": "pass\n"})
+    (tmp_path / "app" / "urls.py").write_bytes(b"\xff\xfe not utf-8")
+    bundle, stats = bc.build_bundle(repo)
+    assert "LAYER ROUTE" not in bundle
+    assert stats["counts"]["route"] == 1
+
+
+def test_build_bundle_keeps_an_uppercase_source_extension(tmp_path):
+    """coderay-q2r.54: classify() lowercases the path, so the walk must accept
+    `.PY`/`.PHP` too or a route file vanishes from both the bundle and the count."""
+    repo = _repo(tmp_path, {"app/URLS.PY": "urlpatterns = []\n"})
+    bundle, stats = bc.build_bundle(repo)
+    assert stats["counts"]["route"] == 1
+    assert "urlpatterns = []" in bundle
