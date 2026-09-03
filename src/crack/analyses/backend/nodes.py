@@ -44,8 +44,7 @@ class BuildBundle(Node):
         shared["codebase"] = bundle
         shared["layer_counts"] = c
         print(f"  Bundle: {stats['included']} files ({len(bundle):,} chars). Layers — "
-              + ", ".join(f"{k}:{c.get(k, 0)}" for k in
-                          ('route', 'middleware', 'handler', 'service', 'database', 'response')))
+              + ", ".join(f"{k}:{c.get(k, 0)}" for k in bc.LAYERS))
 
 
 class Pipeline(Node):

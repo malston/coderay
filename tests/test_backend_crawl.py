@@ -193,3 +193,23 @@ def test_classify_treats_a_rails_spec_as_a_test():
     test-marker tuple, so a spec beside the controllers counted as a handler."""
     assert bc.classify("app/controllers/users_controller_spec.rb") is None
     assert bc.classify("app/controllers/users_controller.rb") == "handler"
+
+
+def test_build_bundle_gives_every_layer_a_file_before_a_spine_file_takes_the_rest(tmp_path):
+    """coderay-q2r.58. Spine files went first and in full, so one 499k routes
+    file spent most of the 650k budget and the sampled layers were dropped
+    while the header still counted them. Selection is round-robin across the
+    layers; a file that does not fit is dropped whole, never cut."""
+    files = {"app/routes/bundle.js": "r" * 499_000}
+    for layer_dir in ("views", "services", "models"):
+        for i in range(18):
+            files[f"app/{layer_dir}/f{i}.py"] = f"# {layer_dir} {i}\n" + "x" * 5_000
+    repo = _repo(tmp_path, files)
+    bundle, stats = bc.build_bundle(repo)
+    assert stats["counts"] == {"route": 1, "handler": 18, "service": 18, "database": 18}
+    assert len(bundle) <= 650_000
+    assert "LAYER ROUTE: app/routes/bundle.js" in bundle
+    for layer in ("HANDLER", "SERVICE", "DATABASE"):
+        assert f"LAYER {layer}: " in bundle, layer
+    # Grouped emission: the prompts see the layers in the same order as before.
+    assert bundle.index("LAYER ROUTE:") < bundle.index("LAYER HANDLER:") < bundle.index("LAYER DATABASE:")
