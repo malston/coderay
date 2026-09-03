@@ -10,7 +10,7 @@ def run_flow(flow, shared, out_dir, dump_state):
     print where it landed, and re-raise."""
     try:
         flow.run(shared)
-    except Exception:
+    except (Exception, SystemExit):
         state_path = dump_state(shared, out_dir)
         print(f"\nPipeline failed. Wrote partial run state to {state_path}")
         raise

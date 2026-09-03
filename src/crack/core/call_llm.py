@@ -59,6 +59,16 @@ def resolve_provider_and_model():
     return provider, _model_for(provider)
 
 
+class ResponseTruncated(RuntimeError):
+    """The model hit the output cap. Deterministic for a given prompt and cap,
+    so callers should not retry it as if it were transient (coderay-q2r.46)."""
+
+
+def _truncated(detail):
+    return ResponseTruncated(f"{detail}; raise LLM_MAX_OUTPUT_TOKENS "
+                             f"(currently {max_output_tokens()})")
+
+
 def max_output_tokens():
     """The max-output-tokens cap call_llm() would use right now, without calling it."""
     return int(os.environ.get("LLM_MAX_OUTPUT_TOKENS", str(DEFAULT_MAX_OUTPUT_TOKENS)))
@@ -195,7 +205,7 @@ def call_llm(prompt: str) -> str:
             duration_s, cached=False,
         )
         if resp.stop_reason == "max_tokens":
-            raise RuntimeError("Anthropic response truncated (stop_reason=max_tokens)")
+            raise _truncated("Anthropic response truncated (stop_reason=max_tokens)")
         text_block = next((b for b in resp.content if getattr(b, "type", None) == "text"), None)
         text = text_block.text if text_block else None
 
@@ -222,7 +232,7 @@ def call_llm(prompt: str) -> str:
         )
         choice = resp.choices[0]
         if choice.finish_reason == "length":
-            raise RuntimeError("OpenAI response truncated (finish_reason=length)")
+            raise _truncated("OpenAI response truncated (finish_reason=length)")
         text = choice.message.content
 
     elif provider == "gemini":
@@ -251,7 +261,7 @@ def call_llm(prompt: str) -> str:
         candidate = resp.candidates[0] if resp.candidates else None
         finish_reason = str(getattr(candidate, "finish_reason", "") or "")
         if candidate is not None and finish_reason and "STOP" not in finish_reason.upper():
-            raise RuntimeError(f"Gemini response incomplete (finish_reason={finish_reason})")
+            raise _truncated(f"Gemini response incomplete (finish_reason={finish_reason})")
         text = resp.text
 
     if not text:

@@ -145,3 +145,16 @@ def test_run_analysis_writes_utf8_output_under_the_c_locale(tmp_path):
         [sys.executable, str(script)], env=env, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     assert "—" in (out / "index.md").read_text(encoding="utf-8")
+
+
+def test_run_flow_dumps_state_when_a_node_exits_deliberately():
+    """coderay-q2r.46: a truncated chapter exits the run via SystemExit so
+    the node does not retry it; the partial state must still be written."""
+    class ExitingFlow:
+        def run(self, shared):
+            raise SystemExit("cap too low")
+
+    dumped = {}
+    with pytest.raises(SystemExit):
+        run_flow(ExitingFlow(), {"x": 1}, "/tmp", lambda s, o: dumped.setdefault("s", s) and "/tmp/x")
+    assert dumped == {"s": {"x": 1}}

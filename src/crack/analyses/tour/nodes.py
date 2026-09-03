@@ -14,7 +14,8 @@ Notes on reliability:
     Node max_retries stays at 1 -- a second retry layer on top would multiply
     LLM calls for a genuinely bad reply without adding anything.
   - WriteChapters doesn't parse structured output, so it keeps Node(max_retries=3,
-    wait=2) as its only retry layer, for transient call_llm failures.
+    wait=2) as its only retry layer, for transient call_llm failures. A
+    truncated chapter is not transient and exits the run instead.
   - File reads in the main path raise. The only swallowed errors are per file decode
     errors inside crack.core.safe_read(), which is correct: we don't want one binary blob
     to kill a walk over 10,000 files.
@@ -26,7 +27,7 @@ from typing import TypedDict
 
 from pocketflow import Node, BatchNode
 
-from crack.core import call_llm, fill, list_files, read_prompt, safe_read, yaml_call
+from crack.core import ResponseTruncated, call_llm, fill, list_files, read_prompt, safe_read, yaml_call
 from crack.analyses.tour.graph.languages import REGISTRY
 
 PROMPTS_DIR = resources.files("crack.analyses.tour") / "prompts"
@@ -344,7 +345,13 @@ class WriteChapters(Node):
                 codebase=ctx["codebase"],
                 instructions=ctx["instructions"],
             )
-            content = call_llm(prompt)
+            try:
+                content = call_llm(prompt)
+            except ResponseTruncated as e:
+                # coderay-q2r.46: deterministic, so a retry would only rewrite
+                # every earlier chapter again. SystemExit is not an Exception,
+                # so it passes straight through the node's retry loop.
+                raise SystemExit(f"Chapter {i+1}/{total} ({name}) overran the output cap: {e}") from e
             chapters.append({"name": name, "filename": ctx["filenames"][name], "content": content})
             prev_chapters.append(content)
         return chapters
