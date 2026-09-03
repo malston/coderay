@@ -130,3 +130,23 @@ def test_read_files_still_reads_an_ordinary_file_inside_the_repository(tmp_path)
     text, resolved = rf.read_files(repo, ["src/handlers/login.ts"])
     assert resolved == ["src/handlers/login.ts"]
     assert "export default login" in text
+
+
+def test_crawl_routes_refuses_a_route_file_symlinked_out_of_the_repo(tmp_path):
+    """coderay-q2r.28. read_files already refuses paths the MODEL names; the
+    same rule was missing where the path comes from the repo itself.
+
+    A checked-in `urls.py` that is a symlink is read like any other file and
+    its contents reach the prompt. `real.rb` keeps the crawl non-empty so this
+    fails on the leak rather than on an empty bundle.
+    """
+    outside = tmp_path / "outside.txt"
+    outside.write_text("OUTSIDE-SECRET-CONTENT\n", encoding="utf-8")
+    repo = _repo(tmp_path / "repo", {"config/routes.rb": "Rails.routes\n"})
+    os.makedirs(os.path.join(repo, "app"), exist_ok=True)
+    os.symlink(outside, os.path.join(repo, "app", "urls.py"))
+
+    routes, files, kept = rf.crawl_routes(repo)
+    assert "OUTSIDE-SECRET-CONTENT" not in routes
+    assert "app/urls.py" in files          # still discovered, deliberately unread
+    assert kept == ["config/routes.rb"]

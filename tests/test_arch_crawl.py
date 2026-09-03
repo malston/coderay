@@ -1,3 +1,4 @@
+import os
 import json
 
 import pytest
@@ -396,3 +397,69 @@ def test_build_bundle_counts_only_files_whose_text_reached_the_bundle(tmp_path):
     assert stats["config_files"] == 1
     assert stats["config_files_found"] == 2
     assert bundle.count("===== PROCESS DECLARATION") == 1
+
+
+def test_redact_carries_a_kubernetes_env_name_across_to_its_value():
+    """coderay-q2r.30. k8s splits an env var over two sibling lines.
+
+    `- name: API_TOKEN` / `value: <secret>`: the sensitive word is on the name
+    line, so a per-line key match never sees it and `value` matches nothing.
+    Deployment manifests are core input here, not an edge case. The LOG_LEVEL
+    pair is the control -- redacting every `value:` would eat the topology.
+    """
+    manifest = ("kind: Deployment\n"
+                "spec:\n"
+                "  containers:\n"
+                "  - name: api\n"
+                "    image: acme/api:1.2\n"
+                "    env:\n"
+                "    - name: API_TOKEN\n"
+                "      value: sk-live-LEAKED\n"
+                "    - name: LOG_LEVEL\n"
+                "      value: debug\n")
+    out = ac._redact(manifest)
+    assert "sk-live-LEAKED" not in out
+    assert "value: debug" in out          # an ordinary env var keeps its value
+    assert "name: api" in out             # the container name is topology
+    assert "image: acme/api:1.2" in out
+
+
+def test_redact_does_not_treat_a_plain_name_key_as_an_env_pair():
+    """`name:` appears all over a manifest; only an env entry pairs it with
+    `value:`. A stray value after an unrelated name must not be swallowed."""
+    out = ac._redact("metadata:\n  name: my-app\nspec:\n  replicas: 3\n")
+    assert out == "metadata:\n  name: my-app\nspec:\n  replicas: 3\n"
+
+
+def test_sdk_evidence_carries_the_path_and_the_sdk_but_not_the_source(tmp_path):
+    """coderay-q2r.31. The pattern matches constructors like `new Stripe(...)`.
+
+    A token hardcoded in one would ship to the LLM verbatim, and _redact cannot
+    catch it -- there is no key=value shape to key off. The evidence the section
+    exists to give is that a file talks to a service, which survives here.
+    """
+    import subprocess
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services: {}\n",
+        "pay.ts": 'import Stripe from "stripe";\nconst s = new Stripe("sk_live_HARDCODED");\n',
+    })
+    for cmd in (["init", "-q"], ["add", "-A"]):
+        subprocess.run(["git", "-C", repo] + cmd, check=True)
+    subprocess.run(["git", "-C", repo, "-c", "user.email=a@b.c", "-c", "user.name=t",
+                    "commit", "-qm", "x"], check=True)
+
+    bundle, stats = ac.build_bundle(repo)
+    assert "sk_live_HARDCODED" not in bundle
+    assert "pay.ts:2: Stripe" in bundle    # the edge is still reported
+    assert stats["sdk_lines"] == 2
+
+
+def test_build_bundle_refuses_a_config_file_symlinked_out_of_the_repo(tmp_path):
+    """coderay-q2r.28. The repo is untrusted; a config file can be a symlink."""
+    outside = tmp_path / "outside.env"
+    outside.write_text("OUTSIDE-SECRET-CONTENT\n", encoding="utf-8")
+    repo = _repo(tmp_path / "repo", {"README.md": "# hi\n"})
+    os.symlink(outside, os.path.join(repo, "docker-compose.yml"))
+
+    bundle, _stats = ac.build_bundle(repo)
+    assert "OUTSIDE-SECRET-CONTENT" not in bundle

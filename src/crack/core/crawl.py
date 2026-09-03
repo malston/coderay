@@ -110,6 +110,23 @@ DEFAULT_SKIP_NAMES = frozenset({
 DEFAULT_SKIP_SUFFIXES = ('.pem', '.key', '.p12', '.pfx', '.keystore', '.jks')
 
 
+def within_repo(repo, path):
+    """True if `path` resolves inside `repo`, symlinks followed.
+
+    Every crawler reads files it discovered by walking the target repo, and the
+    target repo is untrusted: a checked-in `urls.py` or `docker-compose.yml`
+    that is a symlink to /etc/passwd or ~/.aws/credentials is read like any
+    other file and its contents go into a prompt sent to a third-party LLM.
+    os.walk does not follow directory symlinks, but open() follows file ones.
+
+    Discovery-time containment, the counterpart to the check interfaces already
+    applies to LLM-named paths (coderay-q2r.16 / coderay-q2r.28).
+    """
+    root = os.path.realpath(repo)
+    target = os.path.realpath(path)
+    return target == root or target.startswith(root + os.sep)
+
+
 def _wanted(filename, keep_ext, keep_names):
     if filename in DEFAULT_SKIP_NAMES or filename.endswith(DEFAULT_SKIP_SUFFIXES):
         return False

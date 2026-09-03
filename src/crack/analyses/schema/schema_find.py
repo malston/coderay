@@ -17,6 +17,8 @@ Everything here is plain filesystem walking; nothing calls an LLM.
 import os
 import re
 
+from crack.core import within_repo
+
 # Directories that never hold a schema (mirrors utils.crawl's skip set, minus
 # `migrations`, which we DO want to find).
 SKIP_DIRS = frozenset({
@@ -28,6 +30,13 @@ SKIP_DIRS = frozenset({
 # Prisma and Rails use 14-digit timestamps; Django numbers its migrations
 # 0001_, 0002_, ... Requiring six digits matched the first two and silently
 # dropped every Django history (coderay-q2r.21).
+# The schema is embedded in the tour prompt, the flows prompt and EVERY
+# deep-dive batch, so its size is multiplied by the run. Whole files are kept
+# and the file count is capped -- never a per-file floor raised, which inverted
+# the same budget twice before (coderay-q2r.29).
+SCHEMA_BUDGET = 600_000
+MAX_MODEL_FILES = 40
+
 TIMESTAMP_RE = re.compile(r'^\d{4,}[_-]')  # 20210605225044_init, 0001_initial, ...
 
 
@@ -37,18 +46,30 @@ def _walk(root):
         yield dirpath, dirnames, filenames
 
 
-def _read(path):
+def _read(path, repo=None, limit=None):
+    # The schema file may be a symlink out of the target repo, and it is
+    # embedded in the tour prompt, the flows prompt and every deep-dive batch
+    # (coderay-q2r.28).
+    if repo is not None and not within_repo(repo, path):
+        return ""
     try:
-        return open(path, encoding='utf-8', errors='replace').read()
+        text = open(path, encoding='utf-8', errors='replace').read()
     except OSError:
         return ""
+    if limit is not None and len(text) > limit:
+        return text[:limit] + f"\n\n# ===== TRUNCATED at {limit:,} chars =====\n"
+    return text
 
 
 def find_schema(repo, override=None):
     """Return {kind, path(s), text}. `override` forces a specific file."""
     if override:
+        # No containment check: --schema is the user pointing at their own file,
+        # and an absolute path is an advertised feature of the flag. Unlike a
+        # path the crawl or the model produced, this one is not untrusted input.
         p = override if os.path.isabs(override) else os.path.join(repo, override)
-        return {"kind": "override", "path": os.path.relpath(p, repo), "text": _read(p)}
+        return {"kind": "override", "path": os.path.relpath(p, repo),
+                "text": _read(p, limit=SCHEMA_BUDGET)}
 
     prisma, rails, sql, models = [], [], [], []
     for dirpath, _dirnames, filenames in _walk(repo):
@@ -66,18 +87,32 @@ def find_schema(repo, override=None):
     if prisma:
         # Prefer the largest schema.prisma (the app's, not a package fixture).
         path = max(prisma, key=lambda p: os.path.getsize(p))
-        return {"kind": "prisma", "path": os.path.relpath(path, repo), "text": _read(path)}
+        return {"kind": "prisma", "path": os.path.relpath(path, repo),
+                "text": _read(path, repo, SCHEMA_BUDGET)}
     if rails:
         path = rails[0]
-        return {"kind": "rails", "path": os.path.relpath(path, repo), "text": _read(path)}
+        return {"kind": "rails", "path": os.path.relpath(path, repo),
+                "text": _read(path, repo, SCHEMA_BUDGET)}
     if sql:
         path = max(sql, key=lambda p: os.path.getsize(p))
-        return {"kind": "sql", "path": os.path.relpath(path, repo), "text": _read(path)}
+        return {"kind": "sql", "path": os.path.relpath(path, repo),
+                "text": _read(path, repo, SCHEMA_BUDGET)}
     if models:
         # No single-file schema: concatenate the model files (Django/SQLAlchemy).
-        models = sorted(models, key=lambda p: os.path.getsize(p), reverse=True)[:40]
-        parts = [f"# ===== {os.path.relpath(p, repo)} =====\n{_read(p)}" for p in models]
-        return {"kind": "models", "path": f"{len(models)} models.py files", "text": "\n\n".join(parts)}
+        models = sorted(models, key=lambda p: os.path.getsize(p), reverse=True)[:MAX_MODEL_FILES]
+        # Whole files, fewer of them: stop adding once the budget is spent
+        # rather than shortening each one (coderay-q2r.29).
+        parts, total, kept = [], 0, 0
+        for m in models:
+            block = f"# ===== {os.path.relpath(m, repo)} =====\n{_read(m, repo, SCHEMA_BUDGET)}"
+            if total + len(block) > SCHEMA_BUDGET and parts:
+                break
+            parts.append(block)
+            total += len(block)
+            kept += 1
+        note = "" if kept == len(models) else f" of {len(models)} found"
+        return {"kind": "models", "path": f"{kept} models.py files{note}",
+                "text": "\n\n".join(parts)}
 
     return {"kind": None, "path": None, "text": ""}
 

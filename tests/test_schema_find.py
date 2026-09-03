@@ -139,3 +139,39 @@ def test_find_migrations_picks_the_directory_with_the_most_entries(tmp_path):
 
 def test_find_migrations_returns_nothing_when_there_is_no_history(tmp_path):
     assert sf.find_migrations(_repo(tmp_path, {"README.md": "# hi\n"})) == (None, [])
+
+
+def test_find_schema_refuses_a_schema_symlinked_out_of_the_repo(tmp_path):
+    """coderay-q2r.28. The schema is embedded in every deep-dive batch."""
+    import os
+    outside = tmp_path / "outside.txt"
+    outside.write_text("OUTSIDE-SECRET-CONTENT\n", encoding="utf-8")
+    repo = _repo(tmp_path / "repo", {"README.md": "# hi\n"})
+    os.makedirs(os.path.join(repo, "db"), exist_ok=True)
+    os.symlink(outside, os.path.join(repo, "db", "schema.rb"))
+
+    assert "OUTSIDE-SECRET-CONTENT" not in sf.find_schema(repo)["text"]
+
+
+def test_find_schema_caps_a_single_oversized_schema_and_says_so(tmp_path):
+    """coderay-q2r.29. The schema goes into the tour prompt, the flows prompt
+    and every deep-dive batch, so its size is multiplied by the run."""
+    repo = _repo(tmp_path, {"schema.sql": "x" * (sf.SCHEMA_BUDGET + 50_000)})
+    found = sf.find_schema(repo)
+    assert len(found["text"]) < sf.SCHEMA_BUDGET + 1_000
+    assert "TRUNCATED" in found["text"]
+
+
+def test_find_schema_keeps_whole_model_files_and_drops_the_tail(tmp_path):
+    """The budget caps HOW MANY files are included, never shortening each one.
+
+    Inverting that was the root cause of two prior scalability bugs, so this
+    asserts the kept files arrive complete.
+    """
+    each = sf.SCHEMA_BUDGET // 3
+    repo = _repo(tmp_path, {f"app{i}/models.py": f"# marker{i}\n" + "m" * each
+                            for i in range(5)})
+    found = sf.find_schema(repo)
+    assert found["kind"] == "models"
+    assert "of 5 found" in found["path"]
+    assert "# ===== TRUNCATED" not in found["text"]   # whole files, fewer of them

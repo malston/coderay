@@ -18,6 +18,8 @@ import os
 import re
 import subprocess
 
+from crack.core import within_repo
+
 SKIP_DIRS = frozenset({
     '.git', '.hg', '.svn', 'node_modules', 'dist', 'build', '.next', '.nuxt',
     'target', 'vendor', 'venv', '.venv', '__pycache__', '.cache', 'coverage',
@@ -44,7 +46,11 @@ def _walk(root):
         yield dirpath, dirnames, filenames
 
 
-def _read(path, limit=200_000):
+def _read(path, limit=200_000, repo=None):
+    # A config file in the target repo may be a symlink pointing out of it, and
+    # the contents go into a prompt sent to a third-party LLM (coderay-q2r.28).
+    if repo is not None and not within_repo(repo, path):
+        return ""
     try:
         return open(path, encoding='utf-8', errors='replace').read()[:limit]
     except OSError:
@@ -124,6 +130,14 @@ _URL_CRED_RE = re.compile(r'(?P<scheme>[a-zA-Z][\w+.\-]{0,31}://[^\s:/@]{0,255}:
 # emits data: before kind:.
 _SECRET_KIND_RE = re.compile(r'^\s*kind:\s*["\']?Secret\b', re.I)
 _SECRET_DATA_RE = re.compile(r'^\s*(data|stringData):\s*$')
+
+# Kubernetes writes a container env var as two sibling lines:
+#     - name: API_TOKEN
+#       value: sk-live-...
+# The sensitive word is on the `name` line, so matching key names line by line
+# never sees it and `value` matches nothing (coderay-q2r.30).
+_ENV_NAME_RE = re.compile(r'^\s*-?\s*name:\s*["\']?(?P<name>[A-Za-z_][\w.\-]*)["\']?\s*$')
+_ENV_VALUE_RE = re.compile(r'^(?P<head>\s*-?\s*value:\s*)(?P<value>\S.*)$')
 _DOC_BREAK_RE = re.compile(r'^(---|\.\.\.)\s*$')
 
 
@@ -152,6 +166,7 @@ def _redact_document(lines):
     out = []
     data_indent = None      # indent of a Secret's `data:` key while inside it
     swallow_indent = None   # indent of a redacted key whose value runs on below
+    env_secret = None       # a k8s `name: SECRET_ISH` awaiting its `value:`
 
     for i, line in enumerate(lines):
         stripped = line.rstrip('\n\r')
@@ -177,6 +192,22 @@ def _redact_document(lines):
             continue
 
         under_secret_data = data_indent is not None
+
+        # A k8s env entry names the variable on one line and gives its value on
+        # the next, so the decision has to carry across the pair.
+        env_name = _ENV_NAME_RE.match(stripped)
+        if env_name:
+            env_secret = indent if SECRET_KEY_RE.search(env_name.group('name')) else None
+            out.append(line)
+            continue
+        env_value = _ENV_VALUE_RE.match(stripped)
+        if env_value and env_secret is not None and indent >= env_secret:
+            env_secret = None
+            out.append(env_value.group('head')
+                       + _placeholder(env_value.group('head'), env_value.group('value')) + eol)
+            continue
+        if env_value or (env_secret is not None and indent <= env_secret):
+            env_secret = None
 
         m = _ASSIGN_RE.match(stripped)
         if m and (under_secret_data or SECRET_KEY_RE.search(m.group('key'))):
@@ -262,8 +293,30 @@ def _sdk_grep(repo, max_lines=400):
         )
     except Exception:
         return ""
-    lines = [l for l in raw.splitlines() if l.strip()]
-    return "\n".join(lines[:max_lines])
+    # Emit path:line plus the SDK that matched, never the source line itself.
+    # The regex deliberately matches constructors like `new Stripe(...)`, so a
+    # hardcoded token in one would otherwise be shipped to the LLM verbatim,
+    # and _redact cannot see it -- there is no key=value to key off
+    # (coderay-q2r.31). The evidence this section exists to give is "this file
+    # talks to this service", which the path and the name carry on their own.
+    out, seen = [], set()
+    for line in raw.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split(":", 2)
+        if len(parts) < 3:
+            continue
+        path, lineno, content = parts
+        m = re.search(SDK_RE, content) or re.search(r'new\s+(Stripe|Twilio|Redis|S3Client)', content)
+        name = (m.group(1) if m else "sdk").strip("'\"@")
+        entry = f"{path}:{lineno}: {name}"
+        if entry in seen:
+            continue
+        seen.add(entry)
+        out.append(entry)
+        if len(out) >= max_lines:
+            break
+    return "\n".join(out)
 
 
 def _integration_dirs(repo):
@@ -290,16 +343,16 @@ def build_bundle(repo, max_chars=500_000):
                 continue
             full = os.path.join(dirpath, f)
             if kind == 'env':
-                env_names.update(_env_names(_read(full, 40_000)))
+                env_names.update(_env_names(_read(full, 40_000, repo)))
             elif kind == 'package':
                 try:
-                    data = json.loads(_read(full, 200_000))
+                    data = json.loads(_read(full, 200_000, repo))
                     for grp in ('dependencies', 'devDependencies'):
                         deps.update(data.get(grp, {}))
                 except (ValueError, OSError):
                     pass
             else:
-                buckets[kind].append((rel, _redact(_read(full))))
+                buckets[kind].append((rel, _redact(_read(full, repo=repo))))
 
     parts = []
     included = 0        # files whose text actually reached the bundle
@@ -326,7 +379,7 @@ def build_bundle(repo, max_chars=500_000):
 
     sdk = _sdk_grep(repo)
     if sdk:
-        parts.append("===== SDK IMPORT LINES (git grep — file:line: import) =====\n" + sdk + "\n")
+        parts.append("===== SDK IMPORTS (git grep — file:line: sdk) =====\n" + sdk + "\n")
 
     whole = "\n".join(parts)
     bundle = whole[:max_chars]

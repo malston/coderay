@@ -17,6 +17,8 @@ Nothing here calls an LLM.
 """
 import os
 
+from crack.core import within_repo
+
 SKIP_DIRS = frozenset({
     '.git', '.hg', '.svn', 'node_modules', 'dist', 'build', '.next', '.nuxt',
     'target', 'vendor', 'venv', '.venv', '__pycache__', '.cache', 'coverage',
@@ -70,7 +72,13 @@ def find_route_files(repo):
     return sorted(out)
 
 
-def _read(path):
+def _read(path, repo=None):
+    # A route file discovered by the walk may be a symlink out of the repo, and
+    # its contents go into a prompt sent to a third-party LLM. read_files
+    # already refuses LLM-named paths; this is the same rule at discovery time
+    # (coderay-q2r.28).
+    if repo is not None and not within_repo(repo, path):
+        return ""
     try:
         return open(path, encoding='utf-8', errors='replace').read()
     except OSError:
@@ -92,7 +100,7 @@ def crawl_routes(repo, max_chars=900_000):
     files.sort(key=lambda r: (priority(r), r))
     parts, total, kept = [], 0, []
     for rel in files:
-        text = _read(os.path.join(repo, rel))
+        text = _read(os.path.join(repo, rel), repo)
         if not text.strip():
             continue
         block = f"{'=' * 60}\nFile: {rel}\n{'=' * 60}\n{text}\n"
@@ -109,12 +117,11 @@ def crawl_routes(repo, max_chars=900_000):
 def _within(repo, full):
     """True if `full` resolves inside `repo`, symlinks followed.
 
-    This check and its two call sites in read_files are coderay's, not the port
-    source's (coderay-q2r.16). Everything else in this module is a verbatim
-    copy; keep the diff to this one seam so a re-port stays mechanical."""
-    root = os.path.realpath(repo)
-    target = os.path.realpath(full)
-    return target == root or target.startswith(root + os.sep)
+    Delegates to crack.core.within_repo, which all three crawlers share; this
+    module keeps the name because read_files reads better with it. The
+    containment seam is coderay's, not the port source's (coderay-q2r.16 for
+    LLM-named paths, coderay-q2r.28 for discovery)."""
+    return within_repo(repo, full)
 
 
 def read_files(repo, paths, max_chars=120_000, max_files=8):

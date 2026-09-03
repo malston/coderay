@@ -230,3 +230,29 @@ def test_schema_table_names_reads_the_ordinary_sql_spellings(text, expected):
     back to whatever the model happened to backtick.
     """
     assert n.schema_table_names(text) == expected
+
+
+def test_the_header_fallback_drops_names_the_schema_never_declares():
+    """coderay-q2r.32. The fallback runs when the ERD was unparseable, which is
+    also when the model is least reliable.
+
+    `invented_table` is the distinguishing input: unfiltered, it reaches
+    table_list and drives the flows prompt, every deep-dive batch, the hero
+    caption and the overview facts, presented throughout as a schema fact.
+    """
+    md = "### Step 1 (`users`, `invented_table`, `created_at`)\nbody\n"
+    assert n.tables_from_headers(md, {"users"}) == ["users"]
+    # Unfiltered it still returns everything, which is what the ERD path needs.
+    assert n.tables_from_headers(md) == ["users", "invented_table", "created_at"]
+
+
+def test_schema_tour_filters_the_fallback_when_the_erd_will_not_parse(monkeypatch):
+    """End to end: a malformed ERD forces the header fallback, and the invented
+    table must not survive into table_list."""
+    reply = ("**Product:** Acme\n\n"
+             "```mermaid\nerDiagram\n  totally malformed\n```\n\n"
+             "### Step 1 (`users`, `invented_table`)\nbody\n")
+    monkeypatch.setattr(n, "call_llm", lambda p: reply)
+    shared = {"schema": "model users {}", "repo_path": "/tmp/toy_repo"}
+    n.SchemaTour().run(shared)
+    assert shared["table_list"] == ["users"]

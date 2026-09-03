@@ -29,7 +29,7 @@ A five-stage pipeline (BuildBundle, Pipeline, LayerCode, Trace, OverviewNode) th
 
 A five-stage pipeline (BuildBundle, Inventory, TechStack, TraceRequest, OverviewNode) that maps a multi-service system: the programs it runs, the services it rents, and the wires between them:
 
-- Overlays four sources that no single file holds together: process declarations (compose, Kubernetes manifests, `Procfile`, platform config), environment variable names from `.env` files, the union of `package.json` dependencies, and Terraform. SDK `import` lines found by `git grep` are the proof a connection is live rather than merely configured. Credential values are stripped before the bundle leaves the machine, and a bundle that hit its size cap says so rather than stopping mid-file.
+- Overlays four sources that no single file holds together: process declarations (compose, Kubernetes manifests, `Procfile`, platform config), environment variable names from `.env` files, the union of `package.json` dependencies, and Terraform. `git grep` reports which files import which SDK, as proof a connection is live rather than merely configured -- the file and the SDK name only, never the source line, since a matched constructor can hold a hardcoded token. Credential values are stripped before the bundle leaves the machine, including Kubernetes `name`/`value` env pairs, and a bundle that hit its size cap says so rather than stopping mid-file.
 - Renders three views: every node sorted into four bands (run, rent, call, client), the real technology behind each box's label, and one request traced hop by hop with its variants.
 - Expects a multi-service application. The run stops before it spends an LLM call only when the whole bundle is empty; a repo with no config files but some dependencies or SDK imports still proceeds, which is how the CDK case below reports `0 config files` and carries on.
 - Known limitations, worth reading before you spend a run:
@@ -51,11 +51,19 @@ A five-stage pipeline (FindRoutes, ApiMenu, TraceActions, EndpointSequence, Over
 
 A six-stage pipeline (FindSchema, SchemaTour, TraceFlows, TableDeepDive, MigrationActs, OverviewNode) that reads a database schema as a map of the business:
 
-- Finds the schema by convention in priority order: Prisma `schema.prisma`, Rails `db/schema.rb`, a dumped `schema.sql`, or the Django and SQLAlchemy `models.py` files concatenated. `--schema path/to/file` overrides the search.
+- Finds the schema by convention in priority order: Prisma `schema.prisma`, Rails `db/schema.rb`, a dumped `schema.sql`, or the Django and SQLAlchemy `models.py` files concatenated. `--schema path/to/file` overrides the search. The schema goes into every deep-dive batch, so a total size budget caps how many files are included and records when it truncated.
 - Renders four views: the schema told as a story with an ER diagram, one user action traced across tables, the columns and indexes of the core tables, and the migration history clustered into product eras.
 - The deep dive reviews four tables per LLM call rather than all at once, which is why this analysis does not raise the output-token ceiling the way the others do.
 - The migration section is skipped, with a note saying so, when fewer than four migrations are found. That is a real finding about the repository rather than a gap in the report, so it stays on the page.
 - Expects a schema. Pointed at a repository with none, the run stops before it spends an LLM call and tells you to try `--schema`.
+
+### A note on what leaves your machine
+
+Every analysis sends repository content to an LLM provider. Three rules hold across all of them:
+
+- Files discovered by the crawl are read only if they resolve inside the target repository, so a checked-in symlink pointing at `~/.aws/credentials` is refused rather than read.
+- The `architecture` bundle strips credential values by key name, by position in a connection string, from Kubernetes `name`/`value` env pairs, and from every value in a Kubernetes `Secret`. This is a redactor, not a secret scanner: a credential under an unguessable key name in a file that is not a `Secret` can still get through.
+- `crack schema --schema <path>` is exempt from the containment rule, because that path is yours rather than the repository's.
 
 ## Quickstart
 

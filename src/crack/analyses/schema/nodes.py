@@ -65,15 +65,26 @@ def tables_from_erd(erd, known):
     return out
 
 
-def tables_from_headers(md):
-    """Fallback: backticked table names inside `### Step ... (`A`, `B`)` headers."""
+def tables_from_headers(md, known=None):
+    """Fallback: backticked table names inside `### Step ... (`A`, `B`)` headers.
+
+    `known` filters against the tables the schema really declares, the same way
+    tables_from_erd does. Without it the fallback path -- taken exactly when the
+    ERD was unparseable -- let invented names into table_list, where they drive
+    the flows and deep-dive prompts and are rendered as schema facts
+    (coderay-q2r.32). A header also backticks column names and types, so this
+    filters more than hallucinations.
+    """
     seen, out = set(), []
     for line in md.splitlines():
         if line.startswith("###"):
             for name in re.findall(r'`(\w+)`', line):
-                if name.lower() not in seen:
-                    seen.add(name.lower())
-                    out.append(name)
+                if name.lower() in seen:
+                    continue
+                if known is not None and name.lower() not in known:
+                    continue
+                seen.add(name.lower())
+                out.append(name)
     return out
 
 
@@ -119,7 +130,7 @@ class SchemaTour(Node):
         one = re.search(r"\*\*Schema one-?liner:\*\*\s*(.+)", md, re.IGNORECASE)
         erd = extract_mermaid(md, "erDiagram")
         known = schema_table_names(shared["schema"])
-        tables = tables_from_erd(erd, known) or tables_from_headers(md)
+        tables = tables_from_erd(erd, known) or tables_from_headers(md, known)
 
         # repo_name_of, not os.path.basename: the latter yields "." for a
         # relative repo path, which then becomes the page title and is fed
