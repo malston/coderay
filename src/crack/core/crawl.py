@@ -45,7 +45,7 @@ DEFAULT_KEEP_EXT = frozenset({
     '.dart',
     # functional / niche
     '.ex', '.exs', '.erl', '.hs', '.clj', '.cljs',
-    '.ml', '.mli', '.r', '.R', '.jl', '.cr',
+    '.ml', '.mli', '.r', '.jl', '.cr',
     # smart contracts
     '.sol',
     # schema / IDL
@@ -137,7 +137,7 @@ def _wanted(filename, keep_ext, keep_names):
         return False
     if filename in keep_names:
         return True
-    return os.path.splitext(filename)[1] in keep_ext
+    return os.path.splitext(filename)[1].lower() in keep_ext
 
 
 def _compile(patterns):

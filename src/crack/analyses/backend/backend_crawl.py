@@ -12,6 +12,8 @@ a size-capped sample of the handler/service/model files. Nothing calls an LLM.
 import os
 from collections import Counter
 
+from crack.core import list_files, safe_read
+
 SKIP_DIRS = frozenset({
     '.git', '.hg', '.svn', 'node_modules', 'dist', 'build', '.next', '.nuxt',
     'target', 'vendor', 'venv', '.venv', '__pycache__', '.cache', 'coverage',
@@ -25,19 +27,6 @@ SPINE_NAMES = ('urls.py', 'rest.py', 'response.py', 'decorator.py', 'decorators.
 # Core-action keywords: sample these files first so the trace has the spine endpoint.
 CORE_HINTS = ('message', 'send', 'booking', 'book', 'order', 'checkout', 'create',
               'post', 'auth', 'user', 'session', 'event')
-
-
-def _walk(root):
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-        yield dirpath, dirnames, filenames
-
-
-def _read(path, limit=45_000):
-    try:
-        return open(path, encoding='utf-8', errors='replace').read()[:limit]
-    except OSError:
-        return ""
 
 
 def classify(rel):
@@ -83,13 +72,14 @@ def _priority(rel):
 def build_bundle(repo, max_chars=650_000, per_layer_sample=18):
     files_by_layer = {k: [] for k in ('route', 'middleware', 'handler', 'service', 'database', 'response')}
     counts = Counter()
-    for dirpath, _dn, filenames in _walk(repo):
-        for f in filenames:
-            rel = os.path.relpath(os.path.join(dirpath, f), repo)
-            layer = classify(rel)
-            if layer:
-                counts[layer] += 1
-                files_by_layer[layer].append(rel)
+    # list_files carries the repo containment and credential-name checks every
+    # crawler shares (coderay-q2r.54); classify() narrows to SRC_EXT itself.
+    for path in list_files(repo, keep_ext=SRC_EXT, skip_dirs=SKIP_DIRS, keep_names=frozenset()):
+        rel = os.path.relpath(path, repo)
+        layer = classify(rel)
+        if layer:
+            counts[layer] += 1
+            files_by_layer[layer].append(rel)
 
     # Decide what to include: spine layers in full; handlers/services/models sampled.
     include = []
@@ -105,8 +95,8 @@ def build_bundle(repo, max_chars=650_000, per_layer_sample=18):
 
     parts, total, kept = [header], len(header), 0
     for layer, rel in include:
-        text = _read(os.path.join(repo, rel))
-        if not text.strip():
+        text = safe_read(os.path.join(repo, rel))
+        if not text or not text.strip():
             continue
         block = f"\n===== LAYER {layer.upper()}: {rel} =====\n{text}\n"
         if total + len(block) > max_chars:
