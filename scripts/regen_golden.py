@@ -27,7 +27,7 @@ import pathlib
 import subprocess
 import sys
 
-PORT_SOURCE_COMMIT = "bb504c7a9f44ba14f8d71a1f0cd9d2c997fb9d44"
+PORT_SOURCE_COMMIT = "34f0ad2a7044284555911590ca3773c92e1244ac"
 DEFAULT_SIBLING = pathlib.Path.home() / "code" / "Crack-Any-Codebase-with-AI"
 GOLDEN = pathlib.Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "golden"
 
@@ -46,6 +46,29 @@ DIVERGENCES = [
      "  // 'strict' sanitises LLM-authored diagram labels; see coderay-q2r.11.\n"
      "  if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: 'neutral', "
      "securityLevel: 'strict' });"),
+
+    # coderay-q2r.19: the port source loads all three from jsdelivr bare, and
+    # mermaid from a floating major range. tour, which is coderay's own, has
+    # always pinned an exact version with an integrity hash; this brings the
+    # card engine up to it. Google Fonts is left alone on purpose: its css2
+    # endpoint varies its @font-face sources by user-agent, so one hash would
+    # block the stylesheet for some browsers.
+    ('<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/'
+     'cdn-release@11.9.0/build/styles/github-dark.min.css">',
+     '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/'
+     'cdn-release@11.9.0/build/styles/github-dark.min.css"\n'
+     '  integrity="sha384-wH75j6z1lH97ZOpMOInqhgKzFkAInZPPSPlZpYKYTOqsaizPvhQZmAtLcPKXpLyH" '
+     'crossorigin="anonymous">'),
+    ('<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/'
+     'build/highlight.min.js"></script>',
+     '<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/'
+     'build/highlight.min.js"\n'
+     '  integrity="sha384-F/bZzf7p3Joyp5psL90p/p89AZJsndkSoGwRpXcZhleCWhd8SnRuoYo4d0yirjJp" '
+     'crossorigin="anonymous"></script>'),
+    ('<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>',
+     '<script src="https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js"\n'
+     '  integrity="sha384-EOXBFmc3gx5mb+vn0vPvvGqACToJD24hhacX5Yx+8NUUQrHIle/Qi5Bg9o3zKwW2" '
+     'crossorigin="anonymous"></script>'),
 ]
 
 

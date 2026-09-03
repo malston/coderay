@@ -1,10 +1,10 @@
 # Crack
 
-Crack runs analyses on a codebase and generates written overviews: multi-chapter tours with diagrams and cross-references, or request-flow summaries across server-side layers. Point it at a repo and get HTML/Markdown pages explaining how the code works.
+Crack runs analyses on a codebase and generates written overviews: multi-chapter tours with diagrams and cross-references, request-flow summaries across server-side layers, a map of the services a system runs and rents, a guide to a product's API surface, or a tour of the data model and the migrations that shaped it. Point it at a repo and get HTML/Markdown pages explaining how the code works.
 
 ## What this ships
 
-Two analyses, each implemented as a [PocketFlow](https://github.com/The-Pocket/PocketFlow) workflow:
+Five analyses, each implemented as a [PocketFlow](https://github.com/The-Pocket/PocketFlow) workflow:
 
 ### Tour
 
@@ -21,11 +21,49 @@ A five-stage pipeline (BuildBundle, Pipeline, LayerCode, Trace, OverviewNode) th
 
 - Builds a bundle describing the repository structure at each layer.
 - Renders three views: the pipeline with a file count per layer, code snippets showing how each layer connects to the others, and a trace of a single request through all six layers.
-- Expects a server-side backend (Django, Express, Rails, FastAPI, and similar frameworks). Works best on backends with clear separation of concerns.
+- Expects a server-side backend (Django, Express, Rails, FastAPI, and similar frameworks). Works best on backends with clear separation of concerns. Pointed at a repository with none, the run stops before it spends an LLM call.
+- Known limitation, worth reading before you spend a run:
+  - A flat Django app is read incompletely: `views.py` is not recognised, so the handler layer reports zero even though the routes and models are found.
+
+### Architecture
+
+A five-stage pipeline (BuildBundle, Inventory, TechStack, TraceRequest, OverviewNode) that maps a multi-service system: the programs it runs, the services it rents, and the wires between them:
+
+- Overlays four sources that no single file holds together: process declarations (compose, Kubernetes manifests, `Procfile`, platform config), environment variable names from `.env` files, the union of `package.json` dependencies, and Terraform. `git grep` reports which files import which SDK, as proof a connection is live rather than merely configured -- the file and the SDK name only, never the source line, since a matched constructor can hold a hardcoded token. Credential values are stripped before the bundle leaves the machine, including Kubernetes `name`/`value` env pairs, and a bundle that hit its size cap says so rather than stopping mid-file.
+- Renders three views: every node sorted into four bands (run, rent, call, client), the real technology behind each box's label, and one request traced hop by hop with its variants.
+- Expects a multi-service application. The run stops before it spends an LLM call only when the whole bundle is empty; a repo with no config files but some dependencies or SDK imports still proceeds, which is how the CDK case below reports `0 config files` and carries on.
 - Known limitations, worth reading before you spend a run:
-  - Pointed at a repository with no server-side backend, it does not stop. It spends all three LLM calls and writes a report invented from an empty bundle, with no warning and no error. Check the layer counts it prints after the crawl before trusting the output.
-  - A layer directory at the repository root (`pages/api/` in some Next.js layouts, `routes/` in some Express layouts) is not classified, so those files are skipped and the layer reports zero.
-  - A flat Django app is affected too: `views.py` is not recognised, so the handler layer reports zero even though the routes and models are found.
+  - Infrastructure written in a general-purpose language is invisible. AWS CDK and Pulumi stacks are ordinary `.ts`/`.py` programs, and SAM `template.yaml` is an ordinary YAML file, so none of them are classified. A CDK repository reports `0 config files` while its stacks sit in `infra/lib/`. Tracked as `coderay-q2r.10`.
+  - Credential values are stripped from the bundle before it is sent, by key name (`password`, `token`, `secret`, and similar), by connection-string position (`postgres://user:pw@host`), and for every value under a Kubernetes `Secret`. Names, service topology, images and ports survive. This is a redactor, not a secret scanner: a credential under an unguessable key name in a file that is not a `Secret` can still get through, so treat the bundle as sensitive.
+  - Outside a git checkout, `git grep` fails and the SDK import lines are silently empty, so a tarball export loses the evidence that a connection is live and the report is built on configuration alone. Tracked as `coderay-q2r.15`.
+
+### Interfaces
+
+A five-stage pipeline (FindRoutes, ApiMenu, TraceActions, EndpointSequence, OverviewNode) that reads a product's API surface at three levels of zoom:
+
+- Collects the files that declare entry points by framework convention: Rails `config/routes.rb`, Django `urls.py`, Express and Fastify routers, Next.js `pages/api/` and `app/**/route.ts`, tRPC, GraphQL and gRPC schemas, and Go `cmd/`. Manifests and aggregators are read first, so a size cap trims single handlers rather than the map.
+- Renders four views: every endpoint grouped by feature and sized against the biggest group, a short tour of the groups that say the most about the product, one user gesture traced across service lanes, and a message-by-message sequence diagram of a single endpoint. The tour is omitted rather than rendered empty when the model writes none.
+- Expects a web API. Pointed at a repository with no surface files, the run stops before it spends an LLM call.
+- Known limitation, worth reading before you spend a run:
+  - When the model's endpoint pick cannot be read, the sequence diagram falls back to the largest route file, preferring a Next.js `pages/api/` handler where there is one. If nothing readable is left, the diagram is written from the route list alone and its `file:line` references are the model's inference; the card says so in that case rather than reading like a grounded one.
+
+### Schema
+
+A six-stage pipeline (FindSchema, SchemaTour, TraceFlows, TableDeepDive, MigrationActs, OverviewNode) that reads a database schema as a map of the business:
+
+- Finds the schema by convention in priority order: Prisma `schema.prisma`, Rails `db/schema.rb`, a dumped `schema.sql`, or the Django and SQLAlchemy `models.py` files concatenated. `--schema path/to/file` overrides the search. The schema goes into every deep-dive batch, so a total size budget caps how many files are included and records when it truncated.
+- Renders four views: the schema told as a story with an ER diagram, one user action traced across tables, the columns and indexes of the core tables, and the migration history clustered into product eras.
+- The deep dive reviews four tables per LLM call rather than all at once, which is why this analysis does not raise the output-token ceiling the way the others do.
+- The migration section is skipped, with a note saying so, when fewer than four migrations are found. That is a real finding about the repository rather than a gap in the report, so it stays on the page.
+- Expects a schema. Pointed at a repository with none, the run stops before it spends an LLM call and tells you to try `--schema`.
+
+### A note on what leaves your machine
+
+Every analysis sends repository content to an LLM provider. Three rules hold across all of them:
+
+- Files discovered by the crawl are read only if they resolve inside the target repository, so a checked-in symlink pointing at `~/.aws/credentials` is refused rather than read.
+- The `architecture` bundle strips credential values by key name, by position in a connection string, from Kubernetes `name`/`value` env pairs, and from every value in a Kubernetes `Secret`. This is a redactor, not a secret scanner: a credential under an unguessable key name in a file that is not a `Secret` can still get through.
+- `crack schema --schema <path>` is exempt from the containment rule, because that path is yours rather than the repository's.
 
 ## Quickstart
 
@@ -37,9 +75,15 @@ export GEMINI_API_KEY=...   # or ANTHROPIC_API_KEY / OPENAI_API_KEY
 crack tour path/to/repo     # multi-chapter codebase tour
 # OR
 crack backend path/to/repo  # server-side backend flow analysis
+# OR
+crack architecture path/to/repo  # multi-service architecture map
+# OR
+crack interfaces path/to/repo  # API surface and endpoint sequence
+# OR
+crack schema path/to/repo     # data model and migration history
 ```
 
-If a run fails partway through (a bad LLM response after retries, a network error), the files, abstractions, and chapters completed so far are written to `run_state.json` in the target output directory, so you can see how far it got without rerunning the whole pipeline.
+If a **tour** run fails partway through (a bad LLM response after retries, a network error), the files, abstractions, and chapters completed so far are written to `run_state.json` in the target output directory, so you can see how far it got without rerunning the whole pipeline. The other analyses do not do this: a failed run leaves an empty output directory.
 
 Example output:
 

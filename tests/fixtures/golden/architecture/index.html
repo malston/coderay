@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>toy_repo: backend</title>
+<title>toy_repo: architecture</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -36,7 +36,7 @@
   :root {
     --bg: #f7f8fa; --surface: #fff; --text: #101828; --muted: #667085;
     --faint: #98a2b3; --rule: #e4e7ec; --line: #eef0f3;
-    --accent: #4f46e5; --accent-soft: #eef2ff; --good: #16a34a; --stone: #9aa4b2;
+    --accent: #d97706; --accent-soft: #fffbeb; --good: #16a34a; --stone: #9aa4b2;
     --stone-bg: #f2f4f7; --shadow: 0 1px 2px rgba(16,24,40,.05); --radius: 12px;
   }
   * { box-sizing: border-box; }
@@ -46,17 +46,17 @@
   code, .mono { font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; }
   main { max-width: 1280px; margin: 0 auto; padding: 0 24px 56px; }
 
-  .hero { background: radial-gradient(120% 140% at 50% 0%, #1e1b4b 0%, #0f0d2b 70%);
+  .hero { background: radial-gradient(120% 140% at 50% 0%, #3a2607 0%, #1c1203 70%);
     color: #fff; padding: 46px 20px 42px; text-align: center; }
   .hero-inner { max-width: 1120px; margin: 0 auto; }
   .hero-diagram { margin: 18px 0 4px; }
   .hero-diagram-cap { font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
     color: var(--accent); margin: 0 2px 9px; }
-  .eyebrow { display: inline-flex; align-items: center; gap: 7px; color: #a5b4fc;
+  .eyebrow { display: inline-flex; align-items: center; gap: 7px; color: #fcd34d;
     font-size: .68rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
-  .eyebrow::before { content: ''; width: 16px; height: 2px; background: #818cf8; border-radius: 2px; }
+  .eyebrow::before { content: ''; width: 16px; height: 2px; background: #f59e0b; border-radius: 2px; }
   .hero h1 { font-size: 1.9rem; font-weight: 800; letter-spacing: -.025em; margin: 12px 0 10px; }
-  .hero .sub { font-size: .94rem; color: #d6d8f5; margin: 0 auto; line-height: 1.6; }
+  .hero .sub { font-size: .94rem; color: #eee0c4; margin: 0 auto; line-height: 1.6; }
 
   .sec-head { display: flex; align-items: baseline; gap: 10px; margin: 42px 2px 14px; }
   .sec-n { font-family: 'JetBrains Mono', monospace; font-size: .68rem; font-weight: 700; color: var(--accent); }
@@ -98,8 +98,8 @@
   .rail::-webkit-scrollbar { height: 9px; }
   .rail::-webkit-scrollbar-track { background: var(--line); border-radius: 5px; }
   .rail::-webkit-scrollbar-thumb { background: #cbd2dc; border-radius: 5px; }
-  .rail.pipe .card { flex: 0 0 400px; width: 400px; }
-  .rail.code .card { flex: 0 0 520px; width: 520px; }
+  .rail.inv .card { flex: 0 0 380px; width: 380px; }
+  .rail.tech .card { flex: 0 0 420px; width: 420px; }
   .rail.trace .card { flex: 0 0 460px; width: 460px; }
 
   .scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
@@ -110,7 +110,7 @@
     border-radius: var(--radius); box-shadow: var(--shadow); border-top: 3px solid var(--accent);
     display: flex; flex-direction: column; overflow: hidden; max-height: 72vh; }
   .card-top { flex-shrink: 0; padding: 14px 18px 12px; border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, #fafaff, #fff); font-weight: 700; font-size: .96rem; line-height: 1.35; }
+    background: linear-gradient(180deg, #fffdf7, #fff); font-weight: 700; font-size: .96rem; line-height: 1.35; }
   .card-top code { font-size: .82em; }
   .card-body { padding: 13px 18px 16px; font-size: .84rem; }
   .card-body p { margin: .5em 0; color: #344054; line-height: 1.6; }
@@ -139,110 +139,105 @@
 <body>
   <header class="hero">
     <div class="hero-inner">
-      <span class="eyebrow">Backend</span>
+      <span class="eyebrow">Architecture</span>
       <h1>toy_repo</h1>
-      <p class="sub">toy_repo is a small Django service with a hand-rolled REST dispatcher and a two-layer middleware stack.</p>
+      <p class="sub">toy_repo runs four services behind one gateway, with Auth0 and Stripe rented rather than run.</p>
     </div>
   </header>
   <main>
     <section class="hero-diagram">
-      <div class="hero-diagram-cap">The request pipeline &mdash; six layers, every time</div>
-      <div class="diagram"><pre class="mermaid">flowchart LR
-  route --&gt; mw
+      <div class="hero-diagram-cap">The whole system on one map</div>
+      <div class="diagram"><pre class="mermaid">graph LR
+  gateway --&gt; auth
   &lt;/pre&gt;&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;</pre></div>
     </section>
 
     <div class="sec-head">
       <span class="sec-n">01</span>
-      <div class="sec-label">The pipeline</div>
-      <div class="sec-note">route · middleware · handler · service · database · response</div>
+      <div class="sec-label">The inventory</div>
+      <div class="sec-note">every node, sorted by band: run · rent · call · client</div>
       <div class="scroll-hint">swipe &rarr;</div>
     </div>
-    <div class="sec-intro"><p>Four routes fan into eleven handlers; the service layer is thin.</p>
+    <div class="sec-intro"><p>Nine boxes: four run in-house, three rented, two called from the client.</p>
 </div>
-    <ul class="rail pipe">
+    <ul class="rail inv">
       <li class="card">
-        <div class="card-top">Route &lt;script&gt;alert(1)&lt;/script&gt;</div>
-        <div class="scroll"><div class="card-body"><p>One <code>urls.py</code> maps <strong>4</strong> paths. See <code>app/urls.py:12</code>.</p>
+        <div class="card-top">1 · Gateway &lt;script&gt;alert(1)&lt;/script&gt; (run)</div>
+        <div class="scroll"><div class="card-body"><p>The front door. Declared in <code>docker-compose.yml:4</code>, one <strong>replica</strong>.</p>
 </div></div>
       </li>
       <li class="card">
-        <div class="card-top">Middleware</div>
-        <div class="scroll"><div class="card-body"><p>Two layers, both custom:</p>
+        <div class="card-top">2 · Auth (rent)</div>
+        <div class="scroll"><div class="card-body"><p>Auth0 tenant, named by <code>AUTH0_DOMAIN</code>.</p>
+</div></div>
+      </li>
+      <li class="card">
+        <div class="card-top">3 · Postgres (run)</div>
+        <div class="scroll"><div class="card-body"><p>One primary, no replica:</p>
 <ul>
-<li>auth</li>
-<li>rate limiting</li>
+<li>migrations in <code>db/migrate/</code></li>
+<li>pooled by pgbouncer</li>
 </ul>
-</div></div>
-      </li>
-      <li class="card">
-        <div class="card-top">Handler</div>
-        <div class="scroll"><div class="card-body"><p>11 views under <code>app/views/</code>.</p>
 </div></div>
       </li>
     </ul>
     <div class="sec-head">
       <span class="sec-n">02</span>
-      <div class="sec-label">The code</div>
-      <div class="sec-note">only the layers the team built in a non-standard way</div>
+      <div class="sec-label">Tech stack</div>
+      <div class="sec-note">open each box: the real technology inside the label</div>
       <div class="scroll-hint">swipe &rarr;</div>
     </div>
-    <div class="sec-intro"><p>Only the routing layer is unusual, and it is one wrapper function.</p>
+    <div class="sec-intro"><p>The gateway label says nginx; the image says Envoy.</p>
 </div>
-    <ul class="rail code">
+    <ul class="rail tech">
       <li class="card">
-        <div class="card-top">Route — novel</div>
-        <div class="scroll"><div class="card-body"><p>A <code>rest_path</code> wrapper folds method dispatch into the URL table.</p>
-<pre><code class="language-python">def rest_path(route, **handlers):
-    return path(route, rest_dispatch(**handlers))
+        <div class="card-top">1 · Gateway</div>
+        <div class="scroll"><div class="card-body"><p>Envoy 1.29, not nginx, despite the <code>nginx.conf</code> in the repo root.</p>
+<pre><code class="language-yaml">image: envoyproxy/envoy:v1.29
 </code></pre>
 </div></div>
       </li>
       <li class="card">
-        <div class="card-top">Middleware — standard</div>
-        <div class="scroll"><div class="card-body"><p>Stock Django middleware, nothing to read.</p>
+        <div class="card-top">2 · Auth</div>
+        <div class="scroll"><div class="card-body"><p>Auth0, reached through <code>@auth0/nextjs-auth0</code> at <code>apps/web/lib/auth.ts:8</code>.</p>
 </div></div>
       </li>
     </ul>
     <div class="sec-head">
       <span class="sec-n">03</span>
       <div class="sec-label">The trace</div>
-      <div class="sec-note">one request, all six layers, and where state changes</div>
+      <div class="sec-note">one request, hop by hop, and how each variant differs</div>
       <div class="scroll-hint">swipe &rarr;</div>
     </div>
-    <div class="sec-intro"><p>One message write, committed before the response returns.</p>
+    <div class="sec-intro"><p>One checkout, five hops, and the webhook variant that skips authentication.</p>
 </div>
     <ul class="rail trace">
       <li class="card">
-        <div class="card-top"><ol>
-<li>Route</li>
-</ol></div>
-        <div class="scroll"><div class="card-body"><p><code>app/urls.py:44</code> matches the path.</p>
+        <div class="card-top">Hop 1 — Client to gateway</div>
+        <div class="scroll"><div class="card-body"><p>TLS terminates at Envoy; the JWT is not yet checked.</p>
 </div></div>
       </li>
       <li class="card">
-        <div class="card-top"><ol start="2">
-<li>Handler</li>
-</ol></div>
-        <div class="scroll"><div class="card-body"><p><code>app/views/message.py:88</code> validates, then calls the service.</p>
+        <div class="card-top">Hop 2 — Gateway to auth</div>
+        <div class="scroll"><div class="card-body"><p><code>apps/api/src/middleware/jwt.ts:22</code> verifies against Auth0's JWKS.</p>
 <table>
 <thead>
 <tr>
-<th>field</th>
-<th>required</th>
+<th>variant</th>
+<th>differs at</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>content</code></td>
-<td>yes</td>
+<td>webhook</td>
+<td>skips hop 2</td>
 </tr>
 </tbody>
 </table>
 </div></div>
       </li>
     </ul>
-    <footer>Read as six layers &middot; 4 routes &middot; 11 handlers &middot; 5 services &middot; 3 models.</footer>
+    <footer>Overlaid from 9 config files, 42 dependencies, 6 integrations.</footer>
   </main>
 </body>
 </html>

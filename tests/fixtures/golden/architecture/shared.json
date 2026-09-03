@@ -1,0 +1,23 @@
+{
+  "repo_path": "/tmp/toy_repo",
+  "arch_stats": {
+    "config_files": 9,
+    "env_vars": 31,
+    "deps": 42,
+    "integrations": 6,
+    "sdk_lines": 118
+  },
+  "shape_verdict": "A gateway in front of four services, with Postgres and Redis behind them.",
+  "arch_diagram": "graph LR\n  gateway --> auth\n  </pre><script>alert('xss')</script>",
+  "inventory_md": "**Shape verdict:** A gateway in front of four services, with Postgres and Redis behind them.\n\n```mermaid\ngraph LR\n  gateway --> auth\n  </pre><script>alert('xss')</script>\n```\n\n### 1 · Gateway <script>alert(1)</script> (run)\n\nThe front door. Declared in `docker-compose.yml:4`, one **replica**.\n\n### 2 · Auth (rent)\n\nAuth0 tenant, named by `AUTH0_DOMAIN`.\n\n### 3 · Postgres (run)\n\nOne primary, no replica:\n\n- migrations in `db/migrate/`\n- pooled by pgbouncer\n",
+  "techstack_md": "### 1 · Gateway\n\nEnvoy 1.29, not nginx, despite the `nginx.conf` in the repo root.\n\n```yaml\nimage: envoyproxy/envoy:v1.29\n```\n\n### 2 · Auth\n\nAuth0, reached through `@auth0/nextjs-auth0` at `apps/web/lib/auth.ts:8`.\n",
+  "trace_md": "### Hop 1 — Client to gateway\n\nTLS terminates at Envoy; the JWT is not yet checked.\n\n### Hop 2 — Gateway to auth\n\n`apps/api/src/middleware/jwt.ts:22` verifies against Auth0's JWKS.\n\n| variant | differs at |\n| --- | --- |\n| webhook | skips hop 2 |\n",
+  "overview": {
+    "welcome": "toy_repo runs four services behind one gateway, with Auth0 and Stripe rented rather than run.",
+    "intros": {
+      "The inventory": "Nine boxes: four run in-house, three rented, two called from the client.",
+      "Tech stack": "The gateway label says nginx; the image says Envoy.",
+      "The trace": "One checkout, five hops, and the webhook variant that skips authentication."
+    }
+  }
+}

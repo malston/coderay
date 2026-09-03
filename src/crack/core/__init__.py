@@ -23,6 +23,7 @@ from .crawl import (  # noqa: F401
     DEFAULT_SKIP_DIR,
     DEFAULT_KEEP_NAMES,
     DEFAULT_MAX_FILE_BYTES,
+    within_repo,
 )
 from .env import env_defaults  # noqa: F401
 from .nodes import OverviewNode  # noqa: F401

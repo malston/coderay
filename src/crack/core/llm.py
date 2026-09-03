@@ -26,10 +26,18 @@ def fill(template, **kwargs):
     return template
 
 
-def extract_mermaid(md):
-    """Pull the body of the first ```mermaid fence, or "" when there is none."""
-    m = re.search(r"```mermaid\s*\n(.*?)```", md or "", re.DOTALL)
-    return m.group(1).strip() if m else ""
+def extract_mermaid(md, kind=None):
+    """Pull the body of the first matching ```mermaid fence, or "" if none match.
+
+    `kind` narrows it to a diagram type ("erDiagram", "sequenceDiagram"): a
+    reply that opens with a flowchart and puts the ERD second would otherwise
+    hand the caller the wrong diagram. Without it the first fence wins, which
+    is what every caller but schema wants."""
+    for m in re.finditer(r"```mermaid\s*\n(.*?)```", md or "", re.DOTALL):
+        body = m.group(1).strip()
+        if kind is None or body.startswith(kind):
+            return body
+    return ""
 
 
 def parse_yaml(text):

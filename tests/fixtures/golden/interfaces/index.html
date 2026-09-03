@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>toy_repo: backend</title>
+<title>toy_repo: interfaces</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -36,7 +36,7 @@
   :root {
     --bg: #f7f8fa; --surface: #fff; --text: #101828; --muted: #667085;
     --faint: #98a2b3; --rule: #e4e7ec; --line: #eef0f3;
-    --accent: #4f46e5; --accent-soft: #eef2ff; --good: #16a34a; --stone: #9aa4b2;
+    --accent: #0d9488; --accent-soft: #effcf9; --good: #16a34a; --stone: #9aa4b2;
     --stone-bg: #f2f4f7; --shadow: 0 1px 2px rgba(16,24,40,.05); --radius: 12px;
   }
   * { box-sizing: border-box; }
@@ -46,17 +46,17 @@
   code, .mono { font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; }
   main { max-width: 1280px; margin: 0 auto; padding: 0 24px 56px; }
 
-  .hero { background: radial-gradient(120% 140% at 50% 0%, #1e1b4b 0%, #0f0d2b 70%);
+  .hero { background: radial-gradient(120% 140% at 50% 0%, #0f3d38 0%, #06201d 70%);
     color: #fff; padding: 46px 20px 42px; text-align: center; }
   .hero-inner { max-width: 1120px; margin: 0 auto; }
   .hero-diagram { margin: 18px 0 4px; }
   .hero-diagram-cap { font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
     color: var(--accent); margin: 0 2px 9px; }
-  .eyebrow { display: inline-flex; align-items: center; gap: 7px; color: #a5b4fc;
+  .eyebrow { display: inline-flex; align-items: center; gap: 7px; color: #5eead4;
     font-size: .68rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
-  .eyebrow::before { content: ''; width: 16px; height: 2px; background: #818cf8; border-radius: 2px; }
+  .eyebrow::before { content: ''; width: 16px; height: 2px; background: #2dd4bf; border-radius: 2px; }
   .hero h1 { font-size: 1.9rem; font-weight: 800; letter-spacing: -.025em; margin: 12px 0 10px; }
-  .hero .sub { font-size: .94rem; color: #d6d8f5; margin: 0 auto; line-height: 1.6; }
+  .hero .sub { font-size: .94rem; color: #cbeee7; margin: 0 auto; line-height: 1.6; }
 
   .sec-head { display: flex; align-items: baseline; gap: 10px; margin: 42px 2px 14px; }
   .sec-n { font-family: 'JetBrains Mono', monospace; font-size: .68rem; font-weight: 700; color: var(--accent); }
@@ -98,9 +98,10 @@
   .rail::-webkit-scrollbar { height: 9px; }
   .rail::-webkit-scrollbar-track { background: var(--line); border-radius: 5px; }
   .rail::-webkit-scrollbar-thumb { background: #cbd2dc; border-radius: 5px; }
-  .rail.pipe .card { flex: 0 0 400px; width: 400px; }
-  .rail.code .card { flex: 0 0 520px; width: 520px; }
-  .rail.trace .card { flex: 0 0 460px; width: 460px; }
+  .rail.menu .card { flex: 0 0 380px; width: 380px; }
+  .rail.tour .card { flex: 0 0 380px; width: 380px; }
+  .rail.flows .card { flex: 0 0 440px; width: 440px; }
+  .rail.seq .card { flex: 0 0 560px; width: 560px; }
 
   .scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
   .scroll::-webkit-scrollbar { width: 9px; }
@@ -110,7 +111,7 @@
     border-radius: var(--radius); box-shadow: var(--shadow); border-top: 3px solid var(--accent);
     display: flex; flex-direction: column; overflow: hidden; max-height: 72vh; }
   .card-top { flex-shrink: 0; padding: 14px 18px 12px; border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, #fafaff, #fff); font-weight: 700; font-size: .96rem; line-height: 1.35; }
+    background: linear-gradient(180deg, #f6fdfb, #fff); font-weight: 700; font-size: .96rem; line-height: 1.35; }
   .card-top code { font-size: .82em; }
   .card-body { padding: 13px 18px 16px; font-size: .84rem; }
   .card-body p { margin: .5em 0; color: #344054; line-height: 1.6; }
@@ -139,110 +140,122 @@
 <body>
   <header class="hero">
     <div class="hero-inner">
-      <span class="eyebrow">Backend</span>
+      <span class="eyebrow">Interfaces</span>
       <h1>toy_repo</h1>
-      <p class="sub">toy_repo is a small Django service with a hand-rolled REST dispatcher and a two-layer middleware stack.</p>
+      <p class="sub">toy_repo is a booking API with a thin payments wing and almost no admin surface.</p>
     </div>
   </header>
   <main>
     <section class="hero-diagram">
-      <div class="hero-diagram-cap">The request pipeline &mdash; six layers, every time</div>
-      <div class="diagram"><pre class="mermaid">flowchart LR
-  route --&gt; mw
-  &lt;/pre&gt;&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;</pre></div>
+      <div class="hero-diagram-cap">The API surface at a glance &mdash; 25 endpoints across 3 feature groups</div>
+      <div class="groupchart"><div class="gc-row"><div class="gc-name">Booking &lt;script&gt;alert</div><div class="gc-track"><div class="gc-bar" style="width:7%">1</div></div></div><div class="gc-row"><div class="gc-name">Payments</div><div class="gc-track"><div class="gc-bar" style="width:100%">18</div></div></div><div class="gc-row"><div class="gc-name">Auth</div><div class="gc-track"><div class="gc-bar" style="width:33%">6</div></div></div></div>
     </section>
 
     <div class="sec-head">
       <span class="sec-n">01</span>
-      <div class="sec-label">The pipeline</div>
-      <div class="sec-note">route · middleware · handler · service · database · response</div>
+      <div class="sec-label">Feature menu</div>
+      <div class="sec-note">every endpoint, grouped by feature, biggest first</div>
       <div class="scroll-hint">swipe &rarr;</div>
     </div>
-    <div class="sec-intro"><p>Four routes fan into eleven handlers; the service layer is thin.</p>
+    <div class="sec-intro"><p>Three groups; booking is two thirds of the whole surface.</p>
 </div>
-    <ul class="rail pipe">
+    <ul class="rail menu">
       <li class="card">
-        <div class="card-top">Route &lt;script&gt;alert(1)&lt;/script&gt;</div>
-        <div class="scroll"><div class="card-body"><p>One <code>urls.py</code> maps <strong>4</strong> paths. See <code>app/urls.py:12</code>.</p>
-</div></div>
-      </li>
-      <li class="card">
-        <div class="card-top">Middleware</div>
-        <div class="scroll"><div class="card-body"><p>Two layers, both custom:</p>
+        <div class="card-top">Booking &lt;script&gt;alert(1)&lt;/script&gt; (42)</div>
+        <div class="scroll"><div class="card-body"><p>The biggest surface by far. <code>config/routes.rb:88</code> maps <strong>42</strong> paths.</p>
 <ul>
-<li>auth</li>
-<li>rate limiting</li>
+<li><code>POST /api/book</code> creates a hold</li>
+<li><code>DELETE /api/book/:id</code> releases it</li>
 </ul>
 </div></div>
       </li>
       <li class="card">
-        <div class="card-top">Handler</div>
-        <div class="scroll"><div class="card-body"><p>11 views under <code>app/views/</code>.</p>
+        <div class="card-top">Payments (18)</div>
+        <div class="scroll"><div class="card-body"><p>Stripe-backed, all under <code>pages/api/pay*</code>.</p>
+</div></div>
+      </li>
+      <li class="card">
+        <div class="card-top">Auth (6)</div>
+        <div class="scroll"><div class="card-body"><p>Session cookies, no bearer tokens.</p>
 </div></div>
       </li>
     </ul>
     <div class="sec-head">
       <span class="sec-n">02</span>
-      <div class="sec-label">The code</div>
-      <div class="sec-note">only the layers the team built in a non-standard way</div>
+      <div class="sec-label">The tour</div>
+      <div class="sec-note">the groups that say the most about the product</div>
       <div class="scroll-hint">swipe &rarr;</div>
     </div>
-    <div class="sec-intro"><p>Only the routing layer is unusual, and it is one wrapper function.</p>
+    <div class="sec-intro"><p>Booking first, because it is where the product's idea lives.</p>
 </div>
-    <ul class="rail code">
+    <ul class="rail tour">
       <li class="card">
-        <div class="card-top">Route — novel</div>
-        <div class="scroll"><div class="card-body"><p>A <code>rest_path</code> wrapper folds method dispatch into the URL table.</p>
-<pre><code class="language-python">def rest_path(route, **handlers):
-    return path(route, rest_dispatch(**handlers))
-</code></pre>
+        <div class="card-top">Start at booking</div>
+        <div class="scroll"><div class="card-body"><p>It is where the product's idea lives.</p>
 </div></div>
       </li>
       <li class="card">
-        <div class="card-top">Middleware — standard</div>
-        <div class="scroll"><div class="card-body"><p>Stock Django middleware, nothing to read.</p>
+        <div class="card-top">Then payments</div>
+        <div class="scroll"><div class="card-body"><p>Everything else exists to make this work.</p>
 </div></div>
       </li>
     </ul>
     <div class="sec-head">
       <span class="sec-n">03</span>
-      <div class="sec-label">The trace</div>
-      <div class="sec-note">one request, all six layers, and where state changes</div>
+      <div class="sec-label">Action flows</div>
+      <div class="sec-note">one gesture, every lane it touches, in order</div>
       <div class="scroll-hint">swipe &rarr;</div>
     </div>
-    <div class="sec-intro"><p>One message write, committed before the response returns.</p>
+    <div class="sec-intro"><p>Two gestures, both crossing the worker lane.</p>
 </div>
-    <ul class="rail trace">
+    <ul class="rail flows">
       <li class="card">
-        <div class="card-top"><ol>
-<li>Route</li>
-</ol></div>
-        <div class="scroll"><div class="card-body"><p><code>app/urls.py:44</code> matches the path.</p>
-</div></div>
-      </li>
-      <li class="card">
-        <div class="card-top"><ol start="2">
-<li>Handler</li>
-</ol></div>
-        <div class="scroll"><div class="card-body"><p><code>app/views/message.py:88</code> validates, then calls the service.</p>
-<table>
+        <div class="card-top">Guest books a room</div>
+        <div class="scroll"><div class="card-body"><table>
 <thead>
 <tr>
-<th>field</th>
-<th>required</th>
+<th>lane</th>
+<th>step</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>content</code></td>
-<td>yes</td>
+<td>web</td>
+<td><code>POST /api/book</code></td>
+</tr>
+<tr>
+<td>worker</td>
+<td>holds inventory</td>
 </tr>
 </tbody>
 </table>
 </div></div>
       </li>
+      <li class="card">
+        <div class="card-top">Guest cancels</div>
+        <div class="scroll"><div class="card-body"><p>The hold is released, then Stripe is refunded.</p>
+</div></div>
+      </li>
     </ul>
-    <footer>Read as six layers &middot; 4 routes &middot; 11 handlers &middot; 5 services &middot; 3 models.</footer>
+    <div class="sec-head">
+      <span class="sec-n">04</span>
+      <div class="sec-label">Endpoint sequence</div>
+      <div class="sec-note">one endpoint, every message inside it</div>
+      <div class="scroll-hint">swipe &rarr;</div>
+    </div>
+    <div class="sec-intro"><p>One booking write, and the row it leaves behind on failure.</p>
+</div>
+    <div class="diagram"><pre class="mermaid">sequenceDiagram
+  client-&gt;&gt;api: POST /api/book
+  &lt;/pre&gt;&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;</pre></div>
+    <ul class="rail seq">
+      <li class="card">
+        <div class="card-top">POST /api/book &lt;script&gt;alert(1)&lt;/script&gt;</div>
+        <div class="scroll"><div class="card-body"><p>The hold is written before Stripe is called, so a failed charge leaves a row to reap.</p>
+</div></div>
+      </li>
+    </ul>
+    <footer>Read from 3 route files &middot; 3 feature groups.</footer>
   </main>
 </body>
 </html>

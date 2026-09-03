@@ -1,6 +1,6 @@
 # Agent Instructions
 
-Crack runs two PocketFlow analyses: a multi-chapter tour and a server-side backend flow analysis. See `CLAUDE.md` for build/test commands, architecture, and project conventions -- read it before making changes.
+Crack runs five PocketFlow analyses: a multi-chapter tour, a server-side backend flow analysis, a multi-service architecture map, an API surface guide, and a data-model tour. See `CLAUDE.md` for build/test commands, architecture, and project conventions -- read it before making changes.
 
 This project uses **bd** (beads) for issue tracking; see the managed Beads sections below for commands and workflow. Run `bd prime` for full workflow context.
 
@@ -32,7 +32,7 @@ cp -rf source dest          # NOT: cp -r source dest
 
 ## Architecture Overview
 
-Crack dispatches to two analyses, each a PocketFlow pipeline:
+Crack dispatches to five analyses, each a PocketFlow pipeline:
 
 **Tour** (five sequential nodes, `src/crack/analyses/tour/nodes.py`, wired in `src/crack/analyses/tour/flow.py`):
 
@@ -54,9 +54,39 @@ BuildBundle -> Pipeline -> LayerCode -> Trace -> OverviewNode
 - Analyzes the repository structure and maps files to six semantic layers: route, middleware, handler, service, database, response.
 - Renders three views: the pipeline with file counts per layer, code snippets at layer boundaries, and a request trace through all six.
 
+**Architecture** (five sequential nodes: four in `src/crack/analyses/architecture/nodes.py` plus the shared `OverviewNode`, wired in `build_flow()` in `src/crack/analyses/architecture/__init__.py`):
+
+```text
+BuildBundle -> Inventory -> TechStack -> TraceRequest -> OverviewNode
+```
+
+- `src/crack/analyses/architecture/arch_crawl.py` overlays four sources into one bundle: process declarations (compose, k8s, `Procfile`, platform config), env var names from `.env` files, with credential values redacted out of every other source by `_redact` (coderay-q2r.14, the one deliberate divergence from the port source in that module), the union of `package.json` dependencies, and Terraform, plus SDK import lines from `git grep` as proof a connection is live.
+- Inventory runs first among the LLM passes, and its numbered node list is reused by TechStack and TraceRequest, so all three name the same graph.
+- Renders three views: every node banded run/rent/call/client, the technology behind each label, and one request traced hop by hop.
+
+**Interfaces** (five sequential nodes: four in `src/crack/analyses/interfaces/nodes.py` plus the shared `OverviewNode`, wired in `build_flow()` in `src/crack/analyses/interfaces/__init__.py`):
+
+```text
+FindRoutes -> ApiMenu -> TraceActions -> EndpointSequence -> OverviewNode
+```
+
+- `src/crack/analyses/interfaces/routes_find.py` finds entry-point files by framework convention and concatenates them, aggregators first. `read_files` resolves LLM-picked source paths and refuses any that leave the repo (`_within`, coderay-q2r.16, the one deliberate divergence in that module).
+- The only analysis using the engine's `when_empty="omit"` (the tour) and a Section's own `prefix`/`cards` hooks (the sequence diagram and its card). Four sections, like schema.
+- EndpointSequence makes two LLM calls: one picks the endpoint and its source files, one draws the diagram from them. When neither the pick nor the fallback yields readable source it records `sequence_grounded=False`, and the card carries a warning instead of passing for a grounded diagram (coderay-q2r.25). The pick goes through `crack.core.yaml_call` (coderay-q2r.18, one of three divergences in this analysis, with q2r.16 and q2r.17), so a malformed or empty reply retries with a varied tail instead of dropping straight to the fallback, and a transport error reaches the node's own `max_retries` instead of being swallowed.
+
+**Schema** (six sequential nodes: five in `src/crack/analyses/schema/nodes.py` plus the shared `OverviewNode`, wired in `build_flow()` in `src/crack/analyses/schema/__init__.py`):
+
+```text
+FindSchema -> SchemaTour -> TraceFlows -> TableDeepDive -> MigrationActs -> OverviewNode
+```
+
+- `src/crack/analyses/schema/schema_find.py` locates the schema by convention (Prisma, Rails, raw SQL, or concatenated `models.py`) and reads the migration directory with the most timestamped entries.
+- SchemaTour runs first among the LLM passes: its ER diagram names the core tables the flows and deep-dive passes then reuse, filtered against the table names actually declared in the schema so an invented entity never reaches them.
+- The only card-family analysis with a flag of its own (`--schema`; tour has `--instructions` and `--dry-run`), the only one that retitles the page from LLM output (`THEME.page_name`), and the only one using `when_empty="skip-note"`. TableDeepDive batches four tables per call, which is why its `ENV_DEFAULTS` is empty where the other card analyses raise `LLM_MAX_OUTPUT_TOKENS`.
+
 ## Conventions & Patterns
 
-- Card-family analyses (today just `backend`; architecture, interfaces and schema follow) declare `SECTIONS` and `THEME` and are rendered by `crack/core/render.py`. An analysis whose page shape does not fit declares its own `render_html` and `render_markdown` instead, and `crack/core/render.py` steps aside for it. Tour uses neither path: it predates the contract and writes its own multi-file output directly from `run()`, via `write_index_md`, `write_index_html` and `write_chapter_files`.
+- Card-family analyses (`backend`, `architecture`, `interfaces` and `schema`) declare `SECTIONS` and `THEME` and are rendered by `crack/core/render.py`. An analysis whose page shape does not fit declares its own `render_html` and `render_markdown` instead, and `crack/core/render.py` steps aside for it. Tour uses neither path: it predates the contract and writes its own multi-file output directly from `run()`, via `write_index_md`, `write_index_html` and `write_chapter_files`.
 - Untrusted input (the target repo's own files, and anything the LLM echoes back from them) must be escaped before it reaches HTML/Mermaid output.
 - LLM YAML parsing goes through `crack.core.yaml_call`, not a bespoke `parse_yaml`/`.format()` combo in pipeline nodes -- that duplication was a real bug fixed in a prior epic. Reuse `crack.core.yaml_call` and `crack.core.fill()` for new LLM-calling code.
 - Any file-content budget (`preview_budget`, `codebase_budget`) must be enforced by capping _how many files_ are included, not by raising a per-file floor -- that inversion was the root cause of two Critical scalability bugs.

@@ -1,0 +1,34 @@
+{
+  "repo_path": "/tmp/toy_repo",
+  "product_name": "Acme Booking <script>alert(1)</script>",
+  "one_liner": "Rooms, holds and the invoices that follow them.",
+  "schema_path": "packages/db/schema.prisma",
+  "schema_kind": "prisma",
+  "table_list": [
+    "users",
+    "rooms",
+    "bookings",
+    "invoices"
+  ],
+  "migration_names": [
+    "20210101120000_init",
+    "20210608090000_add_holds",
+    "20220204110000_invoices",
+    "20230119150000_soft_delete"
+  ],
+  "migration_dir": "packages/db/migrations",
+  "erd": "erDiagram\n  users ||--o{ bookings : places\n  rooms ||--o{ bookings : holds\n  </pre><script>alert('xss')</script>",
+  "tour_md": "**Product:** Acme Booking\n**Schema one-liner:** Rooms, holds and the invoices that follow them.\n\n```mermaid\nerDiagram\n  users ||--o{ bookings : places\n  rooms ||--o{ bookings : holds\n  </pre><script>alert('xss')</script>\n```\n\n### 1 · The booking cluster <script>alert(1)</script>\n\n`bookings` is the hinge. Every other table hangs off it.\n\n- `users` owns the booking\n- `rooms` is what was held\n\n### 2 · Money\n\n`invoices` arrives late in the history, in its own act.\n",
+  "flows_md": "### Guest books a room\n\n| step | table |\n| --- | --- |\n| 1 | `rooms` read |\n| 2 | `bookings` insert |\n\n### Guest cancels\n\nThe row is soft-deleted, never removed.\n",
+  "deepdive_md": "### `bookings`\n\n`state` is a string, not an enum, which is why two spellings of `cancelled` exist.\n\n```sql\nCREATE INDEX bookings_room_start ON bookings (room_id, starts_at);\n```\n\n### `invoices`\n\nOne index, on `booking_id`. Every report scans.\n",
+  "migration_md": "### Act 1 — The booking product (2021)\n\nRooms, users, bookings. Nothing else.\n\n### Act 2 — Money (2022)\n\n`invoices` appears, and never changes shape again.\n",
+  "overview": {
+    "welcome": "Acme Booking is four tables around one hinge, with money bolted on a year later.",
+    "intros": {
+      "The tour": "Everything hangs off bookings.",
+      "The flows": "Two gestures, both writing the same hinge table.",
+      "Table deep dive": "The state column is a string, and it shows.",
+      "Migration history": "Two clear acts: the booking product, then money."
+    }
+  }
+}

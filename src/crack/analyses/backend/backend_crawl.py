@@ -41,8 +41,12 @@ def _read(path, limit=45_000):
 
 
 def classify(rel):
-    """Return the layer a file belongs to, or None."""
-    p = rel.replace(os.sep, '/').lower()
+    """Return the layer a file belongs to, or None.
+
+    The directory conventions below are matched with their surrounding slashes,
+    so the path carries a leading one: a repo that keeps `pages/api/` or
+    `routes/` at its root reads the same as one that nests them under `src/`."""
+    p = '/' + rel.replace(os.sep, '/').lower().lstrip('/')
     base = os.path.basename(p)
     if not p.endswith(SRC_EXT):
         return None
@@ -110,5 +114,10 @@ def build_bundle(repo, max_chars=650_000, per_layer_sample=18):
         parts.append(block)
         total += len(block)
         kept += 1
+
+    if not kept:
+        # The counts header alone tells the model nothing it can read a backend
+        # from, and a truthy bundle hides "found nothing" from the caller.
+        return "", {"counts": dict(counts), "included": 0}
 
     return "".join(parts), {"counts": dict(counts), "included": kept}
