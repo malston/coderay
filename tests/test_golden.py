@@ -148,3 +148,22 @@ def test_git_history_render_escapes_every_slot_it_is_handed():
     assert "<script>" not in body
     assert "</pre><script>" not in html
     assert "&lt;/pre&gt;&lt;script&gt;" in body
+
+
+def test_git_history_render_survives_a_skipped_era_and_a_grave_outside_every_era():
+    """coderay-q2r.39 lets ProfileEras skip an era with no commits, and
+    coderay-q2r.40 lets _era_for return None, so profiles may be fewer than
+    eras and a grave may carry an empty era. Neither may shift a profile onto
+    the wrong era card or crash the page."""
+    d = GOLDEN / "git-history"
+    shared = json.loads((d / "shared.json").read_text(encoding="utf-8"))
+    ghost = {"name": "Ghost era", "start": "2010-01", "end": "2010-12",
+             "description": "d", "turning_point": "t"}
+    shared["eras"] = [shared["eras"][0], ghost, shared["eras"][1]]   # skipped era in the middle
+    shared["graves"][0]["era"] = {}
+    html = render.render_html(ANALYSES["git-history"], "toy_repo", shared)
+    md = render.render_markdown(ANALYSES["git-history"], "toy_repo", shared)
+    assert html.count('<li class="card profile">') == 2
+    assert "ERA 3</div>\n          <div class=\"card-name\">Going multi-tenant" in html
+    assert "### Era 3: Going multi-tenant" in md
+    assert "Ghost era" in html and "Ghost era" in md          # still listed among the eras
