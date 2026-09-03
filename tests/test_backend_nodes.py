@@ -100,3 +100,15 @@ def test_the_codebase_slot_is_filled(monkeypatch):
     n.Pipeline().run({"codebase": "MARKER_TEXT"})
     assert "MARKER_TEXT" in seen["p"]
     assert "{codebase}" not in seen["p"]
+
+
+def test_build_bundle_names_the_files_it_found_when_none_could_be_read(tmp_path):
+    """coderay-q2r.57. safe_read leaves out a file that is not UTF-8, so a
+    backend whose every layer file is Latin-1 gives non-zero counts and an
+    empty bundle. The abort used to say "no routes/views/models", which its
+    own counts contradicted."""
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "urls.py").write_bytes(b"urlpatterns = [] # caf\xe9\n")
+    with pytest.raises(AssertionError, match=r"1 file.* route.*none .*UTF-8") as info:
+        n.BuildBundle().run({"repo_path": str(tmp_path)})
+    assert "No backend source found" not in str(info.value)
