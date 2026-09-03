@@ -132,21 +132,24 @@ def within_repo(repo, path):
     return target == root or target.startswith(root + os.sep)
 
 
-def readable(repo, path):
+def readable(repo, path, *, credential_names=False):
     """True if a file a crawler discovered in `repo` may be read into a prompt.
 
     `within_repo` alone lets `app/urls.py -> ../.env` through: the target is
-    inside the repo, it is only credential-named. So when the path is a
-    symlink, the target's own name has to clear the credential skip as well,
-    the rule list_files already applies at walk time (coderay-q2r.52). The
-    check is symlink-only on purpose: the architecture crawler reads a real
-    `.env` deliberately, for variable names (coderay-q2r.56).
+    inside the repo, it is only credential-named. So the target's own name has
+    to clear the credential skip as well, the rule list_files already applies
+    at walk time (coderay-q2r.52), and a model-named `.env` is refused the
+    same way (coderay-q2r.56).
+
+    `credential_names=True` lets a crawler read a credential-named file it
+    walked to itself (the architecture crawler reads a real `.env` for variable
+    names); a symlink to one is still refused.
     """
     if not within_repo(repo, path):
         return False
-    if os.path.islink(path) and _credential_named(os.path.basename(os.path.realpath(path))):
-        return False
-    return True
+    if credential_names and not os.path.islink(path):
+        return True
+    return not _credential_named(os.path.basename(os.path.realpath(path)))
 
 
 def _credential_named(filename):

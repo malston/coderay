@@ -178,3 +178,14 @@ def test_read_files_refuses_a_symlink_to_an_in_repo_credential_file(tmp_path):
     text, resolved = rf.read_files(repo, ["src/config.ts"])
     assert resolved == []
     assert "hunter2" not in text
+
+
+def test_read_files_refuses_a_credential_named_path_the_model_picked(tmp_path):
+    """coderay-q2r.56 review. The model names the paths here, and it has been
+    reading the untrusted repo, so it may name `.env` itself; no symlink
+    needed. `env` covers the suffix match resolving to the same file."""
+    repo = _repo(tmp_path / "repo", {"pages/api/login.ts": "x\n", ".env": "TOKEN=hunter2\n"})
+
+    text, resolved = rf.read_files(repo, [".env", "env"])
+    assert resolved == []
+    assert "hunter2" not in text

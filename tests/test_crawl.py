@@ -126,10 +126,11 @@ def test_list_files_accepts_an_uppercase_keep_ext_override(tmp_path):
     assert names == {"analysis.r", "helpers.R"}
 
 
-def test_readable_refuses_only_a_symlink_whose_target_is_credential_named(tmp_path):
-    """coderay-q2r.56. The crawlers that pick files by their own name still
-    read a real .env on purpose (architecture, for variable names), so the
-    target-name check applies to symlinks alone."""
+def test_readable_refuses_a_credential_named_target_unless_the_crawler_opts_in(tmp_path):
+    """coderay-q2r.56. The name checked is the resolved target's, so a symlink
+    cannot rename a credential file into source. The architecture crawler
+    reads a real .env on purpose (variable names only) and opts in; the opt-in
+    never extends to a symlink."""
     from crack.core import readable
     repo = tmp_path / "repo"
     (repo / "src").mkdir(parents=True)
@@ -138,6 +139,8 @@ def test_readable_refuses_only_a_symlink_whose_target_is_credential_named(tmp_pa
     (repo / "src" / "config.py").symlink_to(repo / ".env")
     (repo / "src" / "alias.py").symlink_to(repo / "src" / "real.py")
 
-    assert readable(repo, repo / ".env")                    # a real credential file, read on purpose
+    assert not readable(repo, repo / ".env")                # a credential file named outright
+    assert readable(repo, repo / ".env", credential_names=True)   # unless the crawler reads it on purpose
+    assert not readable(repo, repo / "src" / "config.py", credential_names=True)  # a symlink to one never is
     assert readable(repo, repo / "src" / "alias.py")        # a legitimate in-repo symlink
     assert not readable(repo, repo / "src" / "config.py")   # a symlink that renames one

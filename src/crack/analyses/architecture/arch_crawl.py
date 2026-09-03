@@ -50,8 +50,9 @@ def _read(path, limit=200_000, repo=None):
     # A config file in the target repo may be a symlink pointing out of it, and
     # the contents go into a prompt sent to a third-party LLM (coderay-q2r.28).
     # A symlink to an in-repo credential file is refused by its target name;
-    # a real `.env` is still read, for variable names only (coderay-q2r.56).
-    if repo is not None and not readable(repo, path):
+    # a real `.env` or `.tfvars` is still read, names only or redacted
+    # (coderay-q2r.56).
+    if repo is not None and not readable(repo, path, credential_names=True):
         return ""
     try:
         return open(path, encoding='utf-8', errors='replace').read()[:limit]
