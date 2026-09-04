@@ -21,9 +21,9 @@ A five-stage pipeline (BuildBundle, Pipeline, LayerCode, Trace, OverviewNode) th
 
 - Builds a bundle describing the repository structure at each layer.
 - Renders three views: the pipeline with a file count per layer, code snippets showing how each layer connects to the others, and a trace of a single request through all six layers.
-- Expects a server-side backend (Django, Express, Rails, FastAPI, and similar frameworks). Works best on backends with clear separation of concerns. Pointed at a repository with none, the run stops before it spends an LLM call.
+- Expects a server-side backend (Django, Express, Rails, FastAPI, Go `net/http` services, and similar frameworks). Works best on backends with clear separation of concerns. Pointed at a repository with none, the run stops before it spends an LLM call.
 - Known limitation, worth reading before you spend a run:
-  - A flat Django app is read incompletely: `views.py` is not recognised, so the handler layer reports zero even though the routes and models are found.
+  - Layers are found by file and directory names, not by reading code, so a backend that keeps handlers and data access in files named for neither reports zero for those layers. Go services are read by the names a `net/http` service usually gives its files (`server.go`, `*_api.go`, `db.go`).
 
 ### Architecture
 
