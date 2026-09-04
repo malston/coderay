@@ -250,6 +250,10 @@ def test_read_files_reports_the_paths_cut_by_the_size_budget(tmp_path):
     ('e := echo.New()\ne.POST("/login", login)\n', 2),
     ('token := r.Header.Get("X-Token")\nresp.Header.Get("ETag")\n', 0),
     ('func main() { cmd.Execute() }\n', 0),
+    ('r.Options("/x", h)\nr.Head("/y", h)\ne.Any("/z", h)\ng.OPTIONS("/o", h)\ng.HEAD("/h", h)\n', 5),
+    ('// mux.HandleFunc("/old", h)\n// r.Get("/gone", h)\nmux.HandleFunc("/live", h)\n', 1),
+    ('func NewRouter(cfg Config) *Router { return nil }\nfunc (m *Mux) HandleFunc(p string, h Handler) {}\n', 1),
+    ('r := mux.NewRouter()\nr.HandleFunc("/x", h)\n', 2),
 ])
 def test_go_route_registrations_counts_handler_registrations_only(text, count):
     """`r.Header.Get("X-Token")` reads a header; `r.Get("/users", h)` registers
@@ -258,10 +262,10 @@ def test_go_route_registrations_counts_handler_registrations_only(text, count):
 
 
 def test_find_route_files_reads_go_files_that_register_routes(tmp_path):
-    """A cmd/*.go rule by name swept every Cobra subcommand into the surface
-    and missed the file that registers every route. Go route files are found
-    by content; test scaffolding (a _test.go, a fixture directory, a
-    testhelpers.go) stays out even when it starts a mock server."""
+    """Go route files are found by content, so a Cobra subcommand under cmd/ is
+    not on the surface and the file that registers every route is; test
+    scaffolding (a _test.go, a fixture directory, a testhelpers.go) stays out
+    even when it starts a mock server."""
     repo = _repo(tmp_path / "repo", {
         "pkg/hub/server.go": 'mux.HandleFunc("/api/a", a)\nmux.HandleFunc("/api/b", b)\n',
         "pkg/hub/db.go": "func open() {}\n",
@@ -274,9 +278,42 @@ def test_find_route_files_reads_go_files_that_register_routes(tmp_path):
     assert rf.find_route_files(repo) == ["cmd/bridge/main.go", "pkg/hub/server.go"]
 
 
+def test_go_route_discovery_keeps_ordinary_names_that_contain_test(tmp_path):
+    """`latest.go` and `attestation.go` are ordinary names; only a file named
+    like a test (test*.go, *_test.go, *.test.*) is scaffolding."""
+    repo = _repo(tmp_path / "repo", {
+        "pkg/api/latest.go": 'mux.HandleFunc("/v/latest", h)\n',
+        "pkg/api/attestation.go": 'mux.HandleFunc("/attest", h)\n',
+        "pkg/api/testhelpers.go": 'srv.HandleFunc("/", fake)\n',
+        "pkg/api/testserver.go": 'srv.HandleFunc("/", fake)\n',
+    })
+    assert rf.find_route_files(repo) == ["pkg/api/attestation.go", "pkg/api/latest.go"]
+
+
+def test_go_route_discovery_leaves_an_oversized_file_unread(tmp_path):
+    """The walk reads every candidate .go file's text; a generated file over
+    the shared per-file cap is skipped whole rather than read to run a regex."""
+    from crawl.core import DEFAULT_MAX_FILE_BYTES
+    big = 'mux.HandleFunc("/x", h)\n' + "x" * DEFAULT_MAX_FILE_BYTES
+    repo = _repo(tmp_path / "repo", {"pkg/gen/zz_generated.go": big, "pkg/api/server.go": 'mux.HandleFunc("/y", h)\n'})
+    assert rf.find_route_files(repo) == ["pkg/api/server.go"]
+
+
+def test_go_manifest_threshold_boundary(tmp_path):
+    """Five registrations make a manifest that sorts ahead of single handlers;
+    four do not."""
+    def repo_with(n):
+        return _repo(tmp_path / f"r{n}", {
+            "pkg/hub/server.go": "".join(f'mux.HandleFunc("/api/{i}", h)\n' for i in range(n)),
+            "pages/api/aaa.ts": "export default aaa\n",
+        })
+    assert rf.crawl_routes(repo_with(5))[1][0] == "pkg/hub/server.go"
+    assert rf.crawl_routes(repo_with(4))[1][0] == "pages/api/aaa.ts"
+
+
 def test_crawl_routes_puts_the_go_file_with_the_most_registrations_first(tmp_path):
-    """The file registering dozens of routes is the manifest; a mux with two
-    lines in an entry point is not. The cap must trim the latter."""
+    """Six registrations make a manifest; a two-line mux in an entry point does
+    not. The manifest is read first, so a cap would trim the entry point."""
     repo = _repo(tmp_path / "repo", {
         "cmd/bridge/main.go": "m := http.NewServeMux()\nm.Handle(path, h)\n",
         "pkg/hub/server.go": "".join(f'mux.HandleFunc("/api/{i}", h{i})\n' for i in range(6)),

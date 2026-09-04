@@ -63,7 +63,7 @@ class FindRoutes(Node):
         routes, files, kept = exec_res
         assert routes.strip(), (
             "No route/surface files found. This analysis expects a web API "
-            "(Rails routes, Django urls, Next.js pages/api, tRPC, GraphQL, gRPC).")
+            "(Rails routes, Django urls, Next.js pages/api, tRPC, GraphQL, gRPC, Go net/http).")
         shared["routes"] = routes
         shared["route_files"] = files
         shared["route_files_read"] = kept

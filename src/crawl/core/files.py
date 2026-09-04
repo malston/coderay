@@ -77,6 +77,11 @@ DEFAULT_KEEP_NAMES = DOTENV_TEMPLATES | frozenset({
 
 # Directories to skip. Covers the usual noise categories:
 # tests, docs, examples, locales, vendored code, build, caches.
+# Directories that hold fixtures and mocks rather than request-path code
+# (the names Go projects use); the backend and interfaces crawlers prune them
+# from the walk for every language.
+FIXTURE_DIRS = frozenset({'testdata', 'testutil', 'testutils', 'httptest', 'factorytest'})
+
 DEFAULT_SKIP_DIR = frozenset({
     # vcs
     '.git', '.hg', '.svn',
@@ -105,11 +110,6 @@ DEFAULT_MAX_FILE_BYTES = 500_000
 # Credential-shaped files. Never sent to the LLM or cached, regardless of
 # keep_ext/keep_names — these are excluded even if a caller explicitly asks
 # for their extension.
-# Directories that hold fixtures and mocks rather than request-path code,
-# named the way Go projects name them; the backend and interfaces crawlers
-# prune them from the walk for every language.
-GO_FIXTURE_DIRS = frozenset({'testdata', 'testutil', 'testutils', 'httptest', 'factorytest'})
-
 DEFAULT_SKIP_NAMES = frozenset({
     '.netrc', '.npmrc', '.pypirc',
     'credentials', 'credentials.json', 'service-account.json', 'client_secret.json',

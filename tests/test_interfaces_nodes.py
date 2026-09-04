@@ -574,3 +574,12 @@ def test_a_diagram_drawn_with_no_handler_source_is_marked_ungrounded(tmp_path, m
               "route_files": []}          # nothing to fall back to
     _sequence_node().run(shared)
     assert shared["sequence_grounded"] is False
+
+
+def test_the_no_routes_message_names_go_among_the_frameworks(tmp_path):
+    """A Go CLI with no HTTP registrations has no surface; the user who reads
+    this message must not conclude Go is unsupported."""
+    _repo(tmp_path, {"cmd/tool/main.go": "func main() { cmd.Execute() }\n"})
+    with pytest.raises(AssertionError) as e:
+        n.FindRoutes().run({"repo_path": str(tmp_path)})
+    assert "Go" in str(e.value) and "Rails" in str(e.value)

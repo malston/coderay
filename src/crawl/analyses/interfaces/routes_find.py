@@ -9,7 +9,8 @@ We collect the surface files across the common conventions:
   Next.js          **/pages/api/**/*.ts, **/app/**/route.ts   (path IS the URL)
   tRPC             **/_router.ts
   GraphQL / gRPC   **/*.graphql, **/*.proto
-  Go               any .go file that registers handlers (by content, not name)
+  Go               any .go file whose text registers handlers (test names and
+                   fixture directories are skipped)
 
 `crawl_routes` concatenates them (capped) into the `{routes}` the prompts read.
 `read_files` resolves an LLM-picked list of source paths for the sequence view.
@@ -18,35 +19,43 @@ Nothing here calls an LLM.
 import os
 import re
 
-from crawl.core import DEFAULT_SKIP_DIR, GO_FIXTURE_DIRS, readable
+from crawl.core import DEFAULT_MAX_FILE_BYTES, DEFAULT_SKIP_DIR, FIXTURE_DIRS, readable
 
-SKIP_DIRS = DEFAULT_SKIP_DIR | GO_FIXTURE_DIRS | {'.storybook'}
+SKIP_DIRS = DEFAULT_SKIP_DIR | FIXTURE_DIRS | {'.storybook'}
 
 _TEST_MARKERS = ('.test.', '.spec.', '_test.', '.stories.')
 _ROUTE_BASENAMES = frozenset({
     'routes.rb', 'urls.py', 'routes.ts', 'router.ts', 'routes.js', 'router.js',
     'schema.graphql',
 })
-# A Go handler registration: a mux or router being built, or a method that
-# takes a path literal. `r.Header.Get("X-Token")` reads a header and does not
-# match, because its argument is not a path (coderay-5wu.12).
+# A registration-shaped call in Go: a mux or router constructor (package-
+# qualified, so a `func NewRouter(` definition does not count), `HandleFunc(`,
+# or a method whose first argument is a path literal. A heuristic:
+# `r.Header.Get("X-Token")` does not match, since its argument is not a path,
+# but an HTTP client calling `.Get("/users")` does (coderay-5wu.12).
 _GO_REGISTRATION = re.compile(
-    r'\bHandleFunc\(|http\.NewServeMux\(|\bNewRouter\(|gin\.(?:Default|New)\(|echo\.New\('
-    r'|\.(?:Get|Post|Put|Delete|Patch|GET|POST|PUT|DELETE|PATCH|Handle|Route|Mount|Group)\(\s*"/')
+    r'\bHandleFunc\(|http\.NewServeMux\(|\w+\.NewRouter\(|gin\.(?:Default|New)\(|echo\.New\('
+    r'|\.(?:Get|Post|Put|Delete|Patch|Options|Head|Any|GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD'
+    r'|Handle|Route|Mount|Group)\(\s*"/')
+_GO_LINE_COMMENT = re.compile(r'//.*')
 # Go route files with at least this many registrations are manifests, read first.
 _GO_MANIFEST_MIN = 5
 
 
 def go_route_registrations(text):
-    """How many handler registrations a Go source file makes."""
-    return len(_GO_REGISTRATION.findall(text))
+    """Count of registration-shaped calls in a Go source file (see
+    _GO_REGISTRATION), with line comments stripped so a commented-out example
+    does not count."""
+    return len(_GO_REGISTRATION.findall(_GO_LINE_COMMENT.sub("", text)))
 
 
 def _go_candidate(rel):
-    """True if a .go file may hold route registrations: not a test file and not
-    a test helper. Fixture directories are pruned from the walk."""
+    """True if a .go file may hold route registrations: any .go file not named
+    like a test (`test*.go`, `*_test.go`, `*.test.*`). `latest.go` and
+    `attestation.go` qualify. Fixture directories are pruned from the walk."""
     base = os.path.basename(rel)
-    return rel.endswith(".go") and "test" not in base
+    return (rel.endswith(".go") and not base.startswith("test")
+            and not any(m in base for m in _TEST_MARKERS))
 
 
 def _walk(root):
@@ -60,8 +69,7 @@ def is_route_file(rel):
 
     The directory conventions below are matched with their surrounding slashes,
     so the path carries a leading one: Next.js keeps `pages/api/` or `app/` at
-    the repo root and Go keeps `cmd/` there, which is the layout each framework
-    generates."""
+    the repo root, which is the layout the framework generates."""
     p = "/" + rel.replace(os.sep, "/").lstrip("/")
     base = os.path.basename(p)
     if any(m in base for m in _TEST_MARKERS):
@@ -108,6 +116,8 @@ def _read(path, repo=None):
     if repo is not None and not readable(repo, path):
         return ""
     try:
+        if os.path.getsize(path) > DEFAULT_MAX_FILE_BYTES:
+            return ""  # a generated file; the walk's own per-file cap
         return open(path, encoding='utf-8', errors='replace').read()
     except OSError:
         return ""
@@ -116,7 +126,9 @@ def _read(path, repo=None):
 def crawl_routes(repo, max_chars=900_000):
     """Concatenate the surface files with path headers, capped at max_chars.
     tRPC aggregators and Rails/Django manifests come first (they list many
-    endpoints per file), so a cap trims single Next.js handlers, not the map."""
+    endpoints per file), so a cap trims single Next.js handlers, not the map.
+    A Go file with _GO_MANIFEST_MIN or more registrations is a manifest too and
+    is read ahead of the name-matched ones, busiest first."""
     surface = _surface(repo)
 
     def priority(rel, weight):

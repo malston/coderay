@@ -14,12 +14,12 @@ Nothing calls an LLM.
 import os
 from collections import Counter
 
-from crawl.core import DEFAULT_SKIP_DIR, GO_FIXTURE_DIRS, list_files, safe_read
+from crawl.core import DEFAULT_SKIP_DIR, FIXTURE_DIRS, list_files, safe_read
 
 # The crawler's shared noise set plus the directories a backend keeps that
 # hold no request-path code (coderay-q2r.59: the port's own list missed `env`,
 # `spec` and `.tox`, so a virtualenv or an RSpec tree inflated the counts).
-SKIP_DIRS = DEFAULT_SKIP_DIR | GO_FIXTURE_DIRS | {
+SKIP_DIRS = DEFAULT_SKIP_DIR | FIXTURE_DIRS | {
     '.yarn', 'migrations', 'static', 'locale', 'frontend_tests', 'node_tests',
 }
 SRC_EXT = ('.py', '.ts', '.tsx', '.js', '.rb', '.go', '.java', '.php')
@@ -34,9 +34,9 @@ CORE_HINTS = ('message', 'send', 'booking', 'book', 'order', 'checkout', 'create
               'post', 'auth', 'user', 'session', 'event')
 
 
-# Go has no framework layout, so its layers come from the names a net/http
-# service gives its files; these sit beside the directory conventions every
-# language shares (coderay-5wu.11).
+# Go has no framework layout, so its layers come from the file names and
+# singular package directories a net/http service uses; these sit beside the
+# directory conventions every language shares (coderay-5wu.11).
 GO_ROUTE_NAMES = ('server.go', 'router.go', 'routes.go', 'mux.go')
 GO_HANDLER_SUFFIXES = ('_api.go', '_handler.go', '_handlers.go')
 GO_HANDLER_NAMES = ('handler.go', 'handlers.go')
