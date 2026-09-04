@@ -7,7 +7,9 @@ TypeScript grammar). Both use the same import-statement query shape.
 import os
 
 import tree_sitter_typescript as _ts_ts
-from tree_sitter import Language, Parser, Query, QueryCursor
+from tree_sitter import Language
+
+from . import capture_texts
 
 EXTENSIONS = {".ts", ".tsx"}
 
@@ -61,14 +63,8 @@ def _candidates(specifier, importer_path, selected_files):
 
 def imports(path, text, selected_files, root=None):
     # `root` is the repo root, for extractors that read a manifest; unused here.
-    language = _language_for(path)
-    parser = Parser(language)
-    tree = parser.parse(text.encode("utf-8"))
-    query = Query(language, _IMPORT_QUERY_SRC)
-    captures = QueryCursor(query).captures(tree.root_node)
     targets = []
-    for node in captures.get("specifier", []):
-        specifier = node.text.decode("utf-8")
+    for specifier in capture_texts(_language_for(path), _IMPORT_QUERY_SRC, text, "specifier"):
         for candidate in _candidates(specifier, path, selected_files):
             if candidate not in targets:
                 targets.append(candidate)

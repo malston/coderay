@@ -7,7 +7,9 @@ docs/superpowers/specs/2026-08-31-deterministic-import-graph-design.md, Non-goal
 import os
 
 import tree_sitter_python as _ts_python
-from tree_sitter import Language, Parser, Query, QueryCursor
+from tree_sitter import Language
+
+from . import capture_texts
 
 EXTENSIONS = {".py"}
 
@@ -37,13 +39,8 @@ def _candidates(module_dotted, selected_files):
 
 def imports(path, text, selected_files, root=None):
     # `root` is the repo root, for extractors that read a manifest; unused here.
-    parser = Parser(_LANGUAGE)
-    tree = parser.parse(text.encode("utf-8"))
-    query = Query(_LANGUAGE, _IMPORT_QUERY_SRC)
-    captures = QueryCursor(query).captures(tree.root_node)
     targets = []
-    for node in captures.get("module", []):
-        module_dotted = node.text.decode("utf-8")
+    for module_dotted in capture_texts(_LANGUAGE, _IMPORT_QUERY_SRC, text, "module"):
         for candidate in _candidates(module_dotted, selected_files):
             if candidate not in targets:
                 targets.append(candidate)

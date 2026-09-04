@@ -13,9 +13,12 @@ def root(tmp_path):
 
 
 def test_imports_resolves_a_module_path_to_every_selected_file_in_the_package_dir(root):
+    """Test files are never linked into the imported package, so they are not
+    targets; a _test.go importer still gets its own edges."""
     text = 'package hub\n\nimport (\n\t"fmt"\n\t"github.com/acme/app/pkg/types"\n)\n'
     selected = {"pkg/hub/server.go", "pkg/types/a.go", "pkg/types/b.go", "pkg/types/c_test.go"}
-    assert imports("pkg/hub/server.go", text, selected, root) == ["pkg/types/a.go", "pkg/types/b.go", "pkg/types/c_test.go"]
+    assert imports("pkg/hub/server.go", text, selected, root) == ["pkg/types/a.go", "pkg/types/b.go"]
+    assert imports("pkg/hub/server_test.go", text, selected, root) == ["pkg/types/a.go", "pkg/types/b.go"]
 
 
 def test_imports_drops_standard_library_and_third_party_paths(root):
@@ -49,13 +52,27 @@ def test_imports_drops_a_package_with_no_selected_files(root):
     assert imports("x.go", text, {"x.go"}, root) == []
 
 
-def test_imports_extracts_nothing_without_a_go_mod(tmp_path):
+def test_imports_extracts_nothing_without_a_go_mod_and_says_so_once(tmp_path, capsys):
     """No module path means module and third-party paths are indistinguishable;
-    better no edges than guessed ones."""
+    better no edges than guessed ones. A missing go.mod (a monorepo with
+    backend/go.mod, say) gets the same single note as one without a module line."""
     text = 'package x\n\nimport "github.com/acme/app/pkg/types"\n'
-    assert imports("x.go", text, {"x.go", "pkg/types/a.go"}, str(tmp_path)) == []
+    for f in ("x.go", "y.go"):
+        assert imports(f, text, {"x.go", "y.go", "pkg/types/a.go"}, str(tmp_path)) == []
     assert imports("x.go", text, {"x.go", "pkg/types/a.go"}) == []
-    assert module_path(str(tmp_path)) is None and module_path(None) is None
+    assert module_path(None) is None
+    assert capsys.readouterr().out.count("no go.mod or module path") == 1
+
+
+def test_module_path_follows_a_changed_go_mod(tmp_path):
+    """Read once per root while go.mod is unchanged; a rewritten go.mod is read
+    again, so a long-lived process or a second run does not see a stale path."""
+    (tmp_path / "go.mod").write_text("module github.com/acme/one\n", encoding="utf-8")
+    assert module_path(str(tmp_path)) == "github.com/acme/one"
+    import os, time
+    (tmp_path / "go.mod").write_text("module github.com/acme/two\n", encoding="utf-8")
+    os.utime(tmp_path / "go.mod", ns=(time.time_ns() + 10**9, time.time_ns() + 10**9))
+    assert module_path(str(tmp_path)) == "github.com/acme/two"
 
 
 def test_imports_returns_empty_for_a_file_with_no_imports(root):
@@ -121,4 +138,4 @@ def test_a_repo_without_a_module_path_says_so_once(tmp_path, capsys):
     for f in ("a.go", "b.go"):
         imports(f, 'package x\n\nimport "github.com/acme/app/pkg"\n', {"a.go", "b.go", "pkg/p.go"}, str(tmp_path))
     out = capsys.readouterr().out
-    assert out.count("no module path in go.mod") == 1
+    assert out.count("no go.mod or module path") == 1
