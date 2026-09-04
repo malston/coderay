@@ -108,7 +108,7 @@ crawl git-history path/to/repo  # the product story in the commit log
 crawl product-intent path/to/repo  # the product story in the source
 ```
 
-If a **tour** run fails partway through (a bad LLM response after retries, a network error), the files, abstractions, and chapters completed so far are written to `run_state.json` in the target output directory, so you can see how far it got without rerunning the whole pipeline. The other analyses do not do this: a failed run leaves an empty output directory.
+If a run fails partway through (a bad LLM response after retries, a network error), whatever the pipeline had produced is written to `run_state.json` in the output directory, so you can see how far it got without rerunning the whole pipeline. The tour writes a summary (selected files, abstraction and chapter names, order, relationships); every other analysis writes each result it had finished, leaving out the source bundle it read. A later successful run removes the file.
 
 Example output:
 
