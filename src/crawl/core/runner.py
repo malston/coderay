@@ -30,6 +30,19 @@ def default_output_dir(repo_path, analysis_name):
     name = repo_name_of(repo_path)
     return os.path.join(os.getcwd(), "output", f"{name}-{analysis_name}")
 
+def write_report(analysis, name, shared, out_dir):
+    """Render the analysis and write index.md and index.html into out_dir.
+
+    The one write path for a real run and for the golden fixtures, so the two
+    cannot drift. Returns out_dir."""
+    os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, "index.md"), "w", encoding="utf-8") as fh:
+        fh.write(render_markdown(analysis, name, shared))
+    with open(os.path.join(out_dir, "index.html"), "w", encoding="utf-8") as fh:
+        fh.write(render_html(analysis, name, shared))
+    return out_dir
+
+
 def run_analysis(analysis, args):
     """Run one analysis and write its index.md and index.html. Returns out_dir.
 
@@ -43,10 +56,7 @@ def run_analysis(analysis, args):
     with env_defaults(getattr(analysis, "ENV_DEFAULTS", {})):
         analysis.build_flow().run(shared)
 
-    with open(os.path.join(out_dir, "index.md"), "w", encoding="utf-8") as fh:
-        fh.write(render_markdown(analysis, name, shared))
-    with open(os.path.join(out_dir, "index.html"), "w", encoding="utf-8") as fh:
-        fh.write(render_html(analysis, name, shared))
+    write_report(analysis, name, shared, out_dir)
 
     print(f"\nWrote {analysis.NAME} to {out_dir}/")
     print(f"  Open {out_dir}/index.html in a browser")

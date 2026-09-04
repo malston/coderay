@@ -17,22 +17,15 @@ import pathlib
 import sys
 
 from crawl.analyses import ANALYSES
-from crawl.core import render
+from crawl.core.runner import write_report
 
 GOLDEN = pathlib.Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "golden"
 
 
 def regenerate(analysis_name, out_dir):
-    """Render the analysis's fixture input and write index.html and index.md into out_dir."""
-    shared_path = GOLDEN / analysis_name / "shared.json"
-    if not shared_path.is_file():
-        sys.exit(f"no fixture input at {shared_path}")
-    analysis = ANALYSES[analysis_name]
-    shared = json.loads(shared_path.read_text(encoding="utf-8"))
-    out_dir = pathlib.Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "index.html").write_text(render.render_html(analysis, "toy_repo", shared), encoding="utf-8")
-    (out_dir / "index.md").write_text(render.render_markdown(analysis, "toy_repo", shared), encoding="utf-8")
+    """Render the analysis's fixture input through the runner's own write path."""
+    shared = json.loads((GOLDEN / analysis_name / "shared.json").read_text(encoding="utf-8"))
+    write_report(ANALYSES[analysis_name], "toy_repo", shared, out_dir)
 
 
 def main():
@@ -40,7 +33,11 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("analysis", help="the analysis to regenerate, e.g. backend")
     args = ap.parse_args()
+    if args.analysis not in ANALYSES:
+        sys.exit(f"{args.analysis!r} is not a registered analysis; one of {sorted(ANALYSES)}")
     out_dir = GOLDEN / args.analysis
+    if not (out_dir / "shared.json").is_file():
+        sys.exit(f"no fixture input at {out_dir / 'shared.json'}")
     regenerate(args.analysis, out_dir)
     print(f"wrote {out_dir}/index.html and {out_dir}/index.md")
 

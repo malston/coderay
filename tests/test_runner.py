@@ -5,7 +5,7 @@ import textwrap
 
 import pytest
 
-from crawl.core.render import Section, Theme
+from crawl.core.render import Section, Theme, render_html, render_markdown
 from crawl.core.runner import run_analysis, run_flow
 
 
@@ -158,3 +158,14 @@ def test_run_flow_dumps_state_when_a_node_exits_deliberately():
     with pytest.raises(SystemExit):
         run_flow(ExitingFlow(), {"x": 1}, "/tmp", lambda s, o: dumped.setdefault("s", s) and "/tmp/x")
     assert dumped == {"s": {"x": 1}}
+
+
+def test_write_report_is_the_one_place_index_files_are_written(tmp_path):
+    """run_analysis and scripts/regen_golden.py both write index.md and
+    index.html through this helper, so a fixture and a real run cannot drift."""
+    from crawl.core.runner import write_report
+    analysis = _fake_analysis()
+    out = write_report(analysis, "toy", {"x": 1}, tmp_path / "out")
+    assert out == tmp_path / "out"
+    assert (tmp_path / "out" / "index.md").read_text(encoding="utf-8") == render_markdown(analysis, "toy", {"x": 1})
+    assert (tmp_path / "out" / "index.html").read_text(encoding="utf-8") == render_html(analysis, "toy", {"x": 1})
