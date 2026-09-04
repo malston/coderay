@@ -22,10 +22,10 @@ worth taking; the product isn't.
 
 - Relate's output tags each relationship `EXTRACTED` (backed by a real import edge between the
   abstractions' files) or `INFERRED` (LLM guess only).
-- Works for Python and JS/TS out of the box; any other language falls back to `INFERRED` only,
+- Works for Python, JS/TS and Go out of the box; any other language falls back to `INFERRED` only,
   never blocks or fails the run.
 - Adding a new language is a small, templated addition: one grammar dependency, one extractor
-  module, one registry entry -- see coderay-d5f (Go) as the first consumer of this template.
+  module, one registry entry -- coderay-d5f (Go) is the first consumer of this template.
 
 ## Non-goals (this iteration)
 
@@ -55,7 +55,7 @@ validate it against the same `selected_files` list `ExtractGraph` already consum
 
 `workflow/graph/languages/` holds one module per language:
 
-- `python.py`, `javascript.py`, `typescript.py` for v1.
+- `python.py`, `javascript.py`, `typescript.py`, `go.py`.
   - `javascript.py` covers `.js`/`.jsx`/`.mjs`/`.cjs` with `tree_sitter_javascript`'s grammar
     (which already parses JSX syntax).
   - `typescript.py` covers both `.ts` (via `tree_sitter_typescript.language_typescript()`) and
@@ -63,20 +63,23 @@ validate it against the same `selected_files` list `ExtractGraph` already consum
     module, since the package ships both grammars together.
 - Each module exposes:
   - `EXTENSIONS: set[str]` -- e.g. `{".py"}`.
-  - `def imports(path: str, text: str, selected_files: set[str]) -> list[str]` -- parses
+  - `def imports(path: str, text: str, selected_files: set[str], root: str | None = None) -> list[str]` -- parses
     `text` with that language's tree-sitter grammar, resolves each import statement to a file
     path, and returns the subset that lands inside `selected_files`. Resolution logic (Python's
     dotted-module rules vs. JS/TS relative specifiers) is entirely internal to the module; the
-    function signature is the only contract shared across languages.
+    function signature is the only contract shared across languages. `root` is the
+    repo root, for an extractor that needs a manifest (Go reads `go.mod` for the
+    module path); the others accept and ignore it.
 - `workflow/graph/languages/__init__.py` builds `REGISTRY: dict[str, module]` keyed by
   extension from the modules above.
 - Adding a language (coderay-d5f is the first case): add the grammar dependency to
   `pyproject.toml`, add `workflow/graph/languages/<lang>.py` implementing the two-item
-  contract above, register its extensions in `REGISTRY`. No other file changes.
+  contract above, register its extensions in `REGISTRY`. No other file changes,
+  unless the language needs something `ExtractGraph` does not yet pass.
 
 New dependencies (core, not optional -- these are small, pre-built wheels, unlike the
 optional LLM-provider SDKs): `tree-sitter`, `tree-sitter-python`, `tree-sitter-javascript`,
-`tree-sitter-typescript`.
+`tree-sitter-typescript`, `tree-sitter-go`.
 
 ### `ExtractGraph` node (`workflow/nodes.py`)
 
@@ -160,7 +163,7 @@ new branch -- the function needs to pick the arrow syntax per edge based on `sou
   tree-sitter-based extraction validated the approach; its product surface (graph UI, community
   detection, doc/media ingestion, CLI-first design) is unrelated to what Relate needs.
 - **Grammar packages are core dependencies, not optional extras**, unlike the LLM-provider
-  SDKs. Defensible at three packages (small, pre-built wheels, no native toolchain needed).
+  SDKs. Defensible at four packages (small, pre-built wheels, no native toolchain needed).
   Every added language grows the install for every user, including ones touring repos in
   languages coderay doesn't parse -- this doesn't scale forever. If the language count grows
   past what feels reasonable as a mandatory install (a handful more, roughly), revisit as an

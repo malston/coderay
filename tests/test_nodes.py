@@ -32,6 +32,20 @@ def test_extract_graph_builds_edges_for_known_extensions(tmp_path):
     assert shared["symbol_graph"] == [{"from": "main.py", "to": "pkg/helper.py", "kind": "imports"}]
 
 
+def test_extract_graph_hands_the_repo_root_to_the_extractor_so_go_resolves_by_go_mod(tmp_path):
+    """coderay-d5f. The Go extractor needs go.mod at the repo root to tell the
+    module's own packages from third-party ones; ExtractGraph passes `root`."""
+    (tmp_path / "go.mod").write_text("module github.com/acme/app\n")
+    (tmp_path / "main.go").write_text('package main\n\nimport "github.com/acme/app/pkg/types"\n')
+    (tmp_path / "pkg" / "types").mkdir(parents=True)
+    (tmp_path / "pkg" / "types" / "t.go").write_text("package types\n")
+    shared = {"repo_path": str(tmp_path), "selected_files": ["main.go", "pkg/types/t.go"]}
+    prep_res = ExtractGraph().prep(shared)
+    exec_res = ExtractGraph().exec(prep_res)
+    ExtractGraph().post(shared, prep_res, exec_res)
+    assert shared["symbol_graph"] == [{"from": "main.go", "to": "pkg/types/t.go", "kind": "imports"}]
+
+
 def test_extract_graph_skips_file_whose_extractor_raises(tmp_path, monkeypatch, capsys):
     (tmp_path / "broken.py").write_text("this won't actually parse but that's fine\n")
     (tmp_path / "main.py").write_text("from pkg.helper import go\n")
@@ -42,7 +56,7 @@ def test_extract_graph_skips_file_whose_extractor_raises(tmp_path, monkeypatch, 
 
     class RaisingExtractor:
         @staticmethod
-        def imports(path, text, selected_files):
+        def imports(path, text, selected_files, root=None):
             if path == "broken.py":
                 raise ValueError("simulated parse failure")
             return real_python_extractor.imports(path, text, selected_files)
