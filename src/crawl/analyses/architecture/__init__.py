@@ -76,7 +76,7 @@ def build_flow():
     return Flow(start=bundle)
 
 def overview_spec(shared):
-    """Chapter-specific bits for the shared OverviewNode (crawl/core/nodes.py)."""
+    """Analysis-specific bits for the shared OverviewNode (crawl/core/nodes.py)."""
     name = repo_name_of(shared["repo_path"]) or shared["repo_path"]
     n_nodes = len(re.findall(r'^###\s', shared.get("inventory_md", ""), re.MULTILINE))
     return {

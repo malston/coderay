@@ -1,6 +1,6 @@
-"""Codebase Knowledge Builder nodes.
+"""Tour nodes.
 
-Five steps from the book chapter (plus a deterministic graph-extraction step):
+Five steps (plus a deterministic graph-extraction step):
   1. SmartCrawl    walk repo, then ask the LLM which files matter
   1.5 ExtractGraph parse selected files for a deterministic import graph
   2. Analyze       extract 5-10 core abstractions as YAML

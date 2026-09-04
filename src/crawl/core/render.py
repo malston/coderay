@@ -24,8 +24,8 @@ class Section:
     """One numbered section of a card-family page.
 
     when_empty controls what happens when shared[key] is falsy:
-      "always"    render the section anyway, with an empty rail (the default,
-                  backend, architecture and most schema sections)
+      "always"    render the section anyway, with an empty rail (the default:
+                  every section not named below)
       "omit"      drop the section entirely (the interfaces tour)
       "skip-note" render the head with skip_note() as its note, no rail
                   (schema migration acts)

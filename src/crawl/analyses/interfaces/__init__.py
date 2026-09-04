@@ -160,7 +160,7 @@ def build_flow():
     return Flow(start=find)
 
 def overview_spec(shared):
-    """Chapter-specific bits for the shared OverviewNode (crawl/core/nodes.py)."""
+    """Analysis-specific bits for the shared OverviewNode (crawl/core/nodes.py)."""
     name = repo_name_of(shared["repo_path"]) or shared["repo_path"]
     return {
         "name": name,

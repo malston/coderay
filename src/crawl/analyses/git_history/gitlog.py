@@ -1,7 +1,7 @@
 """Turn a repo's git log into structured data the git-history prompts can read.
 
-`git_log_commits` is the twenty-line crawler from the port source, kept faithful to
-the book: one dict per commit (hash, month, author, subject, files). Everything
+`git_log_commits` is the twenty-line crawler: one dict per commit (hash, month,
+author, subject, files). Everything
 else here is the compression the three prompts need:
 
   - name-eras   wants a bird's-eye view: directory-by-month activity, when each
