@@ -28,21 +28,37 @@ UNGROUNDED_NOTE = (
     "written from the route list alone, so its steps and any `file:line` "
     "references are the model's inference, not something it read.")
 
+def _code(name):
+    """A markdown code span around a file name, fenced with one more backtick
+    than the longest run inside it, so a backtick in the name cannot end the
+    span early and `__init__.py` is not read as emphasis. The renderer's
+    markdown-it runs with html=False, so the span's content is escaped there."""
+    longest = max((len(m) for m in re.findall(r"`+", name)), default=0)
+    fence = "`" * (longest + 1)
+    pad = " " if name.startswith("`") or name.endswith("`") else ""
+    return f"{fence}{pad}{name}{pad}{fence}"
+
+
 def _source_note(shared):
     """The sentence that says which source the diagram was drawn from when it
-    was not the source the model named (coderay-5wu.1). Grounded is true in
-    every one of these cases, since source did exist; what differs is whose."""
+    was not the source the model named (coderay-5wu.1). Called only for a
+    grounded diagram; the ungrounded note takes precedence upstream. What
+    differs here is whose source was read, not whether any was. "Not read"
+    covers every reason read_files leaves a path out (missing, empty, past the
+    file cap, over the size budget, refused), so the card never claims a file
+    does not exist."""
     fallback = shared.get("sequence_fallback")
-    dropped = [esc(p) for p in shared.get("sequence_dropped") or []]
+    dropped = shared.get("sequence_dropped") or []
+    dropped = [_code(p) for p in (dropped if isinstance(dropped, list) else [])]
     if fallback and dropped:
-        return (f"**Drawn from `{fallback}`, not the files the model named** "
-                f"({', '.join(dropped)}), which do not exist in the repo.")
+        return (f"**Drawn from {_code(fallback)}, not the files the model named** "
+                f"({', '.join(dropped)}), none of which could be read.")
     if fallback:
-        return (f"**The endpoint pick was unusable.** The diagram is drawn from "
-                f"`{fallback}`, the largest route file, not from a chosen endpoint.")
+        return (f"**The model named no source files.** The diagram is drawn from "
+                f"{_code(fallback)}, the largest route file.")
     if dropped:
         n = len(dropped)
-        return (f"**{n} of the files the model named {'was' if n == 1 else 'were'} not found** "
+        return (f"**{n} of the files the model named {'was' if n == 1 else 'were'} not read** "
                 f"({', '.join(dropped)}); the diagram is drawn from the rest.")
     return ""
 
@@ -53,11 +69,13 @@ def _sequence_cards(shared, body_md):
     When no handler source reached the prompt the diagram is inference, and it
     renders identically to a grounded one, so say so in the card rather than
     only on stdout (coderay-q2r.25). The same goes for source that exists but
-    is not what the model named (coderay-5wu.1)."""
+    is not what the model named (coderay-5wu.1). A reply that is a fence and
+    nothing else leaves an empty body; the card still renders when there is a
+    note to carry, and is omitted only when there is nothing to say."""
     body = strip_mermaid(body_md)
-    if not body and shared.get("sequence_grounded", True):
-        return ""
     note = UNGROUNDED_NOTE if not shared.get("sequence_grounded", True) else _source_note(shared)
+    if not body and not note:
+        return ""
     if note:
         body = note + ("\n\n" + body if body else "")
     return card(esc(shared.get("sequence_endpoint") or "Sequence"), body)

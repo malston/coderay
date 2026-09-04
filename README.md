@@ -45,7 +45,7 @@ A five-stage pipeline (FindRoutes, ApiMenu, TraceActions, EndpointSequence, Over
 - Renders four views: every endpoint grouped by feature and sized against the biggest group, a short tour of the groups that say the most about the product, one user gesture traced across service lanes, and a message-by-message sequence diagram of a single endpoint. The tour is omitted rather than rendered empty when the model writes none.
 - Expects a web API. Pointed at a repository with no surface files, the run stops before it spends an LLM call.
 - Known limitation, worth reading before you spend a run:
-  - When the model's endpoint pick cannot be read, the sequence diagram falls back to the largest route file, preferring a Next.js `pages/api/` handler where there is one. If nothing readable is left, the diagram is written from the route list alone and its `file:line` references are the model's inference; the card says so in that case rather than reading like a grounded one.
+  - When the model's endpoint pick cannot be read, the sequence diagram falls back to the largest route file, preferring a Next.js `pages/api/` handler where there is one, and the card names the file it was drawn from and the named files that went unread. If nothing readable is left, the diagram is written from the route list alone and its `file:line` references are the model's inference; the card says so rather than reading like a grounded one.
 
 ### Schema
 

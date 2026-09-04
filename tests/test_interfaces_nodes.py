@@ -400,6 +400,127 @@ def test_a_partial_miss_records_the_dropped_files_without_a_fallback(tmp_path, m
     assert shared["sequence_dropped"] == ["pages/api/missing.ts"]
 
 
+def test_a_pick_with_an_endpoint_and_no_files_announces_the_fallback(tmp_path, monkeypatch, capsys):
+    """`assert endpoint or paths` accepts a reply that names an endpoint and no
+    files. The fallback fires and the card says so; stdout must too, or the
+    run reads as clean while the page says otherwise."""
+    repo = _repo(tmp_path, {"pages/api/a.ts": "export const a = 1;\n"})
+
+    def reply(prompt):
+        if "sequence diagram" in prompt:
+            return '```yaml\nendpoint: "POST /api/book"\nfiles: []\n```'
+        return "```mermaid\nsequenceDiagram\n  a->>b: hi\n```"
+
+    _fake_llm(monkeypatch, reply)
+    shared = {"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "",
+              "route_files": ["pages/api/a.ts"]}
+    _sequence_node().run(shared)
+    assert shared["sequence_fallback"] == "pages/api/a.ts" and shared["sequence_dropped"] == []
+    assert shared["sequence_endpoint"] == "POST /api/book"
+    assert "falling back to pages/api/a.ts" in capsys.readouterr().out
+
+
+def test_a_partial_miss_is_announced_on_stdout(tmp_path, monkeypatch, capsys):
+    repo = _repo(tmp_path, {"pages/api/a.ts": "export const a = 1;\n"})
+
+    def reply(prompt):
+        if "sequence diagram" in prompt:
+            return '```yaml\nendpoint: "POST /api/a"\nfiles:\n  - pages/api/a.ts\n  - pages/api/missing.ts\n```'
+        return "```mermaid\nsequenceDiagram\n  a->>b: hi\n```"
+
+    _fake_llm(monkeypatch, reply)
+    shared = {"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "",
+              "route_files": ["pages/api/a.ts"]}
+    _sequence_node().run(shared)
+    assert "1 named file not read (pages/api/missing.ts)" in capsys.readouterr().out
+
+
+def test_a_named_file_that_read_empty_counts_as_not_read(tmp_path, monkeypatch):
+    """`read_files` skips an empty file; it exists, so the card wording is
+    "not read", and it is recorded as dropped."""
+    repo = _repo(tmp_path, {"pages/api/a.ts": "export const a = 1;\n", "pages/api/empty.ts": "   \n"})
+
+    def reply(prompt):
+        if "sequence diagram" in prompt:
+            return '```yaml\nendpoint: "POST /api/a"\nfiles:\n  - pages/api/a.ts\n  - pages/api/empty.ts\n```'
+        return "```mermaid\nsequenceDiagram\n  a->>b: hi\n```"
+
+    _fake_llm(monkeypatch, reply)
+    shared = {"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "",
+              "route_files": ["pages/api/a.ts"]}
+    _sequence_node().run(shared)
+    assert shared["sequence_dropped"] == ["pages/api/empty.ts"]
+
+
+def test_paths_past_the_file_cap_are_recorded_as_not_read(tmp_path, monkeypatch):
+    files = {f"pages/api/f{i}.ts": f"export const f{i} = 1;\n" for i in range(10)}
+    repo = _repo(tmp_path, files)
+
+    def reply(prompt):
+        if "sequence diagram" in prompt:
+            return "```yaml\nendpoint: \"POST /x\"\nfiles:\n" + "".join(f"  - {p}\n" for p in sorted(files)) + "```"
+        return "```mermaid\nsequenceDiagram\n  a->>b: hi\n```"
+
+    _fake_llm(monkeypatch, reply)
+    shared = {"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "",
+              "route_files": list(files)}
+    _sequence_node().run(shared)
+    assert len(shared["sequence_files"]) == 8
+    assert shared["sequence_dropped"] == ["pages/api/f8.ts", "pages/api/f9.ts"]
+
+
+def test_a_fallback_that_reads_nothing_is_not_recorded_as_the_source(tmp_path, monkeypatch):
+    """The named file is empty and it is also the only route file, so the
+    fallback reads nothing; sequence_fallback must not claim a source."""
+    repo = _repo(tmp_path, {"pages/api/a.ts": "  \n"})
+
+    def reply(prompt):
+        if "sequence diagram" in prompt:
+            return '```yaml\nendpoint: "POST /x"\nfiles:\n  - pages/api/a.ts\n```'
+        return "```mermaid\nsequenceDiagram\n  a->>b: hi\n```"
+
+    _fake_llm(monkeypatch, reply)
+    shared = {"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "",
+              "route_files": ["pages/api/a.ts"]}
+    _sequence_node().run(shared)
+    assert shared["sequence_grounded"] is False and shared["sequence_fallback"] is None
+
+
+def test_a_valid_pick_with_no_fallback_candidates_is_ungrounded_and_records_the_dropped_files(
+        tmp_path, monkeypatch):
+    repo = _repo(tmp_path, {"README.md": "x\n"})
+
+    def reply(prompt):
+        if "sequence diagram" in prompt:
+            return '```yaml\nendpoint: "POST /x"\nfiles:\n  - nope.py\n```'
+        return "```mermaid\nsequenceDiagram\n  a->>b: hi\n```"
+
+    _fake_llm(monkeypatch, reply)
+    shared = {"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "", "route_files": []}
+    _sequence_node().run(shared)
+    assert shared["sequence_grounded"] is False
+    assert shared["sequence_fallback"] is None and shared["sequence_dropped"] == ["nope.py"]
+
+
+def test_the_node_and_the_card_agree_on_the_fallback(tmp_path, monkeypatch):
+    """The two halves share key names by contract; this runs the node and
+    renders the card from what it stored."""
+    from crawl.analyses import interfaces
+    repo = _repo(tmp_path, {"pages/api/zzz.ts": "much longer handler\n" * 20})
+
+    def reply(prompt):
+        if "sequence diagram" in prompt:
+            return '```yaml\nendpoint: "POST /api/book"\nfiles:\n  - nope/none.py\n```'
+        return "```mermaid\nsequenceDiagram\n  a->>b: hi\n```"
+
+    _fake_llm(monkeypatch, reply)
+    shared = {"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "",
+              "route_files": ["pages/api/zzz.ts"]}
+    _sequence_node().run(shared)
+    html = interfaces._sequence_cards(shared, shared["sequence_md"])
+    assert "Drawn from <code>pages/api/zzz.ts</code>" in html and "nope/none.py" in html
+
+
 def test_a_clean_pick_records_no_fallback_and_nothing_dropped(tmp_path, monkeypatch):
     repo = _repo(tmp_path, {"pages/api/a.ts": "export const a = 1;\n"})
 

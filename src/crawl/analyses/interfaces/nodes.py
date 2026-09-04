@@ -169,9 +169,12 @@ def _pick_endpoint(menu, routes):
 
 
 class EndpointSequence(Node):
-    """Two steps: an LLM picks the endpoint + its source files, we read them, then
-    an LLM draws the sequence diagram. If the pick is unusable, fall back to the
-    largest route handler so the diagram still renders."""
+    """Two steps: an LLM picks the endpoint and its source files, they are read,
+    then an LLM draws the sequence diagram. When the pick is unusable, names no
+    files, or names files none of which can be read, the diagram is drawn from
+    the largest route file (a Next.js `pages/api/` handler if any) and the node
+    records which file that was and which named files went unread, so the card
+    can say so."""
     def __init__(self):
         super().__init__(max_retries=3, wait=2)
 
@@ -194,14 +197,8 @@ class EndpointSequence(Node):
             # happened rather than letting the section look like a clean run.
             print(f"  Sequence: endpoint pick unusable, falling back ({e})")
             endpoint, paths = "", []
-        handler_source, resolved = rf.read_files(ctx["repo"], paths)
-        dropped = rf.unresolved(paths, resolved)
+        handler_source, resolved, dropped = rf.read_files(ctx["repo"], paths)
         fallback = None
-        if paths and not resolved:
-            # The pick was fine but none of its files exist in the repo, so the
-            # fallback below draws the diagram from a file the model never named.
-            # Say so, or the card carries the model's endpoint over unrelated source.
-            print(f"  Sequence: none of the model-named files resolved ({', '.join(paths)}), falling back")
         if not handler_source.strip():
             # Fallback: the largest Next.js handler on disk.
             # Next.js handlers first: one file is one endpoint, so the largest
@@ -216,9 +213,14 @@ class EndpointSequence(Node):
             candidates = nextjs or list(ctx["route_files"])
             if candidates:
                 big = max(candidates, key=lambda f: os.path.getsize(os.path.join(ctx["repo"], f)))
-                handler_source, resolved = rf.read_files(ctx["repo"], [big])
+                # Announced here, whatever emptied handler_source, so the run's
+                # own output agrees with the card (coderay-5wu.1).
+                why = (f"none of the model-named files could be read ({', '.join(dropped)})" if dropped
+                       else "the model named no source files")
+                print(f"  Sequence: {why}, falling back to {big}")
+                handler_source, resolved, _ = rf.read_files(ctx["repo"], [big])
                 endpoint = endpoint or big
-                fallback = big
+                fallback = big if resolved else None
 
         # Step 2 — draw the diagram from the handler source.
         prompt = fill(load_prompt("endpoint-sequence.md"),
@@ -240,6 +242,9 @@ class EndpointSequence(Node):
         shared["sequence_grounded"] = exec_res["grounded"]
         shared["sequence_fallback"] = exec_res["fallback"]
         shared["sequence_dropped"] = exec_res["dropped"]
+        dropped = exec_res["dropped"]
         print(f"  Sequence: {exec_res['endpoint'] or 'endpoint'} "
               f"(from {len(exec_res['files'])} source files)"
+              + (f"; {len(dropped)} named file{'s' if len(dropped) != 1 else ''} not read ({', '.join(dropped)})"
+                 if dropped and not exec_res["fallback"] else "")
               + ("" if exec_res["grounded"] else " -- NO handler source, diagram is unverified"))

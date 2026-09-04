@@ -89,7 +89,7 @@ def test_crawl_routes_caps_the_total_size(tmp_path):
 def test_read_files_resolves_a_path_by_suffix_when_the_exact_path_is_wrong(tmp_path):
     """The model often names a path that is right but for a leading directory."""
     repo = _repo(tmp_path, {"apps/web/pages/api/login.ts": "export default login\n"})
-    text, resolved = rf.read_files(repo, ["pages/api/login.ts"])
+    text, resolved, _ = rf.read_files(repo, ["pages/api/login.ts"])
     assert resolved == ["apps/web/pages/api/login.ts"]
     assert "export default login" in text
 
@@ -108,7 +108,7 @@ def test_read_files_refuses_a_path_that_climbs_out_of_the_repository(tmp_path):
     repo = _repo(tmp_path / "repo", {"pages/api/login.ts": "export default login\n"})
 
     assert os.path.isfile(os.path.join(repo, "../secrets.env"))  # the escape is real
-    text, resolved = rf.read_files(repo, ["../secrets.env"])
+    text, resolved, _ = rf.read_files(repo, ["../secrets.env"])
     assert resolved == []
     assert "real-looking-value" not in text
 
@@ -119,7 +119,7 @@ def test_read_files_refuses_a_symlink_that_points_out_of_the_repository(tmp_path
     repo = _repo(tmp_path / "repo", {"pages/api/login.ts": "x\n"})
     os.symlink(outside, os.path.join(repo, "linked.env"))
 
-    text, resolved = rf.read_files(repo, ["linked.env"])
+    text, resolved, _ = rf.read_files(repo, ["linked.env"])
     assert resolved == []
     assert "real-looking-value" not in text
 
@@ -127,7 +127,7 @@ def test_read_files_refuses_a_symlink_that_points_out_of_the_repository(tmp_path
 def test_read_files_still_reads_an_ordinary_file_inside_the_repository(tmp_path):
     """The containment check must not refuse the paths the analysis is for."""
     repo = _repo(tmp_path / "repo", {"src/handlers/login.ts": "export default login\n"})
-    text, resolved = rf.read_files(repo, ["src/handlers/login.ts"])
+    text, resolved, _ = rf.read_files(repo, ["src/handlers/login.ts"])
     assert resolved == ["src/handlers/login.ts"]
     assert "export default login" in text
 
@@ -175,7 +175,7 @@ def test_read_files_refuses_a_symlink_to_an_in_repo_credential_file(tmp_path):
     os.makedirs(os.path.join(repo, "src"), exist_ok=True)
     os.symlink(os.path.join(repo, ".env"), os.path.join(repo, "src", "config.ts"))
 
-    text, resolved = rf.read_files(repo, ["src/config.ts"])
+    text, resolved, _ = rf.read_files(repo, ["src/config.ts"])
     assert resolved == []
     assert "hunter2" not in text
 
@@ -189,7 +189,7 @@ def test_read_files_refuses_a_credential_named_path_the_model_picked(tmp_path):
                                      "config/.env": "TOKEN=hunter2\n",
                                      "config/settings.py": "DEBUG = True\n"})
 
-    text, resolved = rf.read_files(repo, ["config/.env", ".env", "settings.py"])
+    text, resolved, _ = rf.read_files(repo, ["config/.env", ".env", "settings.py"])
     assert resolved == ["config/settings.py"]
     assert "hunter2" not in text
 
@@ -220,8 +220,22 @@ def test_read_files_suffix_match_starts_at_a_path_segment(tmp_path):
     assert rf.read_files(repo, ["api/users.py"])[1] == ["api/users.py"]
 
 
-def test_unresolved_applies_the_same_segment_rule_as_the_lookup():
-    """coderay-5wu.1. A suffix-resolved name counts as found; a name that only
-    shares a tail with a found file does not."""
-    resolved = ["api/users.py", "pages/api/a.ts"]
-    assert rf.unresolved(["users.py", "/pages/api/a.ts", "sers.py", "gone.ts"], resolved) == ["sers.py", "gone.ts"]
+def test_read_files_reports_every_named_path_it_did_not_read(tmp_path):
+    """coderay-5wu.1. The third value is what the card needs: every named path
+    that was not read, whatever the reason (missing, empty, past the file cap,
+    over the size budget, refused), in the order named. A path resolved by
+    suffix counts as read."""
+    files = {"api/users.py": "def users(): pass\n", "api/empty.py": "  \n", ".env": "T=1\n"}
+    files.update({f"h{i}.py": f"h = {i}\n" for i in range(8)})
+    repo = _repo(tmp_path / "repo", files)
+    named = ["users.py", "api/empty.py", ".env", "gone.py"] + [f"h{i}.py" for i in range(8)]
+    text, resolved, skipped = rf.read_files(repo, named)
+    # The cap counts positions in the model's list, so h4..h7 are never looked at.
+    assert resolved == ["api/users.py", "h0.py", "h1.py", "h2.py", "h3.py"]
+    assert skipped == ["api/empty.py", ".env", "gone.py", "h4.py", "h5.py", "h6.py", "h7.py"]
+
+
+def test_read_files_reports_the_paths_cut_by_the_size_budget(tmp_path):
+    repo = _repo(tmp_path / "repo", {f"b{i}.py": "x" * 50 + "\n" for i in range(4)})
+    text, resolved, skipped = rf.read_files(repo, [f"b{i}.py" for i in range(4)], max_chars=400)
+    assert resolved == ["b0.py", "b1.py"] and skipped == ["b2.py", "b3.py"]
