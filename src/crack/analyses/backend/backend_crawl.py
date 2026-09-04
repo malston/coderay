@@ -54,7 +54,8 @@ def classify(rel):
             or base in ('computed_settings.py',)):
         return 'middleware'
     # Handler
-    if '/views/' in p or '/controllers/' in p or '/handlers/' in p or base.endswith(('view.py', 'controller.rb')):
+    if ('/views/' in p or '/controllers/' in p or '/handlers/' in p
+            or base == 'views.py' or base.endswith(('view.py', '_views.py', 'controller.rb'))):
         return 'handler'
     # Service (business logic)
     if '/actions/' in p or '/services/' in p or '/domain/' in p or '/use' in p and 'case' in p:
