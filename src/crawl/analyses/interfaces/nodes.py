@@ -156,9 +156,9 @@ def _pick_endpoint(menu, routes):
         assert isinstance(data, dict), f"pick was {type(data).__name__}, not a mapping"
         files = data.get("files") or []
         # A scalar `files:` is a plausible reply for a single file, and iterating
-        # a string yields its characters. Those one-character "paths" then hit
-        # read_files' suffix matcher, which resolves them to arbitrary repo
-        # files, and the diagram is drawn from source unrelated to the endpoint.
+        # a string yields its characters. Those one-character "paths" would be
+        # looked up in the repo one by one, and the diagram drawn from whatever
+        # they happened to name instead of the endpoint's source.
         assert isinstance(files, list), f"files was {type(files).__name__}, not a list"
         endpoint = str(data.get("endpoint", "")).strip()
         paths = [str(p) for p in files if p]
@@ -195,6 +195,11 @@ class EndpointSequence(Node):
             print(f"  Sequence: endpoint pick unusable, falling back ({e})")
             endpoint, paths = "", []
         handler_source, resolved = rf.read_files(ctx["repo"], paths)
+        if paths and not resolved:
+            # The pick was fine but none of its files exist in the repo, so the
+            # fallback below draws the diagram from a file the model never named.
+            # Say so, or the card carries the model's endpoint over unrelated source.
+            print(f"  Sequence: none of the model-named files resolved ({', '.join(paths)}), falling back")
         if not handler_source.strip():
             # Fallback: the largest Next.js handler on disk.
             # Next.js handlers first: one file is one endpoint, so the largest

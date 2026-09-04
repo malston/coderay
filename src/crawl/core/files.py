@@ -157,8 +157,10 @@ def readable(repo, path, *, credential_names=False):
 
 def credential_named(filename):
     """True if a file's name marks it as credential-bearing: a dotenv file other
-    than the shipped templates, a name on DEFAULT_SKIP_NAMES, or a key/cert
-    suffix. The one rule every crawler and the git-history redaction apply."""
+    than the committed templates (DOTENV_TEMPLATES), a name on DEFAULT_SKIP_NAMES,
+    or a DEFAULT_SKIP_SUFFIXES suffix (keys, certs, Terraform state and vars).
+    The one rule every crawler and the git-history redaction apply; a crawler
+    that reads a credential-named file on purpose opts in through `readable`."""
     # Case-folded so `credentials.JSON` is refused the same way `credentials.json` is.
     lowered = filename.lower()
     if lowered.startswith('.env'):

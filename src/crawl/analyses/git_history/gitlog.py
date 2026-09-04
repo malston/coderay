@@ -223,8 +223,8 @@ def landmarks(era):
 def is_secret_path(path):
     """True if a file's CONTENTS must never reach a prompt.
 
-    The crawlers' own credential-name rule, so the graveyard redacts exactly
-    the files no crawler would read (coderay-q2r.62).
+    The crawlers' own credential-name rule, so the graveyard redacts every
+    file a crawler refuses by name (coderay-q2r.62).
     """
     return credential_named(os.path.basename(path))
 
