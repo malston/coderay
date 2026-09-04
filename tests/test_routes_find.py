@@ -259,6 +259,13 @@ def test_read_files_reports_the_paths_cut_by_the_size_budget(tmp_path):
     ('r.Get(\n    "/users",\n    list,\n)\n', 1),
     # a typed HTTP client is the heuristic's known false positive; deliberate
     ('c.Get("/users", &out)\nc.Post("/users", body, &out)\n', 2),
+    # Go 1.22 method patterns, gorilla Path chains, gRPC service registration
+    ('mux.Handle("GET /users", h)\nmux.HandleFunc("POST /users", h)\n', 2),
+    ('r.Path("/users").Methods("GET").Handler(h)\n', 1),
+    ('s := grpc.NewServer()\npb.RegisterUserServiceServer(s, &srv{})\n', 2),
+    # a URL literal is not a comment; a block comment is one
+    ('u := "https://acme.com"; mux.Handle("/", h)\n', 1),
+    ('/* r.Get("/old", h)\nr.Get("/old2", h) */\nr.Get("/live", h)\n', 1),
 ])
 def test_go_route_registrations_counts_handler_registrations_only(text, count):
     """`r.Header.Get("X-Token")` reads a header; `r.Get("/users", h)` registers
@@ -284,15 +291,54 @@ def test_find_route_files_reads_go_files_that_register_routes(tmp_path):
 
 
 def test_go_route_discovery_keeps_ordinary_names_that_contain_test(tmp_path):
-    """`latest.go` and `attestation.go` are ordinary names; only a file named
-    like a test (test*.go, *_test.go, *.test.*) is scaffolding."""
+    """`latest.go`, `attestation.go` and `testimonials.go` are ordinary names;
+    only a file named like test scaffolding (`*_test.go`, `testhelpers.go`,
+    `testutil.go`, `testing.go`) is left out."""
     repo = _repo(tmp_path / "repo", {
         "pkg/api/latest.go": 'mux.HandleFunc("/v/latest", h)\n',
         "pkg/api/attestation.go": 'mux.HandleFunc("/attest", h)\n',
+        "pkg/api/testimonials.go": 'mux.HandleFunc("/testimonials", h)\n',
         "pkg/api/testhelpers.go": 'srv.HandleFunc("/", fake)\n',
-        "pkg/api/testserver.go": 'srv.HandleFunc("/", fake)\n',
+        "pkg/api/testutil.go": 'srv.HandleFunc("/", fake)\n',
+        "pkg/api/testing.go": 'srv.HandleFunc("/", fake)\n',
     })
-    assert rf.find_route_files(repo) == ["pkg/api/attestation.go", "pkg/api/latest.go"]
+    assert rf.find_route_files(repo) == ["pkg/api/attestation.go", "pkg/api/latest.go", "pkg/api/testimonials.go"]
+
+
+def test_a_large_name_matched_manifest_is_still_read(tmp_path):
+    """The per-file cap protects the Go content scan, which reads every
+    candidate; a manifest found by name is read whatever its size, as it was
+    before the scan existed."""
+    from crawl.core import DEFAULT_MAX_FILE_BYTES
+    big = "type Query {\n" + "  f: Int\n" * (DEFAULT_MAX_FILE_BYTES // 8) + "}\n"
+    repo = _repo(tmp_path / "repo", {"api/schema.graphql": big})
+    routes, files, kept = rf.crawl_routes(repo)
+    assert kept == ["api/schema.graphql"] and "type Query" in routes
+    assert rf.read_files(repo, ["api/schema.graphql"])[1] == ["api/schema.graphql"]
+
+
+def test_a_typed_client_does_not_outrank_a_real_router(tmp_path):
+    """Five path-literal calls alone do not make a manifest; a manifest also
+    builds a mux or router, which a client wrapper does not."""
+    repo = _repo(tmp_path / "repo", {
+        "pkg/github/client.go": "".join(f'c.Get("/repos/{i}", &out)\n' for i in range(6)),
+        "pkg/server/server.go": "m := http.NewServeMux()\n" + "".join(f'm.HandleFunc("/a/{i}", h)\n' for i in range(4)),
+    })
+    routes, files, kept = rf.crawl_routes(repo)
+    assert files[0] == "pkg/server/server.go"
+
+
+def test_a_serving_cmd_main_is_the_surface_when_no_go_file_registers_anything(tmp_path):
+    """A Go server whose registrations take a form the heuristic does not know
+    (paths in constants, a code-generated router) must not leave the surface
+    empty; the cmd/*/main.go that starts the listener stands in, unweighted.
+    A CLI's main.go, which starts none, does not."""
+    repo = _repo(tmp_path / "repo", {
+        "cmd/server/main.go": "func main() { s := newServer(); s.Run() }\n",
+        "internal/api/routes.go": "r.Get(usersPath, list)\n",
+        "cmd/tool/main.go": "func main() { cmd.Execute() }\n",
+    })
+    assert rf.find_route_files(repo) == ["cmd/server/main.go"]
 
 
 def test_go_route_discovery_leaves_an_oversized_file_unread(tmp_path):

@@ -14,12 +14,12 @@ Nothing calls an LLM.
 import os
 from collections import Counter
 
-from crawl.core import DEFAULT_SKIP_DIR, FIXTURE_DIRS, list_files, safe_read
+from crawl.core import DEFAULT_SKIP_DIR, is_test_file, list_files, safe_read
 
 # The crawler's shared noise set plus the directories a backend keeps that
 # hold no request-path code (coderay-q2r.59: the port's own list missed `env`,
 # `spec` and `.tox`, so a virtualenv or an RSpec tree inflated the counts).
-SKIP_DIRS = DEFAULT_SKIP_DIR | FIXTURE_DIRS | {
+SKIP_DIRS = DEFAULT_SKIP_DIR | {
     '.yarn', 'migrations', 'static', 'locale', 'frontend_tests', 'node_tests',
 }
 SRC_EXT = ('.py', '.ts', '.tsx', '.js', '.rb', '.go', '.java', '.php')
@@ -59,7 +59,7 @@ def classify(rel):
     base = os.path.basename(p)
     if not p.endswith(SRC_EXT):
         return None
-    if any(m in base for m in ('.test.', '.spec.', '_test.', '.stories.')) or base.endswith('_spec.rb'):
+    if is_test_file(base):
         return None
     is_go = p.endswith('.go')
     # Route

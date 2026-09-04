@@ -29,7 +29,7 @@ from .files import (  # noqa: F401
     DEFAULT_MAX_FILE_BYTES,
     DEFAULT_SKIP_NAMES,
     DEFAULT_SKIP_SUFFIXES,
-    FIXTURE_DIRS,
+    is_test_file,
     credential_named,
     readable,
     within_repo,
