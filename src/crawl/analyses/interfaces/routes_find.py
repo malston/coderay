@@ -127,8 +127,9 @@ def crawl_routes(repo, max_chars=900_000):
     """Concatenate the surface files with path headers, capped at max_chars.
     tRPC aggregators and Rails/Django manifests come first (they list many
     endpoints per file), so a cap trims single Next.js handlers, not the map.
-    A Go file with _GO_MANIFEST_MIN or more registrations is a manifest too and
-    is read ahead of the name-matched ones, busiest first."""
+    A Go file with _GO_MANIFEST_MIN or more registrations is a manifest too,
+    read after the name-matched ones (a name is certain, a count is a
+    heuristic), busiest first."""
     surface = _surface(repo)
 
     def priority(rel, weight):
@@ -139,9 +140,12 @@ def crawl_routes(repo, max_chars=900_000):
             return 0  # a Go file registering many routes is the manifest
         return 1
 
-    # Manifests first, the busiest Go manifest ahead of the rest; single
-    # handlers in name order, whatever language they are in.
-    surface.sort(key=lambda e: (priority(e[0], e[2]), -e[2] if e[2] >= _GO_MANIFEST_MIN else 0, e[0]))
+    # Name-matched manifests first (a route-file name is certain), then Go
+    # manifests busiest first (the count is a heuristic), then single handlers
+    # in name order whatever their language.
+    surface.sort(key=lambda e: (priority(e[0], e[2]),
+                                -e[2] if e[2] >= _GO_MANIFEST_MIN else -10**9,
+                                e[0]))
     files = [rel for rel, _text, _weight in surface]
     parts, total, kept = [], 0, []
     for rel, text, _weight in surface:

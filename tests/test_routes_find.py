@@ -254,6 +254,11 @@ def test_read_files_reports_the_paths_cut_by_the_size_budget(tmp_path):
     ('// mux.HandleFunc("/old", h)\n// r.Get("/gone", h)\nmux.HandleFunc("/live", h)\n', 1),
     ('func NewRouter(cfg Config) *Router { return nil }\nfunc (m *Mux) HandleFunc(p string, h Handler) {}\n', 1),
     ('r := mux.NewRouter()\nr.HandleFunc("/x", h)\n', 2),
+    ('g := gin.New()\ng.PUT("/a", h)\ng.DELETE("/b", h)\ng.PATCH("/c", h)\n', 4),
+    ('r := chi.NewRouter()\nr.Put("/a", h)\nr.Delete("/b", h)\nr.Patch("/c", h)\nr.Route("/u", fn)\nr.Group("/api")\n', 6),
+    ('r.Get(\n    "/users",\n    list,\n)\n', 1),
+    # a typed HTTP client is the heuristic's known false positive; deliberate
+    ('c.Get("/users", &out)\nc.Post("/users", body, &out)\n', 2),
 ])
 def test_go_route_registrations_counts_handler_registrations_only(text, count):
     """`r.Header.Get("X-Token")` reads a header; `r.Get("/users", h)` registers
@@ -297,6 +302,49 @@ def test_go_route_discovery_leaves_an_oversized_file_unread(tmp_path):
     big = 'mux.HandleFunc("/x", h)\n' + "x" * DEFAULT_MAX_FILE_BYTES
     repo = _repo(tmp_path / "repo", {"pkg/gen/zz_generated.go": big, "pkg/api/server.go": 'mux.HandleFunc("/y", h)\n'})
     assert rf.find_route_files(repo) == ["pkg/api/server.go"]
+
+
+def test_crawl_routes_refuses_a_go_file_symlinked_out_of_the_repo(tmp_path):
+    """The Go content path is a third read path in this module, and this seam
+    has been missed here twice (coderay-q2r.28, q2r.56). A symlink out of the
+    repo is not read, so it registers nothing and is not on the surface."""
+    outside = tmp_path / "outside.go"
+    outside.write_text('mux.HandleFunc("/leak", h)\nOUTSIDE-SECRET-CONTENT\n', encoding="utf-8")
+    repo = _repo(tmp_path / "repo", {"config/routes.rb": "Rails.routes\n"})
+    os.makedirs(os.path.join(repo, "pkg"), exist_ok=True)
+    os.symlink(outside, os.path.join(repo, "pkg", "server.go"))
+    routes, files, kept = rf.crawl_routes(repo)
+    assert "OUTSIDE-SECRET-CONTENT" not in routes
+    assert kept == ["config/routes.rb"] and files == kept
+
+
+def test_name_matched_manifests_come_before_go_manifests_which_come_busiest_first(tmp_path):
+    """A route-file name is certain; the registration count is a heuristic. So
+    a Django manifest is read first, then Go manifests busiest first, then
+    single handlers in name order whatever their language."""
+    repo = _repo(tmp_path / "repo", {
+        "zzz/urls.py": "urlpatterns = []\n",
+        "aaa/five.go": "".join(f'mux.HandleFunc("/a/{i}", h)\n' for i in range(5)),
+        "mmm/eight.go": "".join(f'mux.HandleFunc("/m/{i}", h)\n' for i in range(8)),
+        "pages/api/aaa.ts": "export default aaa\n",
+        "cmd/bridge/main.go": "m := http.NewServeMux()\n",
+    })
+    routes, files, kept = rf.crawl_routes(repo)
+    assert files == ["zzz/urls.py", "mmm/eight.go", "aaa/five.go", "cmd/bridge/main.go", "pages/api/aaa.ts"]
+    assert sorted(files) == rf.find_route_files(repo)
+
+
+def test_find_route_files_skips_non_go_fixtures_too(tmp_path):
+    repo = _repo(tmp_path / "repo", {"app/urls.py": "x\n", "testdata/routes.ts": "x\n", "app/testutil/urls.py": "x\n"})
+    assert rf.find_route_files(repo) == ["app/urls.py"]
+
+
+def test_read_files_does_not_resolve_a_bare_name_into_a_fixture_directory(tmp_path):
+    """The suffix index comes from the same walk, so a model-named `users.py`
+    that exists only under testdata/ is not read; an exact path still is."""
+    repo = _repo(tmp_path / "repo", {"testdata/users.py": "FIXTURE\n", "api/a.py": "x\n"})
+    assert rf.read_files(repo, ["users.py"])[1] == []
+    assert rf.read_files(repo, ["testdata/users.py"])[1] == ["testdata/users.py"]
 
 
 def test_go_manifest_threshold_boundary(tmp_path):
