@@ -15,6 +15,11 @@ from crack.analyses.backend import backend_crawl as bc
     ("app/services/billing.py", "service"),
     ("app/models/user.py", "database"),
     ("app/models.py", "database"),
+    # coderay-q2r.12 boundary: a plural `views.py` is a handler, a basename that
+    # merely ends in those letters keeps its own layer.
+    ("app/models/reviews.py", "database"),
+    ("app/services/previews.py", "service"),
+    ("app/serializers/interviews.py", "response"),
     ("app/serializers/user.py", "response"),
 ])
 def test_classify_maps_a_path_to_its_layer(rel, layer):
