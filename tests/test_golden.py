@@ -1,4 +1,4 @@
-"""The ported analyses must reproduce their source's output byte for byte.
+"""Every analysis must keep producing its committed output byte for byte.
 
 Regenerate a fixture with scripts/regen_golden.py after a deliberate change.
 """
@@ -233,3 +233,17 @@ def test_render_does_not_turn_markdown_image_syntax_into_a_beacon(name):
     body = html.split("</head>", 1)[1]
     assert "attacker.example" in body          # the text reached the page, as text
     assert "<img" not in body
+
+
+@pytest.mark.parametrize("name", GOLDEN_ANALYSES)
+def test_regen_golden_reproduces_the_committed_fixtures(name, tmp_path):
+    """scripts/regen_golden.py renders from this package, so running it against
+    an unchanged renderer must give back the fixtures byte for byte."""
+    import importlib.util
+    script = pathlib.Path(__file__).parent.parent / "scripts" / "regen_golden.py"
+    spec = importlib.util.spec_from_file_location("regen_golden", script)
+    regen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(regen)
+    regen.regenerate(name, tmp_path / name)
+    for fixture in ("index.html", "index.md"):
+        assert (tmp_path / name / fixture).read_bytes() == (GOLDEN / name / fixture).read_bytes()

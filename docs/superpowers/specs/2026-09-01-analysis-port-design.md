@@ -131,6 +131,9 @@ kind a real run would produce, is rendered by the sibling's own renderer once;
 the resulting `index.html` and `index.md` are committed under
 `tests/fixtures/`. The ported code must reproduce them byte for byte. A drift
 in the card engine, a theme value, or a section definition fails the test.
+With every port merged, the fixtures are this project's own: after a
+deliberate renderer change, `scripts/regen_golden.py` renders them again from
+this package, and the golden tests guard against accidental drift from there.
 
 Unit tests cover the crawl modules directly against the existing
 `tests/fixtures/toy_repo/`, with no LLM involved. LLM calls stay faked at the
