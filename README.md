@@ -203,7 +203,7 @@ flowchart LR
 ```
 
 1. **SmartCrawl.** Two phases. First, filter files by extension and skip obvious noise (`tests/`, `docs/`, lock files, anything over 500 KB). Then build a preview manifest — the first few hundred characters of each remaining file — and ask the LLM to select the roughly 0.1-2% of files that matter most, using the selection rules in [`src/crawl/analyses/tour/prompts/select-files.md`](src/crawl/analyses/tour/prompts/select-files.md).
-2. **ExtractGraph.** No LLM call — deterministically parses each selected file's imports (Python/JS/TS/Go) into `symbol_graph`, the edges Relate later checks against.
+2. **ExtractGraph.** No LLM call: deterministically parses each selected file's imports (Python/JS/TS/Go) into `symbol_graph`, the edges Relate later checks against.
 3. **Analyze.** One LLM call. Returns a YAML list of 5-10 abstractions, each with a short description, plus a suggested learning order.
 4. **Relate.** One LLM call. Returns the relationships (edges) between those abstractions, each tagged `EXTRACTED` (backed by a real import edge between the abstractions' files, Python/JS/TS/Go only) or `INFERRED` (LLM judgment). The mermaid diagram in `index.html` draws `EXTRACTED` edges solid, `INFERRED` edges dashed.
 5. **WriteChapters.** Not batched. Writes chapters one at a time, in learning order, passing every previously written chapter forward as context. This keeps the chapters consistent with each other instead of reading like unrelated pages.

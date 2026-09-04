@@ -178,8 +178,8 @@ class ExtractGraph(Node):
     (src/crawl/analyses/tour/graph/languages/) and records import edges that land inside
     selected_files. A file whose extension has no registered extractor
     produces no edges -- Relate falls back to LLM-INFERRED only for
-    relationships that only touch it (imports-only, Python/JS/TS/Go for
-    v1; see docs/superpowers/specs/2026-08-31-deterministic-import-graph-design.md)."""
+    relationships that only touch it (imports-only, Python/JS/TS/Go; see
+    docs/superpowers/specs/2026-08-31-deterministic-import-graph-design.md)."""
     def __init__(self):
         super().__init__(max_retries=1)
 
