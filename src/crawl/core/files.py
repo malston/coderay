@@ -98,6 +98,8 @@ DEFAULT_SKIP_DIR = frozenset({
     'coverage', 'htmlcov', '.nyc_output',
     # editors (debatable; usually noise)
     '.idea', '.vscode',
+    # fixtures and mocks, named the way Go projects name them
+    'testdata', 'testutil', 'testutils', 'httptest', 'factorytest',
 })
 
 DEFAULT_MAX_FILE_BYTES = 500_000
@@ -116,6 +118,20 @@ DEFAULT_SKIP_NAMES = frozenset({
 })
 DEFAULT_SKIP_SUFFIXES = ('.pem', '.key', '.p12', '.pfx', '.keystore', '.jks', '.ppk',
                          '.tfvars', '.tfstate', '.tfstate.backup')
+
+
+# Names that mark a file as test scaffolding rather than request-path code:
+# the markers every language shares, Rails specs, and Go's test-helper names
+# (a name that merely begins with "test", like testimonials.go, is source).
+_TEST_MARKERS = ('.test.', '.spec.', '_test.', '.stories.')
+_GO_TEST_PREFIXES = ('testhelper', 'testutil', 'testing.', 'testserver', 'testmock', 'test_')
+
+
+def is_test_file(filename):
+    """True if `filename` (a basename) is a test, spec, story or test helper."""
+    base = filename.lower()
+    return (any(m in base for m in _TEST_MARKERS) or base.endswith('_spec.rb')
+            or (base.endswith('.go') and base.startswith(_GO_TEST_PREFIXES)))
 
 
 def within_repo(repo, path):

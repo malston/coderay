@@ -9,23 +9,74 @@ We collect the surface files across the common conventions:
   Next.js          **/pages/api/**/*.ts, **/app/**/route.ts   (path IS the URL)
   tRPC             **/_router.ts
   GraphQL / gRPC   **/*.graphql, **/*.proto
-  Go               **/cmd/*.go
+  Go               any .go file whose text registers handlers (test names and
+                   fixture directories are skipped)
 
 `crawl_routes` concatenates them (capped) into the `{routes}` the prompts read.
 `read_files` resolves an LLM-picked list of source paths for the sequence view.
 Nothing here calls an LLM.
 """
 import os
+import re
 
-from crawl.core import DEFAULT_SKIP_DIR, readable
+from crawl.core import DEFAULT_MAX_FILE_BYTES, DEFAULT_SKIP_DIR, is_test_file, readable
 
 SKIP_DIRS = DEFAULT_SKIP_DIR | {'.storybook'}
-
-_TEST_MARKERS = ('.test.', '.spec.', '_test.', '.stories.')
 _ROUTE_BASENAMES = frozenset({
     'routes.rb', 'urls.py', 'routes.ts', 'router.ts', 'routes.js', 'router.js',
     'schema.graphql',
 })
+# What builds a server in Go: a mux, router or gRPC server constructor
+# (package-qualified, so a `func NewRouter(` definition does not count) or
+# `HandleFunc(`. A file that builds one and registers _GO_MANIFEST_MIN or more
+# routes is a manifest; a typed HTTP client never builds one, so its
+# `.Get("/users")` calls count as registrations but cannot make it a manifest.
+_GO_BUILDS_SERVER = re.compile(
+    r'\bHandleFunc\(|http\.NewServeMux\(|\w+\.NewRouter\(|gin\.(?:Default|New)\(|echo\.New\('
+    r'|grpc\.NewServer\(')
+# A registration-shaped call: a server being built, a method whose first
+# argument is a path literal (or a Go 1.22 "METHOD /path" pattern), a gorilla
+# .Path("/..") chain, or a gRPC RegisterXServer call. A heuristic:
+# `r.Header.Get("X-Token")` does not match, since its argument is not a path,
+# but an HTTP client calling `.Get("/users")` does (coderay-5wu.12).
+_GO_REGISTRATION = re.compile(
+    _GO_BUILDS_SERVER.pattern
+    + r'|\bRegister\w+Server\(|\.Path\(\s*"/'
+    + r'|\.(?:Get|Post|Put|Delete|Patch|Options|Head|Any|GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD'
+    + r'|Handle|Route|Mount|Group)\(\s*"(?:[A-Z]+ )?/')
+# Block comments, then line comments that are not the `//` of a URL literal.
+_GO_BLOCK_COMMENT = re.compile(r'/\*.*?\*/', re.S)
+_GO_LINE_COMMENT = re.compile(r'(?<!:)//.*')
+# What a serving entry point mentions when the heuristic above finds none of
+# its registrations: the listener it starts.
+_GO_SERVES = re.compile(r'"net/http"|ListenAndServe|grpc\.NewServer|\.Serve\(|\.Run\(')
+# Go route files that build a server and register at least this many routes
+# are manifests, read first.
+_GO_MANIFEST_MIN = 5
+
+
+def go_route_registrations(text):
+    """Count of registration-shaped calls in a Go source file (see
+    _GO_REGISTRATION), with comments stripped so a commented-out example does
+    not count."""
+    return len(_GO_REGISTRATION.findall(_GO_LINE_COMMENT.sub("", _GO_BLOCK_COMMENT.sub("", text))))
+
+
+def _go_manifest(text, weight):
+    return weight >= _GO_MANIFEST_MIN and bool(_GO_BUILDS_SERVER.search(text))
+
+
+def _go_candidate(rel):
+    """True if a .go file may hold route registrations: any .go file that is not
+    test scaffolding by name (crawl.core.is_test_file). `latest.go`,
+    `attestation.go` and `testimonials.go` qualify; fixture directories are
+    pruned from the walk."""
+    return rel.endswith(".go") and not is_test_file(os.path.basename(rel))
+
+
+def _is_manifest_name(base):
+    """A name that marks a file as a route manifest: it lists many endpoints."""
+    return base in _ROUTE_BASENAMES or base.endswith(("_router.ts", ".proto", ".graphql"))
 
 
 def _walk(root):
@@ -39,33 +90,60 @@ def is_route_file(rel):
 
     The directory conventions below are matched with their surrounding slashes,
     so the path carries a leading one: Next.js keeps `pages/api/` or `app/` at
-    the repo root and Go keeps `cmd/` there, which is the layout each framework
-    generates."""
+    the repo root, which is the layout the framework generates."""
     p = "/" + rel.replace(os.sep, "/").lstrip("/")
     base = os.path.basename(p)
-    if any(m in base for m in _TEST_MARKERS):
+    if is_test_file(base):
         return False
-    if base in _ROUTE_BASENAMES:
-        return True
-    if base.endswith("_router.ts") or base.endswith(".proto") or base.endswith(".graphql"):
+    if _is_manifest_name(base):
         return True
     if "/pages/api/" in p and p.endswith((".ts", ".js", ".tsx")):
         return True
     if "/app/" in p and base in ("route.ts", "route.js", "route.tsx"):
         return True
-    if "/cmd/" in p and p.endswith(".go"):
-        return True
     return False
 
 
-def find_route_files(repo):
-    out = []
+def _surface(repo):
+    """Every surface file as (rel, text, manifest), text read once with the
+    containment check. A name-matched file is a manifest when its name says so;
+    a Go file is on the surface only when its text registers handlers, and is
+    a manifest when it also builds a server and registers _GO_MANIFEST_MIN or
+    more (the count breaks ties among Go manifests, so `manifest` carries it as
+    a negative weight). A Go file over the shared per-file cap is a generated
+    one and is not scanned. When a repo has Go source and no file registers
+    anything the heuristic knows, a cmd/*/main.go that starts a listener
+    stands in as the entry point, so a code-generated or constant-path router
+    does not leave the surface empty; a CLI's main.go does not qualify."""
+    out, go_hits, go_mains = [], 0, []
     for dirpath, _dirnames, filenames in _walk(repo):
         for f in filenames:
             rel = os.path.relpath(os.path.join(dirpath, f), repo)
+            full = os.path.join(repo, rel)
             if is_route_file(rel):
-                out.append(rel)
-    return sorted(out)
+                out.append((rel, _read(full, repo), 0 if _is_manifest_name(f) else None))
+            elif _go_candidate(rel):
+                if "/cmd/" in "/" + rel.replace(os.sep, "/") and f == "main.go":
+                    go_mains.append(rel)
+                try:
+                    if os.path.getsize(full) > DEFAULT_MAX_FILE_BYTES:
+                        continue
+                except OSError:
+                    continue
+                text = _read(full, repo)
+                weight = go_route_registrations(text)
+                if weight:
+                    go_hits += 1
+                    out.append((rel, text, -weight if _go_manifest(text, weight) else None))
+                elif rel in go_mains and _GO_SERVES.search(text):
+                    go_mains[go_mains.index(rel)] = (rel, text)
+    if not go_hits:
+        out.extend((rel, text, None) for entry in go_mains if isinstance(entry, tuple) for rel, text in [entry])
+    return out
+
+
+def find_route_files(repo):
+    return sorted(rel for rel, _text, _weight in _surface(repo))
 
 
 def _read(path, repo=None):
@@ -85,19 +163,24 @@ def _read(path, repo=None):
 def crawl_routes(repo, max_chars=900_000):
     """Concatenate the surface files with path headers, capped at max_chars.
     tRPC aggregators and Rails/Django manifests come first (they list many
-    endpoints per file), so a cap trims single Next.js handlers, not the map."""
-    files = find_route_files(repo)
+    endpoints per file), so a cap trims single Next.js handlers, not the map.
+    A Go file that builds a server and registers _GO_MANIFEST_MIN or more
+    routes is a manifest too, read after the name-matched ones (a name is
+    certain, a count is a heuristic), busiest first."""
+    surface = _surface(repo)
 
-    def priority(rel):
-        base = os.path.basename(rel)
-        if base in _ROUTE_BASENAMES or base.endswith(("_router.ts", ".proto", ".graphql")):
-            return 0  # aggregators / manifests first
-        return 1
+    def order(entry):
+        rel, _text, manifest = entry
+        if manifest == 0:
+            return (0, 0, rel)         # name-matched manifest: a name is certain
+        if manifest is not None:
+            return (1, manifest, rel)  # Go manifest, busiest first (negative weight)
+        return (2, 0, rel)             # single handlers, name order, any language
 
-    files.sort(key=lambda r: (priority(r), r))
+    surface.sort(key=order)
+    files = [rel for rel, _text, _manifest in surface]
     parts, total, kept = [], 0, []
-    for rel in files:
-        text = _read(os.path.join(repo, rel), repo)
+    for rel, text, _manifest in surface:
         if not text.strip():
             continue
         block = f"{'=' * 60}\nFile: {rel}\n{'=' * 60}\n{text}\n"

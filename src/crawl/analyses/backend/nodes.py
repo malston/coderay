@@ -40,7 +40,7 @@ class BuildBundle(Node):
             why = f"Found {found}, but none had readable text: each is empty, unreadable or not UTF-8."
         else:
             why = ("No backend source found (no routes/views/models). This analysis "
-                   "expects a server-side backend (Django, Express, Rails, FastAPI, …).")
+                   "expects a server-side backend (Django, Express, Rails, FastAPI, Go net/http, …).")
         assert bundle.strip(), why
         shared["codebase"] = bundle
         shared["layer_counts"] = c

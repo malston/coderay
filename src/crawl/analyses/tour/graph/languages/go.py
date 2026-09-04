@@ -14,6 +14,8 @@ Non-goals).
 import functools
 import os
 
+from crawl.core import is_test_file
+
 import tree_sitter_go as _ts_go
 from tree_sitter import Language
 
@@ -80,7 +82,7 @@ def _package_dirs(selected_files):
     """Directory -> its selected non-test .go files, sorted, keyed with "/"."""
     dirs = {}
     for f in sorted(selected_files):
-        if f.endswith(".go") and not f.endswith("_test.go"):
+        if f.endswith(".go") and not is_test_file(os.path.basename(f)):
             dirs.setdefault(_package_dir(f), []).append(f)
     return dirs
 

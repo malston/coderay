@@ -14,7 +14,7 @@ Nothing calls an LLM.
 import os
 from collections import Counter
 
-from crawl.core import DEFAULT_SKIP_DIR, list_files, safe_read
+from crawl.core import DEFAULT_SKIP_DIR, is_test_file, list_files, safe_read
 
 # The crawler's shared noise set plus the directories a backend keeps that
 # hold no request-path code (coderay-q2r.59: the port's own list missed `env`,
@@ -34,9 +34,9 @@ CORE_HINTS = ('message', 'send', 'booking', 'book', 'order', 'checkout', 'create
               'post', 'auth', 'user', 'session', 'event')
 
 
-# Go has no framework layout, so its layers come from the names a net/http
-# service gives its files; these sit beside the directory conventions every
-# language shares (coderay-5wu.11).
+# Go has no framework layout, so its layers come from the file names and
+# singular package directories a net/http service uses; these sit beside the
+# directory conventions every language shares (coderay-5wu.11).
 GO_ROUTE_NAMES = ('server.go', 'router.go', 'routes.go', 'mux.go')
 GO_HANDLER_SUFFIXES = ('_api.go', '_handler.go', '_handlers.go')
 GO_HANDLER_NAMES = ('handler.go', 'handlers.go')
@@ -44,8 +44,6 @@ GO_SERVICE_SUFFIXES = ('_service.go',)
 GO_DATABASE_NAMES = ('db.go', 'database.go', 'store.go', 'queries.go')
 GO_DATABASE_SUFFIXES = ('_store.go', '.sql.go', '_repository.go')
 GO_RESPONSE_SUFFIXES = ('_response.go',)
-# Go directories that hold fixtures and mocks rather than request-path code.
-GO_TEST_DIRS = frozenset({'testdata', 'testutil', 'testutils', 'httptest', 'factorytest'})
 
 
 def classify(rel):
@@ -61,11 +59,9 @@ def classify(rel):
     base = os.path.basename(p)
     if not p.endswith(SRC_EXT):
         return None
-    if any(m in base for m in ('.test.', '.spec.', '_test.', '.stories.')) or base.endswith('_spec.rb'):
+    if is_test_file(base):
         return None
     is_go = p.endswith('.go')
-    if is_go and any(seg in GO_TEST_DIRS for seg in p.split('/')[1:-1]):
-        return None
     # Route
     if (base in ('urls.py', 'routes.rb', 'routes.ts', 'router.ts', 'routes.js', 'router.js')
             or base.endswith('_router.ts') or '/pages/api/' in p or '/routes/' in p or '/urls/' in p
@@ -78,7 +74,7 @@ def classify(rel):
     # Handler
     if ('/views/' in p or '/controllers/' in p or '/handlers/' in p
             or base == 'views.py' or base.endswith(('view.py', '_views.py', 'controller.rb'))
-            or (is_go and (base in GO_HANDLER_NAMES or base.endswith(GO_HANDLER_SUFFIXES)))):
+            or (is_go and (base in GO_HANDLER_NAMES or base.endswith(GO_HANDLER_SUFFIXES) or '/handler/' in p))):
         return 'handler'
     # Service (business logic)
     if ('/actions/' in p or '/services/' in p or '/domain/' in p or '/use' in p and 'case' in p
@@ -87,7 +83,7 @@ def classify(rel):
     # Database
     if ('/models/' in p or base in ('models.py', 'schema.rb') or '/repositories/' in p or '/repository/' in p
             or (is_go and (base in GO_DATABASE_NAMES or base.endswith(GO_DATABASE_SUFFIXES)
-                           or '/store/' in p or '/db/' in p or '/sqlc/' in p))):
+                           or '/store/' in p or '/db/' in p or '/database/' in p or '/sqlc/' in p))):
         return 'database'
     # Response
     if ('serializer' in p or '/serializers/' in p or (base.startswith('response') and base.endswith('.py'))

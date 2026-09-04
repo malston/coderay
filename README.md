@@ -41,7 +41,7 @@ A five-stage pipeline (BuildBundle, Inventory, TechStack, TraceRequest, Overview
 
 A five-stage pipeline (FindRoutes, ApiMenu, TraceActions, EndpointSequence, OverviewNode) that reads a product's API surface at three levels of zoom:
 
-- Collects the files that declare entry points by framework convention: Rails `config/routes.rb`, Django `urls.py`, Express and Fastify routers, Next.js `pages/api/` and `app/**/route.ts`, tRPC, GraphQL and gRPC schemas, and Go `cmd/`. Manifests and aggregators are read first, so a size cap trims single handlers rather than the map.
+- Collects the files that declare entry points by framework convention: Rails `config/routes.rb`, Django `urls.py`, Express and Fastify routers, Next.js `pages/api/` and `app/**/route.ts`, tRPC, GraphQL and gRPC schemas, and any Go file whose text registers handlers, since Go has no route-file name. Manifests and aggregators are read first, so a size cap trims single handlers rather than the map.
 - Renders four views: every endpoint grouped by feature and sized against the biggest group, a short tour of the groups that say the most about the product, one user gesture traced across service lanes, and a message-by-message sequence diagram of a single endpoint. The tour is omitted rather than rendered empty when the model writes none.
 - Expects a web API. Pointed at a repository with no surface files, the run stops before it spends an LLM call.
 - Known limitation, worth reading before you spend a run:

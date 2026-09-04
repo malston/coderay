@@ -9,7 +9,7 @@ from crawl.analyses.interfaces import routes_find as rf
     "config/routes.rb", "app/urls.py", "src/routes.ts", "src/router.ts",
     "server/routes.js", "schema.graphql", "api/user.proto",
     "src/trpc/_router.ts", "pages/api/login.ts", "src/pages/api/login.tsx",
-    "app/users/route.ts", "cmd/server/main.go",
+    "app/users/route.ts",
 ])
 def test_is_route_file_recognises_a_framework_convention(rel):
     assert rf.is_route_file(rel) is True
@@ -23,15 +23,15 @@ def test_is_route_file_rejects_a_non_surface_file(rel):
     assert rf.is_route_file(rel) is False
 
 
-@pytest.mark.parametrize("rel", ["pages/api/login.ts", "app/users/route.ts", "cmd/server/main.go"])
+@pytest.mark.parametrize("rel", ["pages/api/login.ts", "app/users/route.ts"])
 def test_is_route_file_reads_a_convention_directory_at_the_repo_root(rel):
     """Was the interfaces half of the fix in upstream 4a74f7e, at pin 34f0ad2.
 
-    Next.js keeps pages/api/ and app/ at the repo root and Go keeps cmd/ there,
-    which is the layout each framework generates. The rules match on their
-    surrounding slashes, so before the fix FindRoutes refused to run at all on
-    a stock Next.js app. Both the root and nested forms must work, which is
-    what separates the fix from one that merely stripped the slashes.
+    Next.js keeps pages/api/ and app/ at the repo root, which is the layout the
+    framework generates. The rules match on their surrounding slashes, so
+    before the fix FindRoutes refused to run at all on a stock Next.js app.
+    Both the root and nested forms must work, which is what separates the fix
+    from one that merely stripped the slashes.
     """
     assert rf.is_route_file(rel) is True
     assert rf.is_route_file("src/" + rel) is True
@@ -239,3 +239,180 @@ def test_read_files_reports_the_paths_cut_by_the_size_budget(tmp_path):
     repo = _repo(tmp_path / "repo", {f"b{i}.py": "x" * 50 + "\n" for i in range(4)})
     text, resolved, skipped = rf.read_files(repo, [f"b{i}.py" for i in range(4)], max_chars=400)
     assert resolved == ["b0.py", "b1.py"] and skipped == ["b2.py", "b3.py"]
+
+
+# coderay-5wu.12: Go has no route-file name. A file is part of the surface when
+# it registers handlers, wherever it sits.
+@pytest.mark.parametrize("text,count", [
+    ('mux := http.NewServeMux()\nmux.HandleFunc("/api/x", h)\nmux.Handle("/", fs)\n', 3),
+    ('r := chi.NewRouter()\nr.Get("/users", list)\nr.Post("/users", create)\nr.Mount("/v2", sub)\n', 4),
+    ('g := gin.Default()\ng.GET("/ping", ping)\n', 2),
+    ('e := echo.New()\ne.POST("/login", login)\n', 2),
+    ('token := r.Header.Get("X-Token")\nresp.Header.Get("ETag")\n', 0),
+    ('func main() { cmd.Execute() }\n', 0),
+    ('r.Options("/x", h)\nr.Head("/y", h)\ne.Any("/z", h)\ng.OPTIONS("/o", h)\ng.HEAD("/h", h)\n', 5),
+    ('// mux.HandleFunc("/old", h)\n// r.Get("/gone", h)\nmux.HandleFunc("/live", h)\n', 1),
+    ('func NewRouter(cfg Config) *Router { return nil }\nfunc (m *Mux) HandleFunc(p string, h Handler) {}\n', 1),
+    ('r := mux.NewRouter()\nr.HandleFunc("/x", h)\n', 2),
+    ('g := gin.New()\ng.PUT("/a", h)\ng.DELETE("/b", h)\ng.PATCH("/c", h)\n', 4),
+    ('r := chi.NewRouter()\nr.Put("/a", h)\nr.Delete("/b", h)\nr.Patch("/c", h)\nr.Route("/u", fn)\nr.Group("/api")\n', 6),
+    ('r.Get(\n    "/users",\n    list,\n)\n', 1),
+    # a typed HTTP client is the heuristic's known false positive; deliberate
+    ('c.Get("/users", &out)\nc.Post("/users", body, &out)\n', 2),
+    # Go 1.22 method patterns, gorilla Path chains, gRPC service registration
+    ('mux.Handle("GET /users", h)\nmux.HandleFunc("POST /users", h)\n', 2),
+    ('r.Path("/users").Methods("GET").Handler(h)\n', 1),
+    ('s := grpc.NewServer()\npb.RegisterUserServiceServer(s, &srv{})\n', 2),
+    # a URL literal is not a comment; a block comment is one
+    ('u := "https://acme.com"; mux.Handle("/", h)\n', 1),
+    ('/* r.Get("/old", h)\nr.Get("/old2", h) */\nr.Get("/live", h)\n', 1),
+])
+def test_go_route_registrations_counts_handler_registrations_only(text, count):
+    """`r.Header.Get("X-Token")` reads a header; `r.Get("/users", h)` registers
+    a route. The path literal after the call is what tells them apart."""
+    assert rf.go_route_registrations(text) == count
+
+
+def test_find_route_files_reads_go_files_that_register_routes(tmp_path):
+    """Go route files are found by content, so a Cobra subcommand under cmd/ is
+    not on the surface and the file that registers every route is; test
+    scaffolding (a _test.go, a fixture directory, a testhelpers.go) stays out
+    even when it starts a mock server."""
+    repo = _repo(tmp_path / "repo", {
+        "pkg/hub/server.go": 'mux.HandleFunc("/api/a", a)\nmux.HandleFunc("/api/b", b)\n',
+        "pkg/hub/db.go": "func open() {}\n",
+        "cmd/tool/convert.go": "func run() { cmd.Execute() }\n",
+        "cmd/bridge/main.go": "m := http.NewServeMux()\nm.Handle(path, h)\n",
+        "pkg/hub/factorytest/mock_github.go": 'mux.HandleFunc("/repos", fake)\n',
+        "pkg/hub/testhelpers.go": 'srv.HandleFunc("/", fake)\n',
+        "pkg/hub/server_test.go": 'mux.HandleFunc("/x", h)\n',
+    })
+    assert rf.find_route_files(repo) == ["cmd/bridge/main.go", "pkg/hub/server.go"]
+
+
+def test_go_route_discovery_keeps_ordinary_names_that_contain_test(tmp_path):
+    """`latest.go`, `attestation.go` and `testimonials.go` are ordinary names;
+    only a file named like test scaffolding (`*_test.go`, `testhelpers.go`,
+    `testutil.go`, `testing.go`) is left out."""
+    repo = _repo(tmp_path / "repo", {
+        "pkg/api/latest.go": 'mux.HandleFunc("/v/latest", h)\n',
+        "pkg/api/attestation.go": 'mux.HandleFunc("/attest", h)\n',
+        "pkg/api/testimonials.go": 'mux.HandleFunc("/testimonials", h)\n',
+        "pkg/api/testhelpers.go": 'srv.HandleFunc("/", fake)\n',
+        "pkg/api/testutil.go": 'srv.HandleFunc("/", fake)\n',
+        "pkg/api/testing.go": 'srv.HandleFunc("/", fake)\n',
+    })
+    assert rf.find_route_files(repo) == ["pkg/api/attestation.go", "pkg/api/latest.go", "pkg/api/testimonials.go"]
+
+
+def test_a_large_name_matched_manifest_is_still_read(tmp_path):
+    """The per-file cap protects the Go content scan, which reads every
+    candidate; a manifest found by name is read whatever its size, as it was
+    before the scan existed."""
+    from crawl.core import DEFAULT_MAX_FILE_BYTES
+    big = "type Query {\n" + "  f: Int\n" * (DEFAULT_MAX_FILE_BYTES // 8) + "}\n"
+    repo = _repo(tmp_path / "repo", {"api/schema.graphql": big})
+    routes, files, kept = rf.crawl_routes(repo)
+    assert kept == ["api/schema.graphql"] and "type Query" in routes
+    assert rf.read_files(repo, ["api/schema.graphql"])[1] == ["api/schema.graphql"]
+
+
+def test_a_typed_client_does_not_outrank_a_real_router(tmp_path):
+    """Five path-literal calls alone do not make a manifest; a manifest also
+    builds a mux or router, which a client wrapper does not."""
+    repo = _repo(tmp_path / "repo", {
+        "pkg/github/client.go": "".join(f'c.Get("/repos/{i}", &out)\n' for i in range(6)),
+        "pkg/server/server.go": "m := http.NewServeMux()\n" + "".join(f'm.HandleFunc("/a/{i}", h)\n' for i in range(4)),
+    })
+    routes, files, kept = rf.crawl_routes(repo)
+    assert files[0] == "pkg/server/server.go"
+
+
+def test_a_serving_cmd_main_is_the_surface_when_no_go_file_registers_anything(tmp_path):
+    """A Go server whose registrations take a form the heuristic does not know
+    (paths in constants, a code-generated router) must not leave the surface
+    empty; the cmd/*/main.go that starts the listener stands in, unweighted.
+    A CLI's main.go, which starts none, does not."""
+    repo = _repo(tmp_path / "repo", {
+        "cmd/server/main.go": "func main() { s := newServer(); s.Run() }\n",
+        "internal/api/routes.go": "r.Get(usersPath, list)\n",
+        "cmd/tool/main.go": "func main() { cmd.Execute() }\n",
+    })
+    assert rf.find_route_files(repo) == ["cmd/server/main.go"]
+
+
+def test_go_route_discovery_leaves_an_oversized_file_unread(tmp_path):
+    """The walk reads every candidate .go file's text; a generated file over
+    the shared per-file cap is skipped whole rather than read to run a regex."""
+    from crawl.core import DEFAULT_MAX_FILE_BYTES
+    big = 'mux.HandleFunc("/x", h)\n' + "x" * DEFAULT_MAX_FILE_BYTES
+    repo = _repo(tmp_path / "repo", {"pkg/gen/zz_generated.go": big, "pkg/api/server.go": 'mux.HandleFunc("/y", h)\n'})
+    assert rf.find_route_files(repo) == ["pkg/api/server.go"]
+
+
+def test_crawl_routes_refuses_a_go_file_symlinked_out_of_the_repo(tmp_path):
+    """The Go content path is a third read path in this module, and this seam
+    has been missed here twice (coderay-q2r.28, q2r.56). A symlink out of the
+    repo is not read, so it registers nothing and is not on the surface."""
+    outside = tmp_path / "outside.go"
+    outside.write_text('mux.HandleFunc("/leak", h)\nOUTSIDE-SECRET-CONTENT\n', encoding="utf-8")
+    repo = _repo(tmp_path / "repo", {"config/routes.rb": "Rails.routes\n"})
+    os.makedirs(os.path.join(repo, "pkg"), exist_ok=True)
+    os.symlink(outside, os.path.join(repo, "pkg", "server.go"))
+    routes, files, kept = rf.crawl_routes(repo)
+    assert "OUTSIDE-SECRET-CONTENT" not in routes
+    assert kept == ["config/routes.rb"] and files == kept
+
+
+def test_name_matched_manifests_come_before_go_manifests_which_come_busiest_first(tmp_path):
+    """A route-file name is certain; the registration count is a heuristic. So
+    a Django manifest is read first, then Go manifests busiest first, then
+    single handlers in name order whatever their language."""
+    repo = _repo(tmp_path / "repo", {
+        "zzz/urls.py": "urlpatterns = []\n",
+        "aaa/five.go": "".join(f'mux.HandleFunc("/a/{i}", h)\n' for i in range(5)),
+        "mmm/eight.go": "".join(f'mux.HandleFunc("/m/{i}", h)\n' for i in range(8)),
+        "pages/api/aaa.ts": "export default aaa\n",
+        "cmd/bridge/main.go": "m := http.NewServeMux()\n",
+    })
+    routes, files, kept = rf.crawl_routes(repo)
+    assert files == ["zzz/urls.py", "mmm/eight.go", "aaa/five.go", "cmd/bridge/main.go", "pages/api/aaa.ts"]
+    assert sorted(files) == rf.find_route_files(repo)
+
+
+def test_find_route_files_skips_non_go_fixtures_too(tmp_path):
+    repo = _repo(tmp_path / "repo", {"app/urls.py": "x\n", "testdata/routes.ts": "x\n", "app/testutil/urls.py": "x\n"})
+    assert rf.find_route_files(repo) == ["app/urls.py"]
+
+
+def test_read_files_does_not_resolve_a_bare_name_into_a_fixture_directory(tmp_path):
+    """The suffix index comes from the same walk, so a model-named `users.py`
+    that exists only under testdata/ is not read; an exact path still is."""
+    repo = _repo(tmp_path / "repo", {"testdata/users.py": "FIXTURE\n", "api/a.py": "x\n"})
+    assert rf.read_files(repo, ["users.py"])[1] == []
+    assert rf.read_files(repo, ["testdata/users.py"])[1] == ["testdata/users.py"]
+
+
+def test_go_manifest_threshold_boundary(tmp_path):
+    """Five registrations make a manifest that sorts ahead of single handlers;
+    four do not."""
+    def repo_with(n):
+        return _repo(tmp_path / f"r{n}", {
+            "pkg/hub/server.go": "".join(f'mux.HandleFunc("/api/{i}", h)\n' for i in range(n)),
+            "pages/api/aaa.ts": "export default aaa\n",
+        })
+    assert rf.crawl_routes(repo_with(5))[1][0] == "pkg/hub/server.go"
+    assert rf.crawl_routes(repo_with(4))[1][0] == "pages/api/aaa.ts"
+
+
+def test_crawl_routes_puts_the_go_file_with_the_most_registrations_first(tmp_path):
+    """Six registrations make a manifest; a two-line mux in an entry point does
+    not. The manifest is read first, so a cap would trim the entry point."""
+    repo = _repo(tmp_path / "repo", {
+        "cmd/bridge/main.go": "m := http.NewServeMux()\nm.Handle(path, h)\n",
+        "pkg/hub/server.go": "".join(f'mux.HandleFunc("/api/{i}", h{i})\n' for i in range(6)),
+        "pages/api/aaa.ts": "export default aaa\n",
+    })
+    routes, files, kept = rf.crawl_routes(repo)
+    assert routes.index("pkg/hub/server.go") < min(routes.index("pages/api/aaa.ts"), routes.index("cmd/bridge/main.go"))
+    assert files[0] == "pkg/hub/server.go"
