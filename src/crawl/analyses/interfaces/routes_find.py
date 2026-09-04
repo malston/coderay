@@ -139,13 +139,24 @@ def read_files(repo, paths, max_chars=120_000, max_files=8):
     untrusted files, so a path that leaves the repo is refused rather than read.
     A leading slash was already stripped upstream, which neutralises an absolute
     path; `_within` adds the rest, refusing `../` climbs and symlinks that
-    resolve outside the repo (coderay-q2r.16)."""
+    resolve outside the repo (coderay-q2r.16).
+
+    Returns (text, resolved, skipped). `skipped` is every named path that was
+    not read, in the order named, whatever the reason: not found, empty,
+    past `max_files`, over `max_chars`, or refused. The card that reports the
+    diagram's provenance needs that list, and only this function knows why a
+    path was left out (coderay-5wu.1)."""
     index = None
-    resolved, parts, total = [], [], 0
-    for raw in paths[:max_files]:
+    resolved, skipped, parts, total = [], [], [], 0
+    budget_spent = False
+    for n, raw in enumerate(paths):
         rel = raw.strip().strip("`").lstrip("/")
+        if n >= max_files or budget_spent:
+            skipped.append(rel)
+            continue
         full = os.path.join(repo, rel)
         if os.path.isfile(full) and not _within(repo, full):
+            skipped.append(rel)
             continue
         if not os.path.isfile(full):
             if index is None:
@@ -156,18 +167,20 @@ def read_files(repo, paths, max_chars=120_000, max_files=8):
                         index.append(os.path.relpath(os.path.join(dp, f), repo))
             key = rel.replace(os.sep, "/")
             match = next((r for r in index if _ends_at_segment(r.replace(os.sep, "/"), key)), None)
-            if not match:
+            if not match or not _within(repo, os.path.join(repo, match)):
+                skipped.append(rel)
                 continue
             full, rel = os.path.join(repo, match), match
-            if not _within(repo, full):
-                continue
         text = _read(full)
         if not text.strip():
+            skipped.append(rel)
             continue
         block = f"{'=' * 60}\nFile: {rel}\n{'=' * 60}\n{text[:40_000]}\n"
         if total + len(block) > max_chars:
-            break
+            budget_spent = True
+            skipped.append(rel)
+            continue
         resolved.append(rel)
         parts.append(block)
         total += len(block)
-    return "\n".join(parts), resolved
+    return "\n".join(parts), resolved, skipped

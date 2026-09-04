@@ -182,3 +182,79 @@ def test_the_sequence_card_carries_no_warning_on_a_grounded_run():
     html = interfaces._sequence_cards(shared, "The write commits here.")
     assert "No handler source" not in html
     assert "The write commits here." in html
+    assert "not the files the model named" not in html and "not found" not in html
+
+
+def test_the_sequence_card_says_when_the_diagram_came_from_the_fallback_file():
+    """coderay-5wu.1. A valid pick whose files all miss falls back to the
+    largest route file; sequence_grounded is True because source exists, so the
+    card was titled with the model's endpoint over unrelated source with no
+    marker. The card names the file it was drawn from and the files it was not."""
+    shared = {"sequence_endpoint": "POST /api/book", "sequence_grounded": True,
+              "sequence_fallback": "app/urls.py",
+              "sequence_dropped": ["api/book.py", "<b>x</b>.py"]}
+    html = interfaces._sequence_cards(shared, "The write commits here.")
+    assert "Drawn from <code>app/urls.py</code>, not the files the model named" in html
+    assert "api/book.py" in html and "&lt;b&gt;x&lt;/b&gt;.py" in html and "<b>x</b>" not in html
+    assert "none of which could be read" in html and "do not exist" not in html
+
+
+def test_the_sequence_card_says_when_some_named_files_were_not_read():
+    """`read_files` leaves a path out for five reasons (missing, empty, past
+    the file cap, over the size budget, refused), so the card says "not read",
+    which is true of all five, never "not found"."""
+    shared = {"sequence_endpoint": "POST /api/a", "sequence_grounded": True,
+              "sequence_fallback": None, "sequence_dropped": ["pages/api/missing.ts"]}
+    html = interfaces._sequence_cards(shared, "Body.")
+    assert "1 of the files the model named was not read" in html
+    assert "pages/api/missing.ts" in html
+    assert "not found" not in html and "do not exist" not in html
+
+
+def test_the_sequence_card_says_when_the_model_named_no_source_files():
+    """Both an unusable pick and a pick with an endpoint but no files leave
+    nothing to read; one wording covers both without contradicting the title."""
+    for endpoint in ("app/urls.py", "POST /api/book"):
+        shared = {"sequence_endpoint": endpoint, "sequence_grounded": True,
+                  "sequence_fallback": "app/urls.py", "sequence_dropped": []}
+        html = interfaces._sequence_cards(shared, "Body.")
+        assert "The model named no source files" in html and "<code>app/urls.py</code>" in html
+        assert "unusable" not in html
+
+
+def test_the_sequence_card_keeps_a_dropped_path_with_underscores_literal():
+    """Dropped names sit in code spans, so `__init__.py` is not markdown emphasis."""
+    for shared in ({"sequence_grounded": True, "sequence_fallback": None, "sequence_dropped": ["api/__init__.py"]},
+                   {"sequence_grounded": True, "sequence_fallback": "app/urls.py", "sequence_dropped": ["api/__init__.py"]}):
+        html = interfaces._sequence_cards(shared, "Body.")
+        assert "<code>api/__init__.py</code>" in html and "<strong>init" not in html
+
+
+def test_the_sequence_card_survives_a_backtick_in_a_file_name():
+    shared = {"sequence_grounded": True, "sequence_fallback": "we`ird.py", "sequence_dropped": ["a`b.py"]}
+    html = interfaces._sequence_cards(shared, "Body.")
+    assert "<code>we`ird.py</code>" in html and "<code>a`b.py</code>" in html
+
+
+def test_the_sequence_card_escapes_the_fallback_path():
+    """The fallback file name comes from the target repo's own file names."""
+    for dropped in ([], ["a.py"]):
+        shared = {"sequence_grounded": True, "sequence_fallback": "app/<img src=x onerror=alert(1)>.py",
+                  "sequence_dropped": dropped}
+        html = interfaces._sequence_cards(shared, "Body.")
+        assert "<img" not in html and "&lt;img" in html
+
+
+def test_the_ungrounded_note_wins_over_the_dropped_files_note():
+    shared = {"sequence_grounded": False, "sequence_fallback": None, "sequence_dropped": ["nope.py"]}
+    html = interfaces._sequence_cards(shared, "Body.")
+    assert "No handler source" in html and "not read" not in html
+
+
+def test_the_source_note_survives_a_diagram_only_reply():
+    """A reply that is a fence and nothing else strips to an empty body; the
+    card must still render so the note is not lost while the diagram shows."""
+    shared = {"sequence_endpoint": "POST /api/a", "sequence_grounded": True,
+              "sequence_fallback": "app/urls.py", "sequence_dropped": ["gone.py"]}
+    html = interfaces._sequence_cards(shared, "```mermaid\nsequenceDiagram\n  a->>b: x\n```")
+    assert "Drawn from" in html
