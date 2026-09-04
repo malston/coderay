@@ -7,11 +7,11 @@ help: ## Show this help
 install: ## Sync dependencies from uv.lock
 	uv sync --locked
 
-install-global: ## Install the crack CLI onto your PATH via uv tool
+install-global: ## Install the crawl CLI onto your PATH via uv tool
 	uv tool install --editable .
 
-uninstall: ## Uninstall the crack CLI
-	uv tool uninstall crack
+uninstall: ## Uninstall the crawl CLI
+	uv tool uninstall crawl
 
 test: ## Run the test suite
 	uv run pytest tests/ -q

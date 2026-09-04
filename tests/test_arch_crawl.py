@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from crack.analyses.architecture import arch_crawl as ac
+from crawl.analyses.architecture import arch_crawl as ac
 
 
 @pytest.mark.parametrize("rel,kind", [

@@ -2,7 +2,7 @@ import argparse
 
 import pytest
 
-from crack.analyses.tour import run
+from crawl.analyses.tour import run
 
 
 def test_run_exits_with_message_when_repo_path_is_not_a_directory(tmp_path):

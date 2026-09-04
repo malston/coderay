@@ -7,8 +7,8 @@ import pathlib
 
 import pytest
 
-from crack.analyses import ANALYSES
-from crack.core import render
+from crawl.analyses import ANALYSES
+from crawl.core import render
 
 GOLDEN = pathlib.Path(__file__).parent / "fixtures" / "golden"
 
@@ -66,7 +66,7 @@ def test_the_golden_fixtures_still_carry_their_payload(name):
     Mermaid reads the element's textContent, which the browser has already
     decoded back to the raw characters, so what happens next is decided by
     mermaid's securityLevel. The card engine sets 'strict' (see
-    crack/core/render.py and bead coderay-q2r.11, closed), which sanitises.
+    crawl/core/render.py and bead coderay-q2r.11, closed), which sanitises.
     """
     d = GOLDEN / name
     html = (d / "index.html").read_text(encoding="utf-8")

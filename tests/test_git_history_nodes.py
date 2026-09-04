@@ -4,8 +4,8 @@ import subprocess
 
 import pytest
 
-import crack.core.llm as llm_module
-from crack.analyses.git_history import nodes as n
+import crawl.core.llm as llm_module
+from crawl.analyses.git_history import nodes as n
 
 
 def _repo(tmp_path, commits):
@@ -33,7 +33,7 @@ def _mkdir(p):
 
 def _fake_llm(monkeypatch, fn):
     """The LLM nodes reach the model two ways: call_llm directly (Graveyard) and
-    crack.core.json_call (NameEras, ProfileEras), which resolves call_llm in its
+    crawl.core.json_call (NameEras, ProfileEras), which resolves call_llm in its
     own module. Patch both or a json_call path hits the real API."""
     monkeypatch.setattr(n, "call_llm", fn)
     monkeypatch.setattr(llm_module, "call_llm", fn)
@@ -118,7 +118,7 @@ def test_profile_eras_carries_prior_summaries_into_the_next_prompt(monkeypatch, 
                    "description": "d2", "turning_point": "t2"}]
     # A real hash: ProfileEras runs `git show` on its landmark commits, so a
     # made-up one fails in git rather than in the code under test.
-    from crack.analyses.git_history import gitlog as gl
+    from crawl.analyses.git_history import gitlog as gl
     real = gl.git_log_commits(repo)[0]
     shared = {"repo_path": repo,
               "commits_asc": [dict(real, month="2019-06"), dict(real, month="2020-06")],
@@ -137,7 +137,7 @@ def test_graveyard_skips_a_vendored_deletion(monkeypatch, tmp_path):
     repo = _repo(tmp_path, [("add", {**vendored, **real}, []),
                             ("drop vendor", {}, list(vendored)),
                             ("drop feature", {}, list(real))])
-    from crack.analyses.git_history import gitlog as gl
+    from crawl.analyses.git_history import gitlog as gl
     _fake_llm(monkeypatch, lambda p: "entry")
     shared = {"repo_path": repo, "eras": ERAS,
               "bulk_dels": gl.bulk_changes(repo, "D", min_files=5),
@@ -152,7 +152,7 @@ def test_graveyard_honours_max_graves(monkeypatch, tmp_path):
     areas = {f"area{a}/f{i}.py": "x\n" for a in range(4) for i in range(10)}
     repo = _repo(tmp_path, [("add", areas, [])] +
                  [(f"drop {a}", {}, [f"area{a}/f{i}.py" for i in range(10)]) for a in range(4)])
-    from crack.analyses.git_history import gitlog as gl
+    from crawl.analyses.git_history import gitlog as gl
     _fake_llm(monkeypatch, lambda p: "entry")
     shared = {"repo_path": repo, "eras": ERAS,
               "bulk_dels": gl.bulk_changes(repo, "D", min_files=5),
@@ -209,7 +209,7 @@ def test_profile_eras_skips_an_era_that_matches_no_commits(monkeypatch, tmp_path
     """coderay-q2r.39. Otherwise the model is asked to profile a window of
     `(no commits)` placeholders and its invention renders as a normal card."""
     repo = _repo(tmp_path, [("c", {"a.py": "1\n"}, [])])
-    from crack.analyses.git_history import gitlog as gl
+    from crawl.analyses.git_history import gitlog as gl
     real = gl.git_log_commits(repo)[0]
     calls = []
     _fake_llm(monkeypatch, lambda p: calls.append(p) or ("```json\n" + json.dumps(PROFILE) + "\n```"))
@@ -230,7 +230,7 @@ def test_profile_eras_retries_a_profile_whose_cast_or_mood_has_the_wrong_shape(m
     """coderay-q2r.39. `"cast" in result` is true for {"cast": "text"}; the
     .get() on it then failed outside json_call and re-ran every era."""
     repo = _repo(tmp_path, [("c", {"a.py": "1\n"}, [])])
-    from crack.analyses.git_history import gitlog as gl
+    from crawl.analyses.git_history import gitlog as gl
     real = gl.git_log_commits(repo)[0]
     calls = []
 
@@ -251,7 +251,7 @@ def test_graveyard_with_max_graves_zero_digs_nothing(monkeypatch, tmp_path):
     """coderay-q2r.40: the cap was checked after the append, so 0 meant 1."""
     files = {f"area/f{i}.py": "x\n" for i in range(10)}
     repo = _repo(tmp_path, [("add", files, []), ("drop", {}, list(files))])
-    from crack.analyses.git_history import gitlog as gl
+    from crawl.analyses.git_history import gitlog as gl
     calls = []
     _fake_llm(monkeypatch, lambda p: calls.append(p) or "entry")
     shared = {"repo_path": repo, "eras": ERAS,

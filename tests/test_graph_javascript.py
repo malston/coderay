@@ -1,5 +1,5 @@
-import crack.analyses.tour.graph.languages.javascript as javascript_module
-from crack.analyses.tour.graph.languages.javascript import imports
+import crawl.analyses.tour.graph.languages.javascript as javascript_module
+from crawl.analyses.tour.graph.languages.javascript import imports
 
 
 def test_imports_resolves_relative_specifier_with_extension_guess():

@@ -4,7 +4,7 @@ import subprocess
 
 import pytest
 
-from crack.analyses.git_history import gitlog as gl
+from crawl.analyses.git_history import gitlog as gl
 
 
 def _repo(tmp_path, commits, dates=None):

@@ -1,8 +1,8 @@
-# Porting the six sibling analyses into crack (coderay-q2r)
+# Porting the six sibling analyses into crawl (coderay-q2r)
 
 ## Problem
 
-`crack` ships one analysis, `tour`. A sibling fork --
+`crawl` ships one analysis, `tour`. A sibling fork --
 `github.com/malston/Crack-Any-Codebase-with-AI`, branch `feat/unified-cli`,
 pinned at `75ec7c4` -- carries six more: product-intent, git-history, schema,
 interfaces, architecture, backend. Each has its own crawl, node graph, and
@@ -10,17 +10,17 @@ renderer.
 
 The epic was filed on the assumption that these would be hand-ported from the
 `ch05-ch10` chapter directories. They do not need to be. That branch already
-contains a finished unified `src/crack/` package: all six analyses, a shared
-card-family render engine, a lazy registry, `crack all` with a landing page,
-and byte-for-byte parity tests against each chapter's original renderer. 4,532
-lines across 32 modules and 16 test files.
+contains the sibling's finished unified `src/crack/` package: all six analyses,
+a shared card-family render engine, a lazy registry, the sibling's `crack all`
+with a landing page, and byte-for-byte parity tests against each chapter's
+original renderer. 4,532 lines across 32 modules and 16 test files.
 
 So the work is a merge, not a rewrite.
 
 ## Goals
 
-- Each of the six lands as a `crack <name> <repo>` subcommand, registered in
-  `crack.analyses.ANALYSES`.
+- Each of the six lands as a `crawl <name> <repo>` subcommand, registered in
+  `crawl.analyses.ANALYSES`.
 - The four card-family analyses (backend, architecture, interfaces, schema)
   share one render engine, ported verbatim from the sibling.
 - The two bespoke analyses (git-history, product-intent) keep their hand-built
@@ -64,7 +64,7 @@ second analysis actually needs it"), and the reconciliation it implies is
 coderay-dr8's charter.
 
 **Decision (2026-09-01, Mark):** keep 8bg's interface. The six ported analyses
-share one `run_analysis(analysis, args)` helper in `crack/core/runner.py`, and
+share one `run_analysis(analysis, args)` helper in `crawl/core/runner.py`, and
 each module's `run()` is a thin call into it. `tour` is untouched.
 
 The divergence this creates is confined to the orchestration layer, roughly
@@ -78,7 +78,7 @@ six sibling analyses already share one code path, so it should not.
 
 ## What comes across
 
-Into `crack/core/`, verbatim from the sibling except where noted:
+Into `crawl/core/`, verbatim from the sibling except where noted:
 
 | File          | Contents                                                                | Change on port                 |
 | ------------- | ----------------------------------------------------------------------- | ------------------------------ |
@@ -89,7 +89,7 @@ Into `crack/core/`, verbatim from the sibling except where noted:
 | `llm.py`      | gains `extract_mermaid`                                                 | added to existing file         |
 | `runner.py`   | gains `run_analysis`                                                    | new function beside `run_flow` |
 
-Into `crack/analyses/<name>/`, one directory per analysis: its `nodes.py`, its
+Into `crawl/analyses/<name>/`, one directory per analysis: its `nodes.py`, its
 crawl module, its `prompts/`, and an `__init__.py` carrying `SECTIONS`/`THEME`
 (card family) or `render_html`/`render_markdown` (bespoke), plus the
 `NAME`/`build_flow`/`add_arguments`/`init_shared`/`run` interface.

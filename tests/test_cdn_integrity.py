@@ -15,9 +15,9 @@ import re
 
 import pytest
 
-from crack.analyses import ANALYSES
-from crack.analyses.tour import render as tour_render
-from crack.core import render
+from crawl.analyses import ANALYSES
+from crawl.analyses.tour import render as tour_render
+from crawl.core import render
 
 GOLDEN = pathlib.Path(__file__).parent / "fixtures" / "golden"
 

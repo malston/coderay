@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from crack.analyses import ANALYSES, interfaces
+from crawl.analyses import ANALYSES, interfaces
 
 
 def test_interfaces_is_registered():
@@ -58,7 +58,7 @@ def test_init_shared_carries_the_repo_path():
 
 
 def test_build_flow_starts_at_find_routes():
-    from crack.analyses.interfaces.nodes import FindRoutes
+    from crawl.analyses.interfaces.nodes import FindRoutes
     assert isinstance(interfaces.build_flow().start_node, FindRoutes)
 
 
@@ -83,7 +83,7 @@ def test_overview_spec_names_the_four_sections():
 
 
 def test_overview_spec_name_matches_the_name_the_page_is_rendered_with(tmp_path, monkeypatch):
-    from crack.core.runner import repo_name_of
+    from crawl.core.runner import repo_name_of
     repo = tmp_path / "toy_repo"
     repo.mkdir()
     monkeypatch.chdir(repo)

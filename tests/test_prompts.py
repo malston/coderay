@@ -1,9 +1,9 @@
 import glob
 import os
 
-from crack.core import fill
+from crawl.core import fill
 
-PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "src", "crack", "analyses", "tour", "prompts")
+PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "src", "crawl", "analyses", "tour", "prompts")
 
 
 def test_every_prompt_wraps_untrusted_repo_content_in_a_boundary():
@@ -20,7 +20,7 @@ def test_write_chapter_prompt_puts_stable_blocks_before_the_cache_breakpoint():
     # The codebase block (identical every call in a tour, up to CODEBASE_BUDGET
     # chars) must sit before the cache breakpoint so Anthropic's prefix-based
     # caching can reuse it across chapters -- see coderay-dl8.
-    from crack.core.call_llm import CACHE_BREAKPOINT
+    from crawl.core.call_llm import CACHE_BREAKPOINT
 
     path = os.path.join(PROMPTS_DIR, "write-chapter.md")
     template = open(path).read()
@@ -50,7 +50,7 @@ def test_prompt_templates_still_render_with_dummy_args():
 
 
 # coderay-aph: the house style is one shipped block, injected by read_prompt.
-ANALYSES_DIR = os.path.join(os.path.dirname(__file__), "..", "src", "crack", "analyses")
+ANALYSES_DIR = os.path.join(os.path.dirname(__file__), "..", "src", "crawl", "analyses")
 # Prompts that do not carry the block: replies that are parsed, not read (a
 # JSON or YAML shape), and the two product-intent prompts whose reader is a
 # general undergraduate on purpose, so the engineer-facing voice would
@@ -72,7 +72,7 @@ def _analysis_prompts():
 
 
 def test_house_style_block_is_clean_prose():
-    from crack.core import house_style
+    from crawl.core import house_style
     text = house_style()
     assert "concrete nouns" in text
     assert "—" not in text                       # the block enforces no em dashes; it must obey
@@ -80,7 +80,7 @@ def test_house_style_block_is_clean_prose():
 
 
 def test_read_prompt_fills_the_house_style_slot(tmp_path):
-    from crack.core import read_prompt
+    from crawl.core import read_prompt
     (tmp_path / "p.md").write_text("Rules first.\n{house_style}\nThen the task: {codebase}\n", encoding="utf-8")
     text = read_prompt(tmp_path, "p.md")
     assert "{house_style}" not in text
@@ -89,13 +89,13 @@ def test_read_prompt_fills_the_house_style_slot(tmp_path):
 
 
 def test_read_prompt_leaves_a_template_without_the_slot_alone(tmp_path):
-    from crack.core import read_prompt
+    from crawl.core import read_prompt
     (tmp_path / "p.md").write_text("Return JSON: {codebase}\n", encoding="utf-8")
     assert read_prompt(tmp_path, "p.md") == "Return JSON: {codebase}\n"
 
 
 def test_every_house_voice_prompt_carries_the_slot_and_no_other_does():
-    from crack.core.call_llm import CACHE_BREAKPOINT
+    from crawl.core.call_llm import CACHE_BREAKPOINT
     for rel, template in _analysis_prompts().items():
         if rel in OWN_VOICE_PROMPTS:
             assert "{house_style}" not in template, rel
@@ -121,7 +121,7 @@ def test_house_style_exempts_required_output_syntax_and_adds_no_header_of_its_ow
     that a parser keys on. The block says those are written exactly as given,
     and it carries no `## ` header that an "only these headers" instruction
     could be read against."""
-    from crack.core import house_style
+    from crawl.core import house_style
     text = house_style()
     assert "exactly as given" in text
     assert not [l for l in text.splitlines() if l.startswith("#")]
@@ -130,7 +130,7 @@ def test_house_style_exempts_required_output_syntax_and_adds_no_header_of_its_ow
 def test_house_style_evidence_rules_can_be_left_out():
     """Codex review of PR #33. The overview receives aggregate facts and no
     source, so the citation and trace rules would make it invent evidence."""
-    from crack.core import house_style
+    from crawl.core import house_style
     full, voice = house_style(), house_style(with_evidence=False)
     assert "Cite the file and symbol" in full and "Trace one real path" in full
     assert "Cite the file and symbol" not in voice and "Trace one real path" not in voice

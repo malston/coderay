@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from crack.analyses import ANALYSES, architecture
+from crawl.analyses import ANALYSES, architecture
 
 
 def test_architecture_is_registered():
@@ -44,7 +44,7 @@ def test_init_shared_carries_the_repo_path():
 
 
 def test_build_flow_starts_at_build_bundle():
-    from crack.analyses.architecture.nodes import BuildBundle
+    from crawl.analyses.architecture.nodes import BuildBundle
     assert isinstance(architecture.build_flow().start_node, BuildBundle)
 
 
@@ -90,7 +90,7 @@ def test_overview_spec_name_matches_the_name_the_page_is_rendered_with(tmp_path,
     run_analysis hands the renderer repo_name_of(args.repo_path) as the page
     title. "." is the case that exposes a divergence from a naive basename.
     """
-    from crack.core.runner import repo_name_of
+    from crawl.core.runner import repo_name_of
 
     repo = tmp_path / "toy_repo"
     repo.mkdir()

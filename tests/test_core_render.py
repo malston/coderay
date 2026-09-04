@@ -1,4 +1,4 @@
-from crack.core.render import (Section, Theme, card, esc, extract_mermaid, md,
+from crawl.core.render import (Section, Theme, card, esc, extract_mermaid, md,
                                md_rich, render_html, render_markdown,
                                split_cards, strip_mermaid)
 
@@ -109,7 +109,7 @@ def test_mermaid_runs_at_security_level_strict():
     """
     import pathlib as _p
 
-    engine = _p.Path(__file__).parent.parent / "src" / "crack" / "core" / "render.py"
+    engine = _p.Path(__file__).parent.parent / "src" / "crawl" / "core" / "render.py"
     text = engine.read_text(encoding="utf-8")
     assert "securityLevel: 'strict'" in text
     assert "securityLevel: 'loose'" not in text
@@ -123,7 +123,7 @@ def test_card_engine_and_tour_agree_on_mermaid_security():
     import pathlib as _p
     import re as _re
 
-    root = _p.Path(__file__).parent.parent / "src" / "crack"
+    root = _p.Path(__file__).parent.parent / "src" / "crawl"
     found = set()
     for path in (root / "core" / "render.py", root / "analyses" / "tour" / "render.py"):
         found |= set(_re.findall(r"securityLevel: '(\w+)'", path.read_text(encoding="utf-8")))

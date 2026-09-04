@@ -5,8 +5,8 @@ import textwrap
 
 import pytest
 
-from crack.core.render import Section, Theme
-from crack.core.runner import run_analysis, run_flow
+from crawl.core.render import Section, Theme
+from crawl.core.runner import run_analysis, run_flow
 
 
 def test_run_flow_dumps_state_and_reraises_on_failure():
@@ -115,8 +115,8 @@ def test_run_analysis_writes_utf8_output_under_the_c_locale(tmp_path):
     out = tmp_path / "out"
     script = tmp_path / "run_it.py"
     script.write_text(textwrap.dedent(f"""
-        from crack.core.render import Section, Theme
-        from crack.core.runner import run_analysis
+        from crawl.core.render import Section, Theme
+        from crawl.core.runner import run_analysis
 
         class Flow:
             def run(self, shared):

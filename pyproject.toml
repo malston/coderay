@@ -3,7 +3,7 @@ requires = ["setuptools>=84.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "crack"
+name = "crawl"
 version = "0.1.0"
 description = "Crawls a repo, picks the files that matter, and writes a multi-chapter tour."
 requires-python = ">=3.10"
@@ -27,25 +27,25 @@ gemini = ["google-genai>=2.19.0,<3"]
 dev = ["pytest>=9.1.1,<10"]
 
 [project.scripts]
-crack = "crack.cli:main"
+crawl = "crawl.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 packages = [
-    "crack", "crack.core", "crack.analyses", "crack.analyses.architecture",
-    "crack.analyses.backend", "crack.analyses.git_history",
-    "crack.analyses.product_intent",
-    "crack.analyses.interfaces", "crack.analyses.schema",
-    "crack.analyses.tour",
-    "crack.analyses.tour.graph", "crack.analyses.tour.graph.languages",
+    "crawl", "crawl.core", "crawl.analyses", "crawl.analyses.architecture",
+    "crawl.analyses.backend", "crawl.analyses.git_history",
+    "crawl.analyses.product_intent",
+    "crawl.analyses.interfaces", "crawl.analyses.schema",
+    "crawl.analyses.tour",
+    "crawl.analyses.tour.graph", "crawl.analyses.tour.graph.languages",
 ]
 
 [tool.setuptools.package-data]
-"crack.core" = ["prompts/*.md"]
-"crack.analyses.tour" = ["prompts/*.md", "instructions/*.md"]
-"crack.analyses.backend" = ["prompts/*.md"]
-"crack.analyses.architecture" = ["prompts/*.md"]
-"crack.analyses.interfaces" = ["prompts/*.md"]
-"crack.analyses.schema" = ["prompts/*.md"]
-"crack.analyses.git_history" = ["prompts/*.md"]
-"crack.analyses.product_intent" = ["prompts/*.md"]
+"crawl.core" = ["prompts/*.md"]
+"crawl.analyses.tour" = ["prompts/*.md", "instructions/*.md"]
+"crawl.analyses.backend" = ["prompts/*.md"]
+"crawl.analyses.architecture" = ["prompts/*.md"]
+"crawl.analyses.interfaces" = ["prompts/*.md"]
+"crawl.analyses.schema" = ["prompts/*.md"]
+"crawl.analyses.git_history" = ["prompts/*.md"]
+"crawl.analyses.product_intent" = ["prompts/*.md"]

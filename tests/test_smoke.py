@@ -11,10 +11,10 @@ pytestmark = pytest.mark.skipif(
     reason="no API key set; smoke test needs a real LLM call",
 )
 
-def test_crack_tour_runs_end_to_end(tmp_path):
+def test_crawl_tour_runs_end_to_end(tmp_path):
     out_dir = str(tmp_path / "tour-output")
     result = subprocess.run(
-        [sys.executable, "-m", "crack.cli", "tour", FIXTURE_REPO, "--out", out_dir],
+        [sys.executable, "-m", "crawl.cli", "tour", FIXTURE_REPO, "--out", out_dir],
         capture_output=True, text=True, stdin=subprocess.DEVNULL,
     )
     assert result.returncode == 0, result.stderr

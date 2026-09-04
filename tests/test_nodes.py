@@ -1,8 +1,8 @@
 import pytest
 
-import crack.core.llm as llm_module
-import crack.analyses.tour.nodes as nodes_module
-from crack.analyses.tour.nodes import Analyze, ExtractGraph, PipelineState, Relate, SmartCrawl
+import crawl.core.llm as llm_module
+import crawl.analyses.tour.nodes as nodes_module
+from crawl.analyses.tour.nodes import Analyze, ExtractGraph, PipelineState, Relate, SmartCrawl
 
 
 def test_pipeline_state_documents_every_key_the_nodes_use():
@@ -208,7 +208,7 @@ def test_analyze_retry_sends_a_different_prompt_each_time(monkeypatch, tmp_path)
     # cache. Verify the prompts actually differ, not just that we eventually
     # raise.
     import importlib
-    call_llm_module = importlib.import_module("crack.core.call_llm")
+    call_llm_module = importlib.import_module("crawl.core.call_llm")
 
     monkeypatch.setattr(call_llm_module, "CACHE_DIR", str(tmp_path))
     prompts_seen = []
@@ -370,7 +370,7 @@ def test_relate_tags_inferred_when_no_matching_edge(monkeypatch):
 
 def test_relate_tags_inferred_when_relationship_names_unknown_abstraction(monkeypatch):
     # "Baz" isn't in abstractions -- build_mermaid already drops this edge downstream
-    # (crack/analyses/tour/render.py:68); the rollup has no file set to check, so INFERRED,
+    # (crawl/analyses/tour/render.py:68); the rollup has no file set to check, so INFERRED,
     # not an assertion (post-review fix).
     yaml_text = (
         "```yaml\n"

@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from crack.analyses import ANALYSES, product_intent
+from crawl.analyses import ANALYSES, product_intent
 
 
 def test_product_intent_is_registered_under_its_hyphenated_name():
@@ -53,7 +53,7 @@ def test_init_shared_tolerates_an_args_without_the_filters():
 def test_build_flow_is_the_four_text_passes_after_the_crawl():
     """The image node is not ported: text-only by decision, so no out_dir and
     no image provider in shared core."""
-    from crack.analyses.product_intent import nodes as n
+    from crawl.analyses.product_intent import nodes as n
     node = product_intent.build_flow().start_node
     seen = [type(node).__name__]
     while node.successors:

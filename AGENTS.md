@@ -1,6 +1,6 @@
 # Agent Instructions
 
-Crack runs seven PocketFlow analyses: a multi-chapter tour, a server-side backend flow analysis, a multi-service architecture map, an API surface guide, a data-model tour, a git-history story, and a product-intent brief. See `CLAUDE.md` for build/test commands, architecture, and project conventions -- read it before making changes.
+Crawl runs seven PocketFlow analyses: a multi-chapter tour, a server-side backend flow analysis, a multi-service architecture map, an API surface guide, a data-model tour, a git-history story, and a product-intent brief. See `CLAUDE.md` for build/test commands, architecture, and project conventions -- read it before making changes.
 
 This project uses **bd** (beads) for issue tracking; see the managed Beads sections below for commands and workflow. Run `bd prime` for full workflow context.
 
@@ -32,71 +32,71 @@ cp -rf source dest          # NOT: cp -r source dest
 
 ## Architecture Overview
 
-Crack dispatches to seven analyses, each a PocketFlow pipeline:
+Crawl dispatches to seven analyses, each a PocketFlow pipeline:
 
-**Tour** (five sequential nodes, `src/crack/analyses/tour/nodes.py`, wired in `src/crack/analyses/tour/flow.py`):
+**Tour** (five sequential nodes, `src/crawl/analyses/tour/nodes.py`, wired in `src/crawl/analyses/tour/flow.py`):
 
 ```text
 SmartCrawl -> ExtractGraph -> Analyze -> Relate -> WriteChapters
 ```
 
-- **SmartCrawl** walks the target repo (`src/crack/core/crawl.py`), builds a preview manifest, and asks the LLM which ~0.1-2% of files matter. Enforces `preview_budget` and `codebase_budget` so large repos can't blow the LLM's context window.
-- **Analyze** / **Relate** / **WriteChapters** call the LLM via `crack.core.call_llm` and parse its YAML output via `crack.core.yaml_call`, which retries with a varied prompt on bad output (the retry-safe path -- don't reintroduce a local prompt-parsing loop that bypasses it).
-- `src/crack/analyses/tour/render.py` renders the analysis's output (`shared` dict, typed as `PipelineState` in `src/crack/analyses/tour/nodes.py`) to markdown + HTML.
-- `src/crack/analyses/tour/prompts/*.md` are the four LLM prompt templates; `src/crack/analyses/tour/instructions/*.md` are swappable output lenses (`--instructions <name>`), auto-discovered from the directory -- adding a lens is just adding a file.
+- **SmartCrawl** walks the target repo (`src/crawl/core/files.py`), builds a preview manifest, and asks the LLM which ~0.1-2% of files matter. Enforces `preview_budget` and `codebase_budget` so large repos can't blow the LLM's context window.
+- **Analyze** / **Relate** / **WriteChapters** call the LLM via `crawl.core.call_llm` and parse its YAML output via `crawl.core.yaml_call`, which retries with a varied prompt on bad output (the retry-safe path -- don't reintroduce a local prompt-parsing loop that bypasses it).
+- `src/crawl/analyses/tour/render.py` renders the analysis's output (`shared` dict, typed as `PipelineState` in `src/crawl/analyses/tour/nodes.py`) to markdown + HTML.
+- `src/crawl/analyses/tour/prompts/*.md` are the four LLM prompt templates; `src/crawl/analyses/tour/instructions/*.md` are swappable output lenses (`--instructions <name>`), auto-discovered from the directory -- adding a lens is just adding a file.
 
-**Backend** (five sequential nodes: four in `src/crack/analyses/backend/nodes.py` plus the shared `OverviewNode` from `src/crack/core/nodes.py`, wired in `build_flow()` in `src/crack/analyses/backend/__init__.py`):
+**Backend** (five sequential nodes: four in `src/crawl/analyses/backend/nodes.py` plus the shared `OverviewNode` from `src/crawl/core/nodes.py`, wired in `build_flow()` in `src/crawl/analyses/backend/__init__.py`):
 
 ```text
 BuildBundle -> Pipeline -> LayerCode -> Trace -> OverviewNode
 ```
 
 - Analyzes the repository structure and maps files to six semantic layers: route, middleware, handler, service, database, response.
-- `src/crack/analyses/backend/backend_crawl.py` walks the repo through `crack.core.list_files`, so it gets the repo containment and credential-name skips at walk time, symlink target names included (coderay-q2r.54). A source file over `DEFAULT_MAX_FILE_BYTES` is dropped from the walk, so it leaves the layer counts too; one that does not decode as UTF-8 is counted but its body is left out, and when that leaves every counted file out, `BuildBundle` aborts with the counts it has rather than claiming no backend was found (coderay-q2r.57). Nothing arrives cut off part way. Its `SKIP_DIRS` is `DEFAULT_SKIP_DIR` plus the backend extras, and `_spec.` marks a test (coderay-q2r.59). Bundle files are chosen by an equal per-layer share of the budget, then round-robin over the leftover, so one large spine file cannot starve the sampled layers (coderay-q2r.58, coderay-q2r.64), and are emitted grouped by layer. A flat Django `views.py` classifies as a handler (coderay-q2r.12). Each is a deliberate divergence from the port source.
+- `src/crawl/analyses/backend/backend_crawl.py` walks the repo through `crawl.core.list_files`, so it gets the repo containment and credential-name skips at walk time, symlink target names included (coderay-q2r.54). A source file over `DEFAULT_MAX_FILE_BYTES` is dropped from the walk, so it leaves the layer counts too; one that does not decode as UTF-8 is counted but its body is left out, and when that leaves every counted file out, `BuildBundle` aborts with the counts it has rather than claiming no backend was found (coderay-q2r.57). Nothing arrives cut off part way. Its `SKIP_DIRS` is `DEFAULT_SKIP_DIR` plus the backend extras, and `_spec.` marks a test (coderay-q2r.59). Bundle files are chosen by an equal per-layer share of the budget, then round-robin over the leftover, so one large spine file cannot starve the sampled layers (coderay-q2r.58, coderay-q2r.64), and are emitted grouped by layer. A flat Django `views.py` classifies as a handler (coderay-q2r.12). Each is a deliberate divergence from the port source.
 - Renders three views: the pipeline with file counts per layer, code snippets at layer boundaries, and a request trace through all six.
 
-**Architecture** (five sequential nodes: four in `src/crack/analyses/architecture/nodes.py` plus the shared `OverviewNode`, wired in `build_flow()` in `src/crack/analyses/architecture/__init__.py`):
+**Architecture** (five sequential nodes: four in `src/crawl/analyses/architecture/nodes.py` plus the shared `OverviewNode`, wired in `build_flow()` in `src/crawl/analyses/architecture/__init__.py`):
 
 ```text
 BuildBundle -> Inventory -> TechStack -> TraceRequest -> OverviewNode
 ```
 
-- `src/crack/analyses/architecture/arch_crawl.py` overlays four sources into one bundle: process declarations (compose, k8s, `Procfile`, platform config), env var names from `.env` files, with credential values redacted out of every other source by `_redact` (coderay-q2r.14, a deliberate divergence from the port source, as is `_read` refusing a symlink whose target is credential-named, coderay-q2r.56), the union of `package.json` dependencies, and Terraform, plus SDK import lines from `git grep` as proof a connection is live.
+- `src/crawl/analyses/architecture/arch_crawl.py` overlays four sources into one bundle: process declarations (compose, k8s, `Procfile`, platform config), env var names from `.env` files, with credential values redacted out of every other source by `_redact` (coderay-q2r.14, a deliberate divergence from the port source, as is `_read` refusing a symlink whose target is credential-named, coderay-q2r.56), the union of `package.json` dependencies, and Terraform, plus SDK import lines from `git grep` as proof a connection is live.
 - Inventory runs first among the LLM passes, and its numbered node list is reused by TechStack and TraceRequest, so all three name the same graph.
 - Renders three views: every node banded run/rent/call/client, the technology behind each label, and one request traced hop by hop.
 
-**Interfaces** (five sequential nodes: four in `src/crack/analyses/interfaces/nodes.py` plus the shared `OverviewNode`, wired in `build_flow()` in `src/crack/analyses/interfaces/__init__.py`):
+**Interfaces** (five sequential nodes: four in `src/crawl/analyses/interfaces/nodes.py` plus the shared `OverviewNode`, wired in `build_flow()` in `src/crawl/analyses/interfaces/__init__.py`):
 
 ```text
 FindRoutes -> ApiMenu -> TraceActions -> EndpointSequence -> OverviewNode
 ```
 
-- `src/crack/analyses/interfaces/routes_find.py` finds entry-point files by framework convention and concatenates them, aggregators first. `read_files` resolves LLM-picked source paths and refuses any that leave the repo (`_within`, coderay-q2r.16), and both it and the crawl's `_read` go through `crack.core.readable`, which also refuses a credential-named target, whether the model named `.env` outright or a symlink inside the repo resolves to one (coderay-q2r.56; both are deliberate divergences from the port source).
+- `src/crawl/analyses/interfaces/routes_find.py` finds entry-point files by framework convention and concatenates them, aggregators first. `read_files` resolves LLM-picked source paths and refuses any that leave the repo (`_within`, coderay-q2r.16), and both it and the crawl's `_read` go through `crawl.core.readable`, which also refuses a credential-named target, whether the model named `.env` outright or a symlink inside the repo resolves to one (coderay-q2r.56; both are deliberate divergences from the port source).
 - The only analysis using the engine's `when_empty="omit"` (the tour) and a Section's own `prefix`/`cards` hooks (the sequence diagram and its card). Four sections, like schema.
-- EndpointSequence makes two LLM calls: one picks the endpoint and its source files, one draws the diagram from them. When neither the pick nor the fallback yields readable source it records `sequence_grounded=False`, and the card carries a warning instead of passing for a grounded diagram (coderay-q2r.25). The pick goes through `crack.core.yaml_call` (coderay-q2r.18, a divergence from the port source, like q2r.16, q2r.17 and q2r.56), so a malformed or empty reply retries with a varied tail instead of dropping straight to the fallback, and a transport error reaches the node's own `max_retries` instead of being swallowed.
+- EndpointSequence makes two LLM calls: one picks the endpoint and its source files, one draws the diagram from them. When neither the pick nor the fallback yields readable source it records `sequence_grounded=False`, and the card carries a warning instead of passing for a grounded diagram (coderay-q2r.25). The pick goes through `crawl.core.yaml_call` (coderay-q2r.18, a divergence from the port source, like q2r.16, q2r.17 and q2r.56), so a malformed or empty reply retries with a varied tail instead of dropping straight to the fallback, and a transport error reaches the node's own `max_retries` instead of being swallowed.
 
-**Schema** (six sequential nodes: five in `src/crack/analyses/schema/nodes.py` plus the shared `OverviewNode`, wired in `build_flow()` in `src/crack/analyses/schema/__init__.py`):
+**Schema** (six sequential nodes: five in `src/crawl/analyses/schema/nodes.py` plus the shared `OverviewNode`, wired in `build_flow()` in `src/crawl/analyses/schema/__init__.py`):
 
 ```text
 FindSchema -> SchemaTour -> TraceFlows -> TableDeepDive -> MigrationActs -> OverviewNode
 ```
 
-- `src/crack/analyses/schema/schema_find.py` locates the schema by convention (Prisma, Rails, raw SQL, or concatenated `models.py`) and reads the migration directory with the most timestamped entries. Its `_read` goes through `crack.core.readable`, so a schema file that is a symlink to an in-repo credential file is refused by its target name (coderay-q2r.56, a deliberate divergence from the port source).
+- `src/crawl/analyses/schema/schema_find.py` locates the schema by convention (Prisma, Rails, raw SQL, or concatenated `models.py`) and reads the migration directory with the most timestamped entries. Its `_read` goes through `crawl.core.readable`, so a schema file that is a symlink to an in-repo credential file is refused by its target name (coderay-q2r.56, a deliberate divergence from the port source).
 - SchemaTour runs first among the LLM passes: its ER diagram names the core tables the flows and deep-dive passes then reuse, filtered against the table names actually declared in the schema so an invented entity never reaches them.
 - The only card-family analysis with a flag of its own (`--schema`; tour has `--instructions` and `--dry-run`), the only one that retitles the page from LLM output (`THEME.page_name`), and the only one using `when_empty="skip-note"`. TableDeepDive batches four tables per call, which is why its `ENV_DEFAULTS` is empty where the other card analyses raise `LLM_MAX_OUTPUT_TOKENS`.
 
-**Git history** (five sequential nodes: four in `src/crack/analyses/git_history/nodes.py` plus the shared `OverviewNode`, wired in `build_flow()` in `src/crack/analyses/git_history/__init__.py`):
+**Git history** (five sequential nodes: four in `src/crawl/analyses/git_history/nodes.py` plus the shared `OverviewNode`, wired in `build_flow()` in `src/crawl/analyses/git_history/__init__.py`):
 
 ```text
 FetchHistory -> NameEras -> ProfileEras -> Graveyard -> OverviewNode
 ```
 
-- The first of the two bespoke-renderer analyses (product-intent is the other): it declares its own `render_html`/`render_markdown` and `crack/core/render.py` defers to them, so it has no `SECTIONS` or `THEME`. `scripts/regen_golden.py` still reaches it through that delegation, but the bespoke divergence sets are per-analysis (`BESPOKE_DIVERGENCES`, keyed by name) because their mermaid line does not carry the card engine's `flowchart` option and they load different scripts.
-- `src/crack/analyses/git_history/gitlog.py` is the only module that reads commit history from `git` (the architecture crawler shells out to `git grep` for SDK imports). Its seams: `redact_secret_files` strips credential-bearing file bodies from every diff before it reaches a prompt, keeping the path and the `--stat` entry, and recognises every header form `git show` emits, quoted paths and merge `diff --cc` included (coderay-q2r.34, q2r.36); the log record separator is NUL, which git refuses in a message, every record head is validated whole before parsing, and `show_diff` peels its argument to a commit behind `--end-of-options`, because the old 0x1e separator was legal inside a subject and let a hostile commit forge a record whose hash was `--output=<path>` (an arbitrary file write) or a raw blob (q2r.35); `repo_root` refuses a subdirectory, since `git -C` walks up to the enclosing repo, and `FetchHistory` warns on a shallow clone (q2r.38).
-- `NameEras` and `ProfileEras` parse JSON through `crack.core.json_call`; `Graveyard` calls `call_llm` directly because its output is prose.
+- The first of the two bespoke-renderer analyses (product-intent is the other): it declares its own `render_html`/`render_markdown` and `crawl/core/render.py` defers to them, so it has no `SECTIONS` or `THEME`. `scripts/regen_golden.py` still reaches it through that delegation, but the bespoke divergence sets are per-analysis (`BESPOKE_DIVERGENCES`, keyed by name) because their mermaid line does not carry the card engine's `flowchart` option and they load different scripts.
+- `src/crawl/analyses/git_history/gitlog.py` is the only module that reads commit history from `git` (the architecture crawler shells out to `git grep` for SDK imports). Its seams: `redact_secret_files` strips credential-bearing file bodies from every diff before it reaches a prompt, keeping the path and the `--stat` entry, and recognises every header form `git show` emits, quoted paths and merge `diff --cc` included (coderay-q2r.34, q2r.36); the log record separator is NUL, which git refuses in a message, every record head is validated whole before parsing, and `show_diff` peels its argument to a commit behind `--end-of-options`, because the old 0x1e separator was legal inside a subject and let a hostile commit forge a record whose hash was `--output=<path>` (an arbitrary file write) or a raw blob (q2r.35); `repo_root` refuses a subdirectory, since `git -C` walks up to the enclosing repo, and `FetchHistory` warns on a shallow clone (q2r.38).
+- `NameEras` and `ProfileEras` parse JSON through `crawl.core.json_call`; `Graveyard` calls `call_llm` directly because its output is prose.
 
 
-**Product intent** (five sequential nodes in `src/crack/analyses/product_intent/nodes.py`, wired in `build_flow()` in `src/crack/analyses/product_intent/__init__.py`; no `OverviewNode`):
+**Product intent** (five sequential nodes in `src/crawl/analyses/product_intent/nodes.py`, wired in `build_flow()` in `src/crawl/analyses/product_intent/__init__.py`; no `OverviewNode`):
 
 ```text
 FetchRepo -> PainScene -> VariantSentence -> CompetitivePositioning -> SurprisesAndAbsences
@@ -108,10 +108,10 @@ FetchRepo -> PainScene -> VariantSentence -> CompetitivePositioning -> Surprises
 
 ## Conventions & Patterns
 
-- Card-family analyses (`backend`, `architecture`, `interfaces` and `schema`) declare `SECTIONS` and `THEME` and are rendered by `crack/core/render.py`. An analysis whose page shape does not fit declares its own `render_html` and `render_markdown` instead, and `crack/core/render.py` steps aside for it. Tour uses neither path: it predates the contract and writes its own multi-file output directly from `run()`, via `write_index_md`, `write_index_html` and `write_chapter_files`.
-- The voice every report is written in lives in one shipped block, `src/crack/core/prompts/house-style.md`, with the evidence rules (cite file and symbol, trace one real path) in `evidence-discipline.md` beside it; `crack.core.house_style` joins them and `crack.core.read_prompt` fills a prompt's `{house_style}` slot with the pair (coderay-aph). The overview takes the voice alone, since it is handed counts and gists, not source. Required headings and diagram syntax are exempt from the block's rules by its own second paragraph. Read that file before writing or editing a prompt template, an instructions lens, or renderer copy. A prose prompt carries the slot in its static prefix and does not restate the rules; a prompt whose reply is parsed, or whose reader is deliberately not an engineer, has no slot. `tests/test_prompts.py` pins which is which.
+- Card-family analyses (`backend`, `architecture`, `interfaces` and `schema`) declare `SECTIONS` and `THEME` and are rendered by `crawl/core/render.py`. An analysis whose page shape does not fit declares its own `render_html` and `render_markdown` instead, and `crawl/core/render.py` steps aside for it. Tour uses neither path: it predates the contract and writes its own multi-file output directly from `run()`, via `write_index_md`, `write_index_html` and `write_chapter_files`.
+- The voice every report is written in lives in one shipped block, `src/crawl/core/prompts/house-style.md`, with the evidence rules (cite file and symbol, trace one real path) in `evidence-discipline.md` beside it; `crawl.core.house_style` joins them and `crawl.core.read_prompt` fills a prompt's `{house_style}` slot with the pair (coderay-aph). The overview takes the voice alone, since it is handed counts and gists, not source. Required headings and diagram syntax are exempt from the block's rules by its own second paragraph. Read that file before writing or editing a prompt template, an instructions lens, or renderer copy. A prose prompt carries the slot in its static prefix and does not restate the rules; a prompt whose reply is parsed, or whose reader is deliberately not an engineer, has no slot. `tests/test_prompts.py` pins which is which.
 - Untrusted input (the target repo's own files, and anything the LLM echoes back from them) must be escaped before it reaches HTML/Mermaid output.
-- LLM structured output goes through `crack.core.yaml_call` or `crack.core.json_call`, not a bespoke `parse_yaml`/`parse_json`/`.format()` combo in pipeline nodes -- that duplication was a real bug fixed in a prior epic. Reuse those and `crack.core.fill()` for new LLM-calling code. Both share one `_REPLY_ERRORS` tuple that includes `TypeError`/`AttributeError`, because `normalize()` is handed whatever the model returned and a wrong-shaped reply used to escape every retry (coderay-q2r.33).
+- LLM structured output goes through `crawl.core.yaml_call` or `crawl.core.json_call`, not a bespoke `parse_yaml`/`parse_json`/`.format()` combo in pipeline nodes -- that duplication was a real bug fixed in a prior epic. Reuse those and `crawl.core.fill()` for new LLM-calling code. Both share one `_REPLY_ERRORS` tuple that includes `TypeError`/`AttributeError`, because `normalize()` is handed whatever the model returned and a wrong-shaped reply used to escape every retry (coderay-q2r.33).
 - Any file-content budget (`preview_budget`, `codebase_budget`) must be enforced by capping _how many files_ are included, not by raising a per-file floor -- that inversion was the root cause of two Critical scalability bugs.
 - Tests live in `tests/`, run via plain `pytest`, no network/API key required -- LLM calls are faked at the `call_llm`/`yaml_call` boundary, not mocked deeper in the call stack.
 

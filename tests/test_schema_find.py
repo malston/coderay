@@ -1,6 +1,6 @@
 import pytest
 
-from crack.analyses.schema import schema_find as sf
+from crawl.analyses.schema import schema_find as sf
 
 
 def _repo(tmp_path, files):

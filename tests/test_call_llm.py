@@ -7,11 +7,11 @@ import types
 
 import pytest
 
-# crack.core/__init__.py re-exports call_llm the function under the same name as the
-# call_llm module, shadowing `crack.core.call_llm` as an attribute -- fetch the
+# crawl.core/__init__.py re-exports call_llm the function under the same name as the
+# call_llm module, shadowing `crawl.core.call_llm` as an attribute -- fetch the
 # actual module out of sys.modules instead of relying on attribute access.
-call_llm_module = importlib.import_module("crack.core.call_llm")
-from crack.core.call_llm import _cache_path, _cache_put, call_llm
+call_llm_module = importlib.import_module("crawl.core.call_llm")
+from crawl.core.call_llm import _cache_path, _cache_put, call_llm
 
 
 class _FakeStream:
@@ -405,7 +405,7 @@ def test_cache_hit_records_a_zero_usage_entry(monkeypatch, tmp_path):
 
 
 def test_resolve_provider_and_model_matches_call_llm_defaults():
-    from crack.core.call_llm import resolve_provider_and_model
+    from crawl.core.call_llm import resolve_provider_and_model
     assert resolve_provider_and_model() == ("anthropic", "claude-sonnet-5")
 
 
@@ -524,7 +524,7 @@ def _fake_anthropic_module_capturing_kwargs(captured, text="ok"):
 
 
 def test_prompt_with_cache_breakpoint_sends_a_cached_prefix_block(monkeypatch):
-    from crack.core.call_llm import CACHE_BREAKPOINT
+    from crawl.core.call_llm import CACHE_BREAKPOINT
 
     captured = {}
     monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module_capturing_kwargs(captured))
@@ -552,7 +552,7 @@ def test_breakpoint_lookalike_in_untrusted_content_does_not_fool_the_split(monke
     # breakpoint in write-chapter.md. A target repo containing the literal
     # marker string must not be treated as the real split point -- the real
     # breakpoint is always the last occurrence in a correctly-filled prompt.
-    from crack.core.call_llm import CACHE_BREAKPOINT
+    from crawl.core.call_llm import CACHE_BREAKPOINT
 
     captured = {}
     monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module_capturing_kwargs(captured))
@@ -577,7 +577,7 @@ def test_marker_with_empty_prefix_or_suffix_is_ignored_as_a_split_point(monkeypa
     # an empty prefix or suffix. Splitting there would either send an empty
     # content block to Anthropic or cache nothing useful -- both are worse
     # than treating the prompt as unsplit.
-    from crack.core.call_llm import CACHE_BREAKPOINT
+    from crawl.core.call_llm import CACHE_BREAKPOINT
 
     captured = {}
     monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module_capturing_kwargs(captured))
@@ -624,7 +624,7 @@ def _fake_openai_module_capturing_kwargs(captured, text="ok"):
 
 
 def test_cache_breakpoint_marker_is_stripped_for_non_anthropic_providers(monkeypatch):
-    from crack.core.call_llm import CACHE_BREAKPOINT
+    from crawl.core.call_llm import CACHE_BREAKPOINT
 
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     captured = {}
@@ -681,7 +681,7 @@ def _install_fake_gemini_module(monkeypatch, captured, text="ok"):
 
 
 def test_cache_breakpoint_marker_is_stripped_for_gemini(monkeypatch):
-    from crack.core.call_llm import CACHE_BREAKPOINT
+    from crawl.core.call_llm import CACHE_BREAKPOINT
 
     monkeypatch.setenv("LLM_PROVIDER", "gemini")
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
@@ -700,7 +700,7 @@ def test_disk_cache_key_matches_the_marker_stripped_text_actually_sent(monkeypat
     # must be derived from that same marker-stripped text -- keying on the
     # raw template text (marker included) would miss cache hits for
     # semantically identical requests.
-    from crack.core.call_llm import CACHE_BREAKPOINT, _cache_path
+    from crawl.core.call_llm import CACHE_BREAKPOINT, _cache_path
 
     call_llm_module.CACHE_DIR = str(tmp_path)
     prompt = f"stable stuff{CACHE_BREAKPOINT}volatile stuff"
@@ -783,7 +783,7 @@ def test_truncated_response_is_its_own_error_and_says_how_to_raise_the_cap(monke
     """coderay-q2r.46. A truncation is deterministic (same prompt, same cap,
     same cut), so callers need to tell it from a transient failure, and the
     user needs to know which knob to turn."""
-    from crack.core.call_llm import ResponseTruncated
+    from crawl.core.call_llm import ResponseTruncated
     monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module("max_tokens"))
     monkeypatch.setenv("LLM_MAX_OUTPUT_TOKENS", "16384")
     with pytest.raises(ResponseTruncated, match=r"LLM_MAX_OUTPUT_TOKENS.*16384"):

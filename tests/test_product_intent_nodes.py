@@ -2,13 +2,13 @@ import pathlib
 
 import pytest
 
-import crack.core.llm as llm_module
-from crack.analyses.product_intent import nodes as n
+import crawl.core.llm as llm_module
+from crawl.analyses.product_intent import nodes as n
 
 
 def _fake_llm(monkeypatch, fn):
     """PainScene and VariantSentence call call_llm directly; the YAML nodes go
-    through crack.core.yaml_call, which resolves call_llm in its own module."""
+    through crawl.core.yaml_call, which resolves call_llm in its own module."""
     monkeypatch.setattr(n, "call_llm", fn)
     monkeypatch.setattr(llm_module, "call_llm", fn)
 
@@ -170,7 +170,7 @@ def test_list_files_walks_directories_in_sorted_order(tmp_path, monkeypatch):
     """Which files fit under the budget must not depend on scandir order, so
     the walk is fed a scrambled order and must still come out sorted."""
     import os
-    from crack.core import crawl, list_files
+    from crawl.core import files, list_files
     names = ["mid", "zeta", "alpha", "omega", "beta"]
     repo = _tree(tmp_path, {f"{d}/f.py": "x\n" for d in names})
     real_walk = os.walk
@@ -180,7 +180,7 @@ def test_list_files_walks_directories_in_sorted_order(tmp_path, monkeypatch):
             dirnames.sort(key=names.index) if set(dirnames) == set(names) else None
             yield dirpath, dirnames, filenames
 
-    monkeypatch.setattr(crawl.os, "walk", scrambled)
+    monkeypatch.setattr(files.os, "walk", scrambled)
     rels = [pathlib.Path(p).relative_to(repo).parts[0] for p in list_files(repo)]
     assert rels == sorted(names)
 
