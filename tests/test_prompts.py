@@ -113,3 +113,26 @@ def test_prose_prompts_do_not_restate_the_house_style():
             continue
         for phrase in restated:
             assert phrase not in template.lower(), f"{rel} restates: {phrase}"
+
+
+def test_house_style_exempts_required_output_syntax_and_adds_no_header_of_its_own():
+    """Codex review of PR #33. The block bans em dashes and "welcome", and the
+    prompts it rides in require `## Welcome` and `### Layer N — Name` headers
+    that a parser keys on. The block says those are written exactly as given,
+    and it carries no `## ` header that an "only these headers" instruction
+    could be read against."""
+    from crack.core import house_style
+    text = house_style()
+    assert "exactly as given" in text
+    assert not [l for l in text.splitlines() if l.startswith("#")]
+
+
+def test_house_style_evidence_rules_can_be_left_out():
+    """Codex review of PR #33. The overview receives aggregate facts and no
+    source, so the citation and trace rules would make it invent evidence."""
+    from crack.core import house_style
+    full, voice = house_style(), house_style(with_evidence=False)
+    assert "Cite the file and symbol" in full and "Trace one real path" in full
+    assert "Cite the file and symbol" not in voice and "Trace one real path" not in voice
+    assert "concrete nouns" in voice
+    assert voice in full

@@ -63,7 +63,7 @@ def write_overview(name, what, sections, facts=""):
     headers = "\n".join(f"## {t}" for t in titles)
     raw = call_llm(fill(
         _PROMPT, name=name, what=what, facts=facts.strip() or "(no extra facts)",
-        sections=slist, headers=headers, house_style=house_style()))
+        sections=slist, headers=headers, house_style=house_style(with_evidence=False)))
 
     blocks = {}
     for m in re.finditer(r'^##[ \t]+(.+?)[ \t]*\n(.*?)(?=^##[ \t]|\Z)', raw, re.MULTILINE | re.DOTALL):

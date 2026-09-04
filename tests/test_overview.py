@@ -93,3 +93,19 @@ def test_write_overview_prompt_carries_the_house_style(monkeypatch):
     assert "concrete nouns" in seen["p"]
     assert "{house_style}" not in seen["p"]
     assert '("seamless", "powerful"' not in seen["p"]   # the old inline banned-word list is gone
+
+
+def test_write_overview_prompt_asks_for_voice_but_not_citations(monkeypatch):
+    """Codex review of PR #33. The overview has counts and section gists, no
+    source, so the evidence rules stay out; the `## Welcome` header it
+    requires is exempt from the ban on "welcome"."""
+    seen = {}
+
+    def capture(prompt):
+        seen["p"] = prompt
+        return REPLY
+
+    monkeypatch.setattr("crack.core.overview.call_llm", capture)
+    write_overview("toy_repo", "a backend", SECTIONS)
+    assert "Cite the file and symbol" not in seen["p"]
+    assert "## Welcome" in seen["p"] and "exactly as given" in seen["p"]
