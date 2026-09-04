@@ -35,7 +35,8 @@ def _candidates(module_dotted, selected_files):
     return matches if len(matches) <= 1 else []
 
 
-def imports(path, text, selected_files):
+def imports(path, text, selected_files, root=None):
+    # `root` is the repo root, for extractors that read a manifest; unused here.
     parser = Parser(_LANGUAGE)
     tree = parser.parse(text.encode("utf-8"))
     query = Query(_LANGUAGE, _IMPORT_QUERY_SRC)

@@ -59,7 +59,8 @@ def _candidates(specifier, importer_path, selected_files):
     return out if len(out) <= 1 else []
 
 
-def imports(path, text, selected_files):
+def imports(path, text, selected_files, root=None):
+    # `root` is the repo root, for extractors that read a manifest; unused here.
     language = _language_for(path)
     parser = Parser(language)
     tree = parser.parse(text.encode("utf-8"))
