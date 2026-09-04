@@ -124,3 +124,52 @@ def test_list_files_accepts_an_uppercase_keep_ext_override(tmp_path):
     (tmp_path / "helpers.R").write_text("y <- 2\n")
     names = {os.path.basename(p) for p in list_files(str(tmp_path), keep_ext={".R"})}
     assert names == {"analysis.r", "helpers.R"}
+
+
+def test_readable_refuses_a_credential_named_target_unless_the_crawler_opts_in(tmp_path):
+    """coderay-q2r.56. The name checked is the resolved target's, so a symlink
+    cannot rename a credential file into source. The architecture crawler
+    reads a real .env on purpose (variable names only) and opts in; the opt-in
+    never extends to a symlink."""
+    from crack.core import readable
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    (repo / ".env").write_text("SECRET=1\n")
+    (repo / "src" / "real.py").write_text("x = 1\n")
+    (repo / "src" / "config.py").symlink_to(repo / ".env")
+    (repo / "src" / "alias.py").symlink_to(repo / "src" / "real.py")
+
+    assert not readable(repo, repo / ".env")                # a credential file named outright
+    assert readable(repo, repo / ".env", credential_names=True)   # unless the crawler reads it on purpose
+    assert not readable(repo, repo / "src" / "config.py", credential_names=True)  # a symlink to one never is
+    assert readable(repo, repo / "src" / "alias.py")        # a legitimate in-repo symlink
+    assert not readable(repo, repo / "src" / "config.py")   # a symlink that renames one
+
+
+def test_credential_names_cover_every_dotenv_variant_except_the_templates():
+    """coderay-q2r.60. The list named .env, .env.local and .env.production, so
+    `.env.staging` and `.envrc` were read whole. Every `.env*` is a credential
+    file except the two committed templates the crawlers keep on purpose."""
+    for name in (".env.staging", ".env.test", ".ENV.Development", ".envrc"):
+        assert not crawl._wanted(name, set(), {name}), name
+    for name in (".env.example", ".env.sample"):
+        assert crawl._wanted(name, set(), crawl.DEFAULT_KEEP_NAMES), name
+
+
+def test_readable_refuses_a_symlink_to_a_dotenv_variant(tmp_path):
+    """coderay-q2r.60. Reproduction from the PR #30 review."""
+    from crack.core import readable
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".env.staging").write_text("STAGE=stag3\n")
+    (repo / "cfg.ts").symlink_to(repo / ".env.staging")
+    assert not readable(repo, repo / "cfg.ts")
+
+
+def test_dotenv_templates_are_the_keep_names_dotenv_entries():
+    """PR #30 review. `_wanted` refuses every `.env*` before it consults
+    keep_names, so a template listed in one set and not the other silently
+    disagrees. One set derives from the other."""
+    assert {n for n in crawl.DEFAULT_KEEP_NAMES if n.startswith('.env')} == crawl.DOTENV_TEMPLATES
+    for name in crawl.DOTENV_TEMPLATES:
+        assert crawl._wanted(name, set(), crawl.DEFAULT_KEEP_NAMES)

@@ -60,16 +60,19 @@ DEFAULT_KEEP_EXT = frozenset({
     '.ejs', '.hbs', '.handlebars', '.erb', '.jinja', '.j2', '.liquid',
 })
 
+# Committed dotenv templates: variable names with placeholder values. The only
+# `.env*` files a crawler reads (coderay-q2r.60).
+DOTENV_TEMPLATES = frozenset({'.env.example', '.env.sample'})
+
 # Extensionless filenames that ARE source. Without this set,
 # os.path.splitext('Dockerfile')[1] == '' silently drops them.
-DEFAULT_KEEP_NAMES = frozenset({
+DEFAULT_KEEP_NAMES = DOTENV_TEMPLATES | frozenset({
     'Dockerfile', 'Containerfile', '.dockerignore',
     'Makefile', 'GNUmakefile', 'Justfile',
     'Rakefile', 'Gemfile', 'Procfile', 'Vagrantfile', 'Brewfile',
     'CMakeLists.txt',
     'README', 'LICENSE', 'NOTICE',
     '.gitignore', '.gitattributes', '.editorconfig',
-    '.env.example', '.env.sample',
 })
 
 # Directories to skip. Covers the noise categories the Ch3 chapter calls out:
@@ -103,7 +106,7 @@ DEFAULT_MAX_FILE_BYTES = 500_000
 # keep_ext/keep_names — these are excluded even if a caller explicitly asks
 # for their extension.
 DEFAULT_SKIP_NAMES = frozenset({
-    '.env', '.env.local', '.env.production', '.netrc', '.npmrc', '.pypirc',
+    '.netrc', '.npmrc', '.pypirc',
     'credentials', 'credentials.json', 'service-account.json', 'client_secret.json',
     'id_rsa', 'id_ed25519', 'id_ecdsa', 'id_dsa', '.htpasswd', 'terraform.tfvars',
     # coderay-q2r.37: pure-credential names the list missed while it was only
@@ -132,16 +135,42 @@ def within_repo(repo, path):
     return target == root or target.startswith(root + os.sep)
 
 
-def _wanted(filename, keep_ext, keep_names):
-    # Case-folded for the skip and extension checks so `credentials.JSON` is
-    # refused the same way `credentials.json` is; keep_names stays exact
-    # (Dockerfile, README).
+def readable(repo, path, *, credential_names=False):
+    """True if a file a crawler discovered in `repo` may be read into a prompt.
+
+    `within_repo` alone lets `app/urls.py -> ../.env` through: the target is
+    inside the repo, it is only credential-named. So the target's own name has
+    to clear the credential skip as well, the rule list_files already applies
+    at walk time (coderay-q2r.52), and a model-named `.env` is refused the
+    same way (coderay-q2r.56).
+
+    `credential_names=True` lets a crawler read a credential-named file it
+    walked to itself (the architecture crawler reads a real `.env` for variable
+    names); a symlink to one is still refused.
+    """
+    if not within_repo(repo, path):
+        return False
+    if credential_names and not os.path.islink(path):
+        return True
+    return not _credential_named(os.path.basename(os.path.realpath(path)))
+
+
+def _credential_named(filename):
+    # Case-folded so `credentials.JSON` is refused the same way `credentials.json` is.
     lowered = filename.lower()
-    if lowered in DEFAULT_SKIP_NAMES or lowered.endswith(DEFAULT_SKIP_SUFFIXES):
+    if lowered.startswith('.env'):
+        return lowered not in DOTENV_TEMPLATES
+    return lowered in DEFAULT_SKIP_NAMES or lowered.endswith(DEFAULT_SKIP_SUFFIXES)
+
+
+def _wanted(filename, keep_ext, keep_names):
+    # keep_names stays exact (Dockerfile, README); the extension check is
+    # case-folded like the credential skip.
+    if _credential_named(filename):
         return False
     if filename in keep_names:
         return True
-    return os.path.splitext(lowered)[1] in keep_ext
+    return os.path.splitext(filename.lower())[1] in keep_ext
 
 
 def _compile(patterns):

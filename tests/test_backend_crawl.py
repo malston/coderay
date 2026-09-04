@@ -172,3 +172,62 @@ def test_build_bundle_keeps_an_uppercase_source_extension(tmp_path):
     bundle, stats = bc.build_bundle(repo)
     assert stats["counts"]["route"] == 1
     assert "urlpatterns = []" in bundle
+
+
+def test_build_bundle_skips_a_virtualenv_named_env(tmp_path):
+    """coderay-q2r.59. `python -m venv env` in the target put Django's own
+    urls.py in the route count; SKIP_DIRS is DEFAULT_SKIP_DIR plus the
+    backend's extras, not a hand-written subset of it."""
+    repo = _repo(tmp_path, {
+        "app/urls.py": "ok\n",
+        "env/lib/python3.12/site-packages/django/contrib/admin/urls.py": "ignored\n",
+        "spec/controllers/users_controller_spec.rb": "ignored\n",
+    })
+    bundle, stats = bc.build_bundle(repo)
+    assert stats["counts"] == {"route": 1}
+    assert "ignored" not in bundle
+
+
+def test_classify_treats_a_rails_spec_as_a_test():
+    """coderay-q2r.59. `_spec.rb` is the RSpec convention and was not in the
+    test-marker tuple, so a spec beside the controllers counted as a handler."""
+    assert bc.classify("app/controllers/users_controller_spec.rb") is None
+    assert bc.classify("app/controllers/users_controller.rb") == "handler"
+
+
+def test_build_bundle_gives_every_layer_a_file_before_a_spine_file_takes_the_rest(tmp_path):
+    """coderay-q2r.58. Spine files went first and in full, so one 499k routes
+    file spent most of the 650k budget and the sampled layers were dropped
+    while the header still counted them. Selection is round-robin across the
+    layers; a file that does not fit is dropped whole, never cut."""
+    files = {"app/routes/bundle.js": "r" * 499_000}
+    for layer_dir in ("views", "services", "models"):
+        for i in range(18):
+            files[f"app/{layer_dir}/f{i}.py"] = f"# {layer_dir} {i}\n" + "x" * 5_000
+    repo = _repo(tmp_path, files)
+    bundle, stats = bc.build_bundle(repo)
+    assert stats["counts"] == {"route": 1, "handler": 18, "service": 18, "database": 18}
+    assert len(bundle) <= 650_000
+    assert "LAYER ROUTE: app/routes/bundle.js" in bundle
+    shares = [bundle.count(f"LAYER {layer}: ") for layer in ("HANDLER", "SERVICE", "DATABASE")]
+    assert min(shares) >= 1 and max(shares) - min(shares) <= 1, shares
+    # Grouped emission: the prompts see the layers in the same order as before.
+    assert bundle.index("LAYER ROUTE:") < bundle.index("LAYER HANDLER:") < bundle.index("LAYER DATABASE:")
+
+
+def test_classify_keeps_a_non_rails_file_whose_name_contains_spec():
+    """PR #30 review. The RSpec marker is `_spec.rb`; openapi_spec.py is source."""
+    assert bc.classify("app/services/openapi_spec.py") == "service"
+    assert bc.classify("src/routes/openapi_spec.ts") == "route"
+
+
+def test_build_bundle_samples_from_readable_files_not_from_the_first_n_paths(tmp_path):
+    """PR #30 review. The sample was sliced to per_layer_sample paths before any
+    file was read, so empty files took every slot and a readable file ranked
+    after them was never a candidate."""
+    files = {f"app/views/a{i:02d}.py": "" for i in range(18)}
+    files["app/views/zeta.py"] = "def z(): pass\n"
+    repo = _repo(tmp_path, files)
+    bundle, stats = bc.build_bundle(repo)
+    assert stats == {"counts": {"handler": 19}, "included": 1}
+    assert "app/views/zeta.py" in bundle

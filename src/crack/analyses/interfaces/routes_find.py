@@ -17,13 +17,9 @@ Nothing here calls an LLM.
 """
 import os
 
-from crack.core import within_repo
+from crack.core import DEFAULT_SKIP_DIR, readable
 
-SKIP_DIRS = frozenset({
-    '.git', '.hg', '.svn', 'node_modules', 'dist', 'build', '.next', '.nuxt',
-    'target', 'vendor', 'venv', '.venv', '__pycache__', '.cache', 'coverage',
-    'test', 'tests', '__tests__', 'examples', 'docs', '.turbo', '.storybook',
-})
+SKIP_DIRS = DEFAULT_SKIP_DIR | {'.storybook'}
 
 _TEST_MARKERS = ('.test.', '.spec.', '_test.', '.stories.')
 _ROUTE_BASENAMES = frozenset({
@@ -76,8 +72,9 @@ def _read(path, repo=None):
     # A route file discovered by the walk may be a symlink out of the repo, and
     # its contents go into a prompt sent to a third-party LLM. read_files
     # already refuses LLM-named paths; this is the same rule at discovery time
-    # (coderay-q2r.28).
-    if repo is not None and not within_repo(repo, path):
+    # (coderay-q2r.28), and the link target has to clear the credential skip
+    # too (coderay-q2r.56).
+    if repo is not None and not readable(repo, path):
         return ""
     try:
         return open(path, encoding='utf-8', errors='replace').read()
@@ -115,13 +112,14 @@ def crawl_routes(repo, max_chars=900_000):
 
 
 def _within(repo, full):
-    """True if `full` resolves inside `repo`, symlinks followed.
+    """True if `full` resolves inside `repo`, symlinks followed, and a symlink
+    does not rename a credential file (coderay-q2r.56).
 
-    Delegates to crack.core.within_repo, which all three crawlers share; this
+    Delegates to crack.core.readable, which all three crawlers share; this
     module keeps the name because read_files reads better with it. The
     containment seam is coderay's, not the port source's (coderay-q2r.16 for
     LLM-named paths, coderay-q2r.28 for discovery)."""
-    return within_repo(repo, full)
+    return readable(repo, full)
 
 
 def read_files(repo, paths, max_chars=120_000, max_files=8):

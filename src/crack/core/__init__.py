@@ -28,6 +28,7 @@ from .crawl import (  # noqa: F401
     DEFAULT_MAX_FILE_BYTES,
     DEFAULT_SKIP_NAMES,
     DEFAULT_SKIP_SUFFIXES,
+    readable,
     within_repo,
 )
 from .env import env_defaults  # noqa: F401

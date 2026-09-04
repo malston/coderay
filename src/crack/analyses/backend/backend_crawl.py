@@ -5,23 +5,27 @@ Every backend is the same six layers with different names:
 
 We classify each source file into a layer by its path, report a file count per
 layer (so the prompts can lead with a concrete number, not an adjective), and
-build a bundle that includes the 'spine' files in full — routing, middleware,
-and the response/decorator helpers, where teams write their custom idioms — plus
-a size-capped sample of the handler/service/model files. Nothing calls an LLM.
+build a bundle that leads with the 'spine' files — routing, middleware, and the
+response/decorator helpers, where teams write their custom idioms — plus a
+sample of the handler/service/model files, chosen round-robin across the layers
+until the budget is spent. Nothing is cut part way. Nothing calls an LLM.
 """
 import os
 from collections import Counter
 
-from crack.core import list_files, safe_read
+from crack.core import DEFAULT_SKIP_DIR, list_files, safe_read
 
-SKIP_DIRS = frozenset({
-    '.git', '.hg', '.svn', 'node_modules', 'dist', 'build', '.next', '.nuxt',
-    'target', 'vendor', 'venv', '.venv', '__pycache__', '.cache', 'coverage',
-    '.turbo', '.yarn', 'test', 'tests', '__tests__', 'migrations', 'static',
-    'locale', 'docs', 'frontend_tests', 'node_tests',
-})
+# The crawler's shared noise set plus the directories a backend keeps that
+# hold no request-path code (coderay-q2r.59: the port's own list missed `env`,
+# `spec` and `.tox`, so a virtualenv or an RSpec tree inflated the counts).
+SKIP_DIRS = DEFAULT_SKIP_DIR | {
+    '.yarn', 'migrations', 'static', 'locale', 'frontend_tests', 'node_tests',
+}
 SRC_EXT = ('.py', '.ts', '.tsx', '.js', '.rb', '.go', '.java', '.php')
-# Files where teams most often write custom idioms — always included in full.
+LAYERS = ('route', 'middleware', 'handler', 'service', 'database', 'response')
+# Spine layers lead the bundle; the sampled layers follow.
+BUNDLE_ORDER = ('route', 'middleware', 'response', 'handler', 'service', 'database')
+# Files where teams most often write custom idioms.
 SPINE_NAMES = ('urls.py', 'rest.py', 'response.py', 'decorator.py', 'decorators.py',
                'middleware.py', 'computed_settings.py', 'routes.rb', 'application_controller.rb')
 # Core-action keywords: sample these files first so the trace has the spine endpoint.
@@ -39,7 +43,7 @@ def classify(rel):
     base = os.path.basename(p)
     if not p.endswith(SRC_EXT):
         return None
-    if any(m in base for m in ('.test.', '.spec.', '_test.', '.stories.')):
+    if any(m in base for m in ('.test.', '.spec.', '_test.', '.stories.')) or base.endswith('_spec.rb'):
         return None
     # Route
     if (base in ('urls.py', 'routes.rb', 'routes.ts', 'router.ts', 'routes.js', 'router.js')
@@ -70,7 +74,7 @@ def _priority(rel):
 
 
 def build_bundle(repo, max_chars=650_000, per_layer_sample=18):
-    files_by_layer = {k: [] for k in ('route', 'middleware', 'handler', 'service', 'database', 'response')}
+    files_by_layer = {k: [] for k in LAYERS}
     counts = Counter()
     # list_files carries the repo containment and credential-name checks every
     # crawler shares (coderay-q2r.54). keep_ext/keep_names are narrowed to the
@@ -84,29 +88,45 @@ def build_bundle(repo, max_chars=650_000, per_layer_sample=18):
             counts[layer] += 1
             files_by_layer[layer].append(rel)
 
-    # Decide what to include: spine layers in full; handlers/services/models sampled.
-    include = []
+    # Candidates per layer: every spine file; handlers/services/models ranked,
+    # and sampled from the files that actually have text, so an empty or
+    # undecodable file does not use up a sample slot.
+    queues, limit = {}, {}
     for layer in ('route', 'middleware', 'response'):
-        include += [(layer, r) for r in sorted(files_by_layer[layer])]
+        queues[layer] = sorted(files_by_layer[layer])
     for layer in ('handler', 'service', 'database'):
-        ranked = sorted(files_by_layer[layer], key=lambda r: (_priority(r), r))
-        include += [(layer, r) for r in ranked[:per_layer_sample]]
+        queues[layer] = sorted(files_by_layer[layer], key=lambda r: (_priority(r), r))
+        limit[layer] = per_layer_sample
 
     header = "===== LAYER FILE COUNTS (whole repo) =====\n" + "\n".join(
-        f"{layer}: {counts[layer]} files"
-        for layer in ('route', 'middleware', 'handler', 'service', 'database', 'response')) + "\n"
+        f"{layer}: {counts[layer]} files" for layer in LAYERS) + "\n"
 
-    parts, total, kept = [header], len(header), 0
-    for layer, rel in include:
-        text = safe_read(os.path.join(repo, rel))
-        if not text or not text.strip():
-            continue
-        block = f"\n===== LAYER {layer.upper()}: {rel} =====\n{text}\n"
-        if total + len(block) > max_chars:
-            continue
-        parts.append(block)
-        total += len(block)
-        kept += 1
+    # Selection is round-robin across the layers, spine first within a round,
+    # so every layer with files reaches the bundle before any layer gets its
+    # second file; a file that does not fit is dropped whole, never cut
+    # (coderay-q2r.58). Emission is grouped by layer, so the prompts see the
+    # same layout whichever order the files were chosen in.
+    # ponytail: one sub-limit spine file still spends its whole size from the
+    # shared budget; a per-layer share is the upgrade if that starves the rest.
+    chosen = {layer: [] for layer in LAYERS}
+    total = len(header)
+    while any(queues.values()):
+        for layer in BUNDLE_ORDER:
+            if len(chosen[layer]) >= limit.get(layer, float('inf')):
+                queues[layer] = []
+            if not queues[layer]:
+                continue
+            rel = queues[layer].pop(0)
+            text = safe_read(os.path.join(repo, rel))
+            if not text or not text.strip():
+                continue
+            block = f"\n===== LAYER {layer.upper()}: {rel} =====\n{text}\n"
+            if total + len(block) > max_chars:
+                continue
+            chosen[layer].append(block)
+            total += len(block)
+    parts = [header] + [block for layer in BUNDLE_ORDER for block in chosen[layer]]
+    kept = len(parts) - 1
 
     if not kept:
         # The counts header alone tells the model nothing it can read a backend

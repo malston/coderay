@@ -52,7 +52,7 @@ BuildBundle -> Pipeline -> LayerCode -> Trace -> OverviewNode
 ```
 
 - Analyzes the repository structure and maps files to six semantic layers: route, middleware, handler, service, database, response.
-- `src/crack/analyses/backend/backend_crawl.py` walks the repo through `crack.core.list_files`, so it gets the repo containment and credential-name skips at walk time, symlink target names included (coderay-q2r.54, the one deliberate divergence from the port source in that module). A source file over `DEFAULT_MAX_FILE_BYTES` is dropped from the walk, so it leaves the layer counts too; one that does not decode as UTF-8 is counted but its body is left out. Nothing arrives cut off part way.
+- `src/crack/analyses/backend/backend_crawl.py` walks the repo through `crack.core.list_files`, so it gets the repo containment and credential-name skips at walk time, symlink target names included (coderay-q2r.54). A source file over `DEFAULT_MAX_FILE_BYTES` is dropped from the walk, so it leaves the layer counts too; one that does not decode as UTF-8 is counted but its body is left out, and when that leaves every counted file out, `BuildBundle` aborts with the counts it has rather than claiming no backend was found (coderay-q2r.57). Nothing arrives cut off part way. Its `SKIP_DIRS` is `DEFAULT_SKIP_DIR` plus the backend extras, and `_spec.` marks a test (coderay-q2r.59). Bundle files are chosen round-robin across the layers, so one large spine file cannot starve the sampled ones, and are emitted grouped by layer (coderay-q2r.58). All four are deliberate divergences from the port source.
 - Renders three views: the pipeline with file counts per layer, code snippets at layer boundaries, and a request trace through all six.
 
 **Architecture** (five sequential nodes: four in `src/crack/analyses/architecture/nodes.py` plus the shared `OverviewNode`, wired in `build_flow()` in `src/crack/analyses/architecture/__init__.py`):
@@ -61,7 +61,7 @@ BuildBundle -> Pipeline -> LayerCode -> Trace -> OverviewNode
 BuildBundle -> Inventory -> TechStack -> TraceRequest -> OverviewNode
 ```
 
-- `src/crack/analyses/architecture/arch_crawl.py` overlays four sources into one bundle: process declarations (compose, k8s, `Procfile`, platform config), env var names from `.env` files, with credential values redacted out of every other source by `_redact` (coderay-q2r.14, the one deliberate divergence from the port source in that module), the union of `package.json` dependencies, and Terraform, plus SDK import lines from `git grep` as proof a connection is live.
+- `src/crack/analyses/architecture/arch_crawl.py` overlays four sources into one bundle: process declarations (compose, k8s, `Procfile`, platform config), env var names from `.env` files, with credential values redacted out of every other source by `_redact` (coderay-q2r.14, a deliberate divergence from the port source, as is `_read` refusing a symlink whose target is credential-named, coderay-q2r.56), the union of `package.json` dependencies, and Terraform, plus SDK import lines from `git grep` as proof a connection is live.
 - Inventory runs first among the LLM passes, and its numbered node list is reused by TechStack and TraceRequest, so all three name the same graph.
 - Renders three views: every node banded run/rent/call/client, the technology behind each label, and one request traced hop by hop.
 
@@ -71,9 +71,9 @@ BuildBundle -> Inventory -> TechStack -> TraceRequest -> OverviewNode
 FindRoutes -> ApiMenu -> TraceActions -> EndpointSequence -> OverviewNode
 ```
 
-- `src/crack/analyses/interfaces/routes_find.py` finds entry-point files by framework convention and concatenates them, aggregators first. `read_files` resolves LLM-picked source paths and refuses any that leave the repo (`_within`, coderay-q2r.16, the one deliberate divergence in that module).
+- `src/crack/analyses/interfaces/routes_find.py` finds entry-point files by framework convention and concatenates them, aggregators first. `read_files` resolves LLM-picked source paths and refuses any that leave the repo (`_within`, coderay-q2r.16), and both it and the crawl's `_read` go through `crack.core.readable`, which also refuses a credential-named target, whether the model named `.env` outright or a symlink inside the repo resolves to one (coderay-q2r.56; both are deliberate divergences from the port source).
 - The only analysis using the engine's `when_empty="omit"` (the tour) and a Section's own `prefix`/`cards` hooks (the sequence diagram and its card). Four sections, like schema.
-- EndpointSequence makes two LLM calls: one picks the endpoint and its source files, one draws the diagram from them. When neither the pick nor the fallback yields readable source it records `sequence_grounded=False`, and the card carries a warning instead of passing for a grounded diagram (coderay-q2r.25). The pick goes through `crack.core.yaml_call` (coderay-q2r.18, one of three divergences in this analysis, with q2r.16 and q2r.17), so a malformed or empty reply retries with a varied tail instead of dropping straight to the fallback, and a transport error reaches the node's own `max_retries` instead of being swallowed.
+- EndpointSequence makes two LLM calls: one picks the endpoint and its source files, one draws the diagram from them. When neither the pick nor the fallback yields readable source it records `sequence_grounded=False`, and the card carries a warning instead of passing for a grounded diagram (coderay-q2r.25). The pick goes through `crack.core.yaml_call` (coderay-q2r.18, a divergence from the port source, like q2r.16, q2r.17 and q2r.56), so a malformed or empty reply retries with a varied tail instead of dropping straight to the fallback, and a transport error reaches the node's own `max_retries` instead of being swallowed.
 
 **Schema** (six sequential nodes: five in `src/crack/analyses/schema/nodes.py` plus the shared `OverviewNode`, wired in `build_flow()` in `src/crack/analyses/schema/__init__.py`):
 
@@ -81,7 +81,7 @@ FindRoutes -> ApiMenu -> TraceActions -> EndpointSequence -> OverviewNode
 FindSchema -> SchemaTour -> TraceFlows -> TableDeepDive -> MigrationActs -> OverviewNode
 ```
 
-- `src/crack/analyses/schema/schema_find.py` locates the schema by convention (Prisma, Rails, raw SQL, or concatenated `models.py`) and reads the migration directory with the most timestamped entries.
+- `src/crack/analyses/schema/schema_find.py` locates the schema by convention (Prisma, Rails, raw SQL, or concatenated `models.py`) and reads the migration directory with the most timestamped entries. Its `_read` goes through `crack.core.readable`, so a schema file that is a symlink to an in-repo credential file is refused by its target name (coderay-q2r.56, a deliberate divergence from the port source).
 - SchemaTour runs first among the LLM passes: its ER diagram names the core tables the flows and deep-dive passes then reuse, filtered against the table names actually declared in the schema so an invented entity never reaches them.
 - The only card-family analysis with a flag of its own (`--schema`; tour has `--instructions` and `--dry-run`), the only one that retitles the page from LLM output (`THEME.page_name`), and the only one using `when_empty="skip-note"`. TableDeepDive batches four tables per call, which is why its `ENV_DEFAULTS` is empty where the other card analyses raise `LLM_MAX_OUTPUT_TOKENS`.
 

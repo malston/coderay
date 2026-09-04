@@ -31,15 +31,21 @@ class BuildBundle(Node):
 
     def post(self, shared, prep_res, exec_res):
         bundle, stats = exec_res
-        assert bundle.strip(), (
-            "No backend source found (no routes/views/models). This analysis "
-            "expects a server-side backend (Django, Express, Rails, FastAPI, …).")
-        shared["codebase"] = bundle
-        shared["layer_counts"] = stats["counts"]
         c = stats["counts"]
+        if c:
+            # Files matched the layers but every body was left out: empty,
+            # unreadable, or not UTF-8 (safe_read drops those whole,
+            # coderay-q2r.57).
+            found = ", ".join(f"{v} file{'s' if v != 1 else ''} in {k}" for k, v in sorted(c.items()))
+            why = f"Found {found}, but none had readable text: each is empty, unreadable or not UTF-8."
+        else:
+            why = ("No backend source found (no routes/views/models). This analysis "
+                   "expects a server-side backend (Django, Express, Rails, FastAPI, …).")
+        assert bundle.strip(), why
+        shared["codebase"] = bundle
+        shared["layer_counts"] = c
         print(f"  Bundle: {stats['included']} files ({len(bundle):,} chars). Layers — "
-              + ", ".join(f"{k}:{c.get(k, 0)}" for k in
-                          ('route', 'middleware', 'handler', 'service', 'database', 'response')))
+              + ", ".join(f"{k}:{c.get(k, 0)}" for k in bc.LAYERS))
 
 
 class Pipeline(Node):

@@ -463,3 +463,45 @@ def test_build_bundle_refuses_a_config_file_symlinked_out_of_the_repo(tmp_path):
 
     bundle, _stats = ac.build_bundle(repo)
     assert "OUTSIDE-SECRET-CONTENT" not in bundle
+
+
+def test_build_bundle_refuses_a_config_file_symlinked_to_an_in_repo_credential_file(tmp_path):
+    """coderay-q2r.56. `docker-compose.yml -> id_rsa` resolves inside the
+    repo, so within_repo let the key body through. A bare key line has no
+    `key=value` shape, so _redact cannot catch it either; only refusing the
+    read does."""
+    repo = _repo(tmp_path / "repo", {"README.md": "# hi\n",
+                                     "id_rsa": "BEGIN-HUNTER2-PRIVATE-KEY\n"})
+    os.symlink(os.path.join(repo, "id_rsa"), os.path.join(repo, "docker-compose.yml"))
+
+    bundle, _stats = ac.build_bundle(repo)
+    assert "HUNTER2" not in bundle
+
+
+def test_build_bundle_skips_a_virtualenv_named_env_but_still_reads_examples(tmp_path):
+    """PR #30 review. SKIP_DIRS is the shared set plus .yarn, minus docs and
+    examples, which this crawler has always read for compose files."""
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services:\n  api:\n    image: api\n",
+        "env/lib/python3.12/site-packages/pkg/docker-compose.yml": "services:\n  ignored:\n    image: x\n",
+        "examples/docker-compose.yml": "services:\n  example:\n    image: y\n",
+    })
+    bundle, _stats = ac.build_bundle(repo)
+    assert "ignored" not in bundle
+    assert "example:" in bundle
+
+
+def test_build_bundle_refuses_a_credential_named_manifest_it_walked_to(tmp_path):
+    """PR #30 review. The opt-in for a real .env must not pass every
+    credential-named file the classifier accepts: a bare key body in
+    deploy/credentials.yaml has no key: value shape for _redact to catch."""
+    repo = _repo(tmp_path, {
+        "README.md": "# hi\n",
+        "deploy/credentials.yaml": "BEGIN-HUNTER2-PRIVATE-KEY\n",
+        ".env": "TOKEN=hunter2\n",
+        "infra/prod.tfvars": 'db_password = "hunter2"\nregion = "us-east-1"\n',
+    })
+    bundle, stats = ac.build_bundle(repo)
+    assert "HUNTER2" not in bundle
+    assert stats["env_vars"] == 1                 # .env is still read for names
+    assert "region" in bundle and "hunter2" not in bundle   # .tfvars still read, redacted
