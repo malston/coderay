@@ -117,7 +117,7 @@ Expected: FAIL, `ImportError: cannot import name 'env_defaults' from 'crawl.core
 Run:
 
 ```bash
-cp ~/code/Crack-Any-Codebase-with-AI/src/crawl/core/env.py src/crawl/core/env.py
+cp ~/code/Crack-Any-Codebase-with-AI/src/crack/core/env.py src/crawl/core/env.py
 ```
 
 The file is 24 lines and needs no edits. Confirm its content matches:
@@ -377,7 +377,7 @@ Expected: FAIL, `ModuleNotFoundError: No module named 'crawl.core.render'`
 Run:
 
 ```bash
-cp ~/code/Crack-Any-Codebase-with-AI/src/crawl/core/render.py src/crawl/core/render.py
+cp ~/code/Crack-Any-Codebase-with-AI/src/crack/core/render.py src/crawl/core/render.py
 ```
 
 357 lines, copied verbatim. Do not edit it. Its only import beyond the standard library is `from markdown_it import MarkdownIt`, already a dependency.
@@ -490,8 +490,8 @@ Expected: FAIL, `ImportError: cannot import name 'OverviewNode' from 'crawl.core
 Run:
 
 ```bash
-cp ~/code/Crack-Any-Codebase-with-AI/src/crawl/core/overview.py src/crawl/core/overview.py
-cp ~/code/Crack-Any-Codebase-with-AI/src/crawl/core/nodes.py src/crawl/core/nodes.py
+cp ~/code/Crack-Any-Codebase-with-AI/src/crack/core/overview.py src/crawl/core/overview.py
+cp ~/code/Crack-Any-Codebase-with-AI/src/crack/core/nodes.py src/crawl/core/nodes.py
 ```
 
 `overview.py` is 88 lines, `nodes.py` is 32. Both copy verbatim; their imports (`from .call_llm import call_llm`, `from .overview import write_overview`) are already correct for coderay's layout.
@@ -795,7 +795,7 @@ Run:
 ```bash
 mkdir -p src/crawl/analyses/backend
 printf '"""Read a backend as the six layers every request flows through."""\n' > src/crawl/analyses/backend/__init__.py
-cp ~/code/Crack-Any-Codebase-with-AI/src/crawl/analyses/backend/backend_crawl.py src/crawl/analyses/backend/backend_crawl.py
+cp ~/code/Crack-Any-Codebase-with-AI/src/crack/analyses/backend/backend_crawl.py src/crawl/analyses/backend/backend_crawl.py
 ```
 
 114 lines, copied verbatim, standard library only. Task 8 replaces the placeholder `__init__.py`.
@@ -945,8 +945,8 @@ Expected: FAIL, `ModuleNotFoundError: No module named 'crawl.analyses.backend.no
 Run:
 
 ```bash
-cp ~/code/Crack-Any-Codebase-with-AI/src/crawl/analyses/backend/nodes.py src/crawl/analyses/backend/nodes.py
-cp -R ~/code/Crack-Any-Codebase-with-AI/src/crawl/analyses/backend/prompts src/crawl/analyses/backend/prompts
+cp ~/code/Crack-Any-Codebase-with-AI/src/crack/analyses/backend/nodes.py src/crawl/analyses/backend/nodes.py
+cp -R ~/code/Crack-Any-Codebase-with-AI/src/crack/analyses/backend/prompts src/crawl/analyses/backend/prompts
 ```
 
 - [ ] **Step 4: Switch prompt loading to importlib.resources**
@@ -1155,7 +1155,7 @@ Expected: FAIL, `ImportError: cannot import name 'backend' from 'crawl.analyses'
 Copy the sibling's version as the starting point:
 
 ```bash
-cp ~/code/Crack-Any-Codebase-with-AI/src/crawl/analyses/backend/__init__.py src/crawl/analyses/backend/__init__.py
+cp ~/code/Crack-Any-Codebase-with-AI/src/crack/analyses/backend/__init__.py src/crawl/analyses/backend/__init__.py
 ```
 
 Then make it fit coderay's interface. Change the import block from:
@@ -1291,8 +1291,8 @@ def main():
                  f"Check it out, or pass --allow-any-commit deliberately.")
 
     sys.path.insert(0, str(args.sibling / "src"))
-    from crawl.analyses import load           # the sibling's registry, not ours
-    from crawl.core import render
+    from crack.analyses import load           # the sibling's registry, not ours
+    from crack.core import render
 
     analysis = load(args.analysis)
     shared = json.loads(shared_path.read_text())

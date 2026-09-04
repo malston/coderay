@@ -2,8 +2,8 @@
 
 The sweep covers every tracked file except the beads store, the handoff
 prompts, and the lockfile uv regenerates. The only tolerated mentions are the
-sibling port source, whose package keeps the old name, and the lines in
-scripts/regen_golden.py that deliberately import it.
+sibling port source, whose package keeps the old name: its directory name,
+any line that discusses the sibling, and the lines that deliberately import it.
 """
 import pathlib
 import re
@@ -12,12 +12,14 @@ import subprocess
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-OLD_NAME = re.compile(r"crack", re.IGNORECASE)
+OLD_NAME = re.compile(r"(?<![a-z])crack(?![a-z])", re.IGNORECASE)
 SIBLING = "Crack-Any-Codebase-with-AI"
 SKIP_PREFIXES = (".beads/", ".prompts/")
 SKIP_FILES = {"uv.lock", "tests/test_no_stale_names.py"}
+SIBLING_IMPORT = re.compile(r"_crack\b|^\s*(import crack\b|from crack\.)")
 ALLOWED_LINES = {
-    "scripts/regen_golden.py": re.compile(r"sibling|_crack\b|^\s*(import crack\b|from crack\.)"),
+    "scripts/regen_golden.py": SIBLING_IMPORT,
+    "docs/superpowers/plans/2026-09-01-backend-analysis-port.md": SIBLING_IMPORT,
 }
 
 
@@ -39,6 +41,7 @@ def stale_lines(rel):
             for n, line in enumerate(text.splitlines(), 1)
             if OLD_NAME.search(line)
             and SIBLING not in line
+            and "sibling" not in line
             and not (allowed and allowed.search(line))]
 
 
@@ -49,3 +52,9 @@ def test_no_tracked_path_carries_the_old_name():
 def test_no_tracked_file_mentions_the_old_name():
     hits = [hit for rel in tracked_files() for hit in stale_lines(rel)]
     assert hits == [], f"{len(hits)} stale mentions:\n" + "\n".join(hits[:40])
+
+
+def test_ordinary_words_containing_the_old_name_are_not_stale():
+    assert OLD_NAME.search("a firecracker cracked the crackdown") is None
+    for stale in ("crack.core", "src/crack/", "CRACK_TEST", "Crack tour", '"crack"'):
+        assert OLD_NAME.search(stale), stale

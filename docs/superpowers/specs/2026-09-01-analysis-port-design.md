@@ -10,10 +10,10 @@ renderer.
 
 The epic was filed on the assumption that these would be hand-ported from the
 `ch05-ch10` chapter directories. They do not need to be. That branch already
-contains a finished unified `src/crawl/` package: all six analyses, a shared
-card-family render engine, a lazy registry, `crawl all` with a landing page,
-and byte-for-byte parity tests against each chapter's original renderer. 4,532
-lines across 32 modules and 16 test files.
+contains the sibling's finished unified `src/crack/` package: all six analyses,
+a shared card-family render engine, a lazy registry, the sibling's `crack all`
+with a landing page, and byte-for-byte parity tests against each chapter's
+original renderer. 4,532 lines across 32 modules and 16 test files.
 
 So the work is a merge, not a rewrite.
 
@@ -35,7 +35,7 @@ So the work is a merge, not a rewrite.
   the staleness disclaimer, and failure-state dumps. That is coderay-dr8, and
   it is blocked on this epic finishing. Ported analyses stay close to their
   source behavior until then.
-- `crawl all` and its landing page (`core/index.py` in the sibling). Deferred
+- `crack all` and its landing page (`core/index.py` in the sibling). Deferred
   with the same reasoning the CLI restructure spec used.
 - `call_image` and the image-generation path, which only product-intent needs.
   It arrives with that analysis, not before.
