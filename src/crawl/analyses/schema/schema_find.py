@@ -7,6 +7,7 @@ follow one of a few conventions, so we look for them in priority order:
   Rails (Ruby)         db/schema.rb                     one auto-generated file
   Raw SQL              schema.sql                        one dumped file
   Django / SQLAlchemy  **/models.py                      classes, many files
+  Go                   CREATE TABLE inside .go string literals, many files
 
 `find_schema` returns the single most-schema-like text it can (concatenating the
 Django/SQLAlchemy model files when there's no single-file schema). `find_migrations`
@@ -17,11 +18,11 @@ Everything here is plain filesystem walking; nothing calls an LLM.
 import os
 import re
 
-from crawl.core import DEFAULT_SKIP_DIR, readable
+from crawl.core import DEFAULT_SKIP_DIR, FIXTURE_DIRS, readable
 
 # Directories that never hold a schema: the shared skip set, which does not
 # prune `migrations`, the one directory this crawler must find.
-SKIP_DIRS = DEFAULT_SKIP_DIR
+SKIP_DIRS = DEFAULT_SKIP_DIR | FIXTURE_DIRS
 
 # Prisma and Rails use 14-digit timestamps; Django numbers its migrations
 # 0001_, 0002_, ... Requiring six digits matched the first two and silently
@@ -34,6 +35,24 @@ SCHEMA_BUDGET = 600_000
 MAX_MODEL_FILES = 40
 
 TIMESTAMP_RE = re.compile(r'^\d{4,}[_-]')  # 20210605225044_init, 0001_initial, ...
+
+# A Go service often keeps its schema as DDL inside string literals and migrates
+# in code (coderay-5wu.13). The literals that carry DDL are the schema; the Go
+# around them is not.
+_GO_STRING = re.compile(r'`[^`]*`|"(?:[^"\\\n]|\\.)*"')
+_DDL = re.compile(r'\b(?:CREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX)|ALTER\s+TABLE)\b', re.I)
+_CREATE_TABLE = re.compile(r'\bCREATE\s+TABLE\b', re.I)
+MAX_EMBEDDED_FILES = 40
+
+
+def embedded_sql(go_text):
+    """The DDL statements a Go source file holds in its string literals, joined,
+    or "" when it holds none."""
+    return "\n".join(lit.strip('`"').strip() for lit in _GO_STRING.findall(go_text) if _DDL.search(lit))
+
+
+def _go_candidate(filename):
+    return filename.endswith(".go") and not filename.endswith("_test.go") and not filename.startswith("test")
 
 
 def _walk(root):
@@ -68,7 +87,7 @@ def find_schema(repo, override=None):
         return {"kind": "override", "path": os.path.relpath(p, repo),
                 "text": _read(p, limit=SCHEMA_BUDGET)}
 
-    prisma, rails, sql, models = [], [], [], []
+    prisma, rails, sql, models, embedded = [], [], [], [], []
     for dirpath, _dirnames, filenames in _walk(repo):
         for f in filenames:
             full = os.path.join(dirpath, f)
@@ -80,6 +99,10 @@ def find_schema(repo, override=None):
                 sql.append(full)
             elif f == "models.py":
                 models.append(full)
+            elif _go_candidate(f):
+                ddl = embedded_sql(_read(full, repo))
+                if _CREATE_TABLE.search(ddl):
+                    embedded.append((len(_CREATE_TABLE.findall(ddl)), full, ddl))
 
     if prisma:
         # Prefer the largest schema.prisma (the app's, not a package fixture).
@@ -94,6 +117,23 @@ def find_schema(repo, override=None):
         path = max(sql, key=lambda p: os.path.getsize(p))
         return {"kind": "sql", "path": os.path.relpath(path, repo),
                 "text": _read(path, repo, SCHEMA_BUDGET)}
+    if embedded:
+        # Go: the DDL out of each file's string literals, the file creating the
+        # most tables first. Whole files, fewer of them, as for models below.
+        embedded.sort(key=lambda e: (-e[0], e[1]))
+        parts, total, kept = [], 0, []
+        for _count, full, ddl in embedded[:MAX_EMBEDDED_FILES]:
+            rel = os.path.relpath(full, repo)
+            block = f"-- ===== {rel} =====\n{ddl}"
+            if total + len(block) > SCHEMA_BUDGET and parts:
+                break
+            parts.append(block)
+            total += len(block)
+            kept.append(rel)
+        note = "" if len(kept) == len(embedded) else f" of {len(embedded)} found"
+        return {"kind": "embedded-sql",
+                "path": f"{len(kept)} Go file{'s' if len(kept) != 1 else ''} with embedded SQL ({', '.join(kept)}){note}",
+                "text": "\n\n".join(parts)}
     if models:
         # No single-file schema: concatenate the model files (Django/SQLAlchemy).
         models = sorted(models, key=lambda p: os.path.getsize(p), reverse=True)[:MAX_MODEL_FILES]

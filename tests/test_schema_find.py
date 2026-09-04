@@ -94,6 +94,8 @@ def test_find_migrations_returns_the_names_oldest_first(tmp_path):
     ("0001_initial.py", "0001_initial"),                    # Django: four digits
     ("20210605225044_init", "20210605225044_init"),          # Prisma: fourteen
     ("20210101120000_create_users.rb", "20210101120000_create_users"),  # Rails
+    ("00001_init.sql", "00001_init"),                                    # goose
+    ("000001_init.up.sql", "000001_init.up"),                            # golang-migrate
 ])
 def test_find_migrations_reads_every_framework_numbering(tmp_path, name, expected):
     """Was coderay-q2r.21: the pattern demanded six leading digits.
@@ -200,3 +202,83 @@ def test_find_schema_skips_a_virtualenv_named_env(tmp_path):
     })
     assert "ignored" not in sf.find_schema(repo)["text"]
     assert sf.find_migrations(repo)[0] == "app/migrations"
+
+
+# coderay-5wu.13. A Go service often keeps its schema as CREATE TABLE statements
+# inside Go string literals, migrating in code; there is no schema file to find.
+GO_DB = '''package hub
+
+import "database/sql"
+
+func migrate(db *sql.DB) error {
+	_, _ = db.Exec(`ALTER TABLE claws ADD COLUMN provider TEXT NOT NULL DEFAULT ''`)
+	_, err := db.Exec(`
+	CREATE TABLE IF NOT EXISTS tenants (
+		id TEXT PRIMARY KEY
+	);
+
+	CREATE TABLE IF NOT EXISTS claws (
+		id TEXT PRIMARY KEY,
+		tenant_id TEXT NOT NULL REFERENCES tenants(id)
+	);
+	`)
+	return err
+}
+'''
+
+
+def test_find_schema_reads_create_table_statements_embedded_in_go(tmp_path):
+    repo = _repo(tmp_path, {"pkg/hub/db.go": GO_DB, "pkg/hub/server.go": "package hub\n"})
+    found = sf.find_schema(repo)
+    assert found["kind"] == "embedded-sql"
+    assert "pkg/hub/db.go" in found["path"]
+    assert "CREATE TABLE IF NOT EXISTS claws" in found["text"]
+    assert "ALTER TABLE claws ADD COLUMN provider" in found["text"]
+    assert "func migrate" not in found["text"] and "db.Exec" not in found["text"]
+
+
+def test_embedded_sql_files_are_ordered_by_how_many_tables_they_create(tmp_path):
+    """The file with most of the schema leads; a file that creates one table
+    for a feature follows; a .go file with no SQL, a test file and a fixture
+    directory are not part of the schema."""
+    one = 'package a\n_ = `CREATE TABLE IF NOT EXISTS analytics (id TEXT)`\n'
+    repo = _repo(tmp_path, {
+        "pkg/hub/analytics_api.go": one,
+        "pkg/hub/db.go": GO_DB,
+        "pkg/hub/db_test.go": GO_DB,
+        "pkg/hub/factorytest/fixture.go": GO_DB,
+        "pkg/hub/server.go": "package hub\n",
+    })
+    found = sf.find_schema(repo)
+    assert found["path"] == "2 Go files with embedded SQL (pkg/hub/db.go, pkg/hub/analytics_api.go)"
+    assert found["text"].index("db.go") < found["text"].index("analytics_api.go")
+    assert "fixture" not in found["text"] and "db_test" not in found["text"]
+
+
+def test_find_schema_prefers_a_schema_file_over_embedded_sql(tmp_path):
+    repo = _repo(tmp_path, {"schema.sql": "CREATE TABLE x (id int);\n", "pkg/hub/db.go": GO_DB})
+    assert sf.find_schema(repo)["kind"] == "sql"
+
+
+def test_find_schema_prefers_embedded_sql_over_model_files(tmp_path):
+    repo = _repo(tmp_path, {"app/models.py": "class A: pass\n", "pkg/hub/db.go": GO_DB})
+    assert sf.find_schema(repo)["kind"] == "embedded-sql"
+
+
+def test_embedded_sql_is_refused_from_a_go_file_symlinked_out_of_the_repo(tmp_path):
+    import os
+    outside = tmp_path / "outside.go"
+    outside.write_text(GO_DB.replace("tenants", "LEAKED_TABLE"), encoding="utf-8")
+    repo = _repo(tmp_path / "repo", {"README.md": "x\n"})
+    os.makedirs(os.path.join(repo, "pkg"), exist_ok=True)
+    os.symlink(outside, os.path.join(repo, "pkg", "db.go"))
+    found = sf.find_schema(repo)
+    assert found["kind"] is None and "LEAKED_TABLE" not in found["text"]
+
+
+def test_embedded_sql_table_names_reach_the_filter(tmp_path):
+    """SchemaTour filters the model's ER diagram against the tables actually
+    declared; the extracted SQL must carry the CREATE TABLE lines whole."""
+    from crawl.analyses.schema.nodes import schema_table_names
+    repo = _repo(tmp_path, {"pkg/hub/db.go": GO_DB})
+    assert schema_table_names(sf.find_schema(repo)["text"]) == {"tenants", "claws"}
