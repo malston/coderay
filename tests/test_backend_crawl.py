@@ -231,3 +231,23 @@ def test_build_bundle_samples_from_readable_files_not_from_the_first_n_paths(tmp
     bundle, stats = bc.build_bundle(repo)
     assert stats == {"counts": {"handler": 19}, "included": 1}
     assert "app/views/zeta.py" in bundle
+
+
+@pytest.mark.parametrize("rel", ["myapp/views.py", "app/views.py", "api_views.py"])
+def test_classify_reads_a_flat_django_views_module_as_a_handler(rel):
+    """coderay-q2r.12. `views.py` is the canonical Django handler file, and the
+    handler rule matched only the singular `view.py` or a `views/` directory,
+    so a flat app reported zero handlers and the bundle had no middle."""
+    assert bc.classify(rel) == "handler"
+
+
+def test_build_bundle_counts_the_handler_layer_of_a_flat_django_app(tmp_path):
+    """coderay-q2r.12 acceptance: a flat Django app reports a non-zero handler count."""
+    repo = _repo(tmp_path, {
+        "myapp/urls.py": "urlpatterns = []\n",
+        "myapp/views.py": "def home(request): pass\n",
+        "myapp/models.py": "class User: pass\n",
+    })
+    bundle, stats = bc.build_bundle(repo)
+    assert stats["counts"] == {"route": 1, "handler": 1, "database": 1}
+    assert "LAYER HANDLER: myapp/views.py" in bundle
