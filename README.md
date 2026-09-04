@@ -1,6 +1,6 @@
-# Crack
+# Crawl
 
-Crack runs analyses on a codebase and generates written overviews: multi-chapter tours with diagrams and cross-references, request-flow summaries across server-side layers, a map of the services a system runs and rents, a guide to a product's API surface, a tour of the data model and the migrations that shaped it, or the product's story read out of its git log. Point it at a repo and get HTML/Markdown pages explaining how the code works.
+Crawl runs analyses on a codebase and generates written overviews: multi-chapter tours with diagrams and cross-references, request-flow summaries across server-side layers, a map of the services a system runs and rents, a guide to a product's API surface, a tour of the data model and the migrations that shaped it, or the product's story read out of its git log. Point it at a repo and get HTML/Markdown pages explaining how the code works.
 
 ## What this ships
 
@@ -10,9 +10,9 @@ Seven analyses, each implemented as a [PocketFlow](https://github.com/The-Pocket
 
 A five-stage pipeline (SmartCrawl, ExtractGraph, Analyze, Relate, WriteChapters):
 
-- [`src/crack/analyses/tour/`](src/crack/analyses/tour/) -- the multi-chapter analysis. SmartCrawl, Analyze, and Relate parse structured YAML output and retry on a bad response (`crack.core.yaml_call`); WriteChapters calls the LLM directly and retries via PocketFlow's own `Node(max_retries=3)`.
-- [`src/crack/analyses/tour/prompts/`](src/crack/analyses/tour/prompts/) -- the prompt template each stage sends to the LLM, one file per stage.
-- [`src/crack/analyses/tour/instructions/`](src/crack/analyses/tour/instructions/) -- four swappable output styles (see "Swap the output style" below). Same pipeline, different framing for the same chapters.
+- [`src/crawl/analyses/tour/`](src/crawl/analyses/tour/) -- the multi-chapter analysis. SmartCrawl, Analyze, and Relate parse structured YAML output and retry on a bad response (`crawl.core.yaml_call`); WriteChapters calls the LLM directly and retries via PocketFlow's own `Node(max_retries=3)`.
+- [`src/crawl/analyses/tour/prompts/`](src/crawl/analyses/tour/prompts/) -- the prompt template each stage sends to the LLM, one file per stage.
+- [`src/crawl/analyses/tour/instructions/`](src/crawl/analyses/tour/instructions/) -- four swappable output styles (see "Swap the output style" below). Same pipeline, different framing for the same chapters.
 - [`skill/CODEBASE-TOUR.md`](skill/CODEBASE-TOUR.md) -- the analysis packaged as an agent skill.
 
 ### Backend
@@ -84,7 +84,7 @@ Every analysis sends repository content to an LLM provider. Three rules hold acr
 - `product-intent` sends whole source files to the model, up to a fixed budget, in directory order rather than by LLM selection as the tour does. The crawler's skip list applies, so credential-named files (`.env*`, `*.pem`, `secrets.yml` and the rest) are never read; a key pasted inline in `config.py` still goes.
 - `git-history` sends commit diffs to the model. The body of a credential-bearing file (`.env*`, `*.pem`, `terraform.tfvars` and the rest of the crawler's skip list) is stripped from those diffs first, while its path and the `--stat` line stay, since a secret being deleted is itself worth reporting.
 - The `architecture` bundle strips credential values by key name, by position in a connection string, from Kubernetes `name`/`value` env pairs, and from every value in a Kubernetes `Secret`. This is a redactor, not a secret scanner: a credential under an unguessable key name in a file that is not a `Secret` can still get through.
-- `crack schema --schema <path>` is exempt from the containment rule, because that path is yours rather than the repository's.
+- `crawl schema --schema <path>` is exempt from the containment rule, because that path is yours rather than the repository's.
 
 ## Quickstart
 
@@ -93,19 +93,19 @@ pip install -e .            # or: pip install -e ".[openai,gemini]" for those pr
 cp .env.example .env        # fill in the one key you need, see .env.example for all options
 export GEMINI_API_KEY=...   # or ANTHROPIC_API_KEY / OPENAI_API_KEY
 
-crack tour path/to/repo     # multi-chapter codebase tour
+crawl tour path/to/repo     # multi-chapter codebase tour
 # OR
-crack backend path/to/repo  # server-side backend flow analysis
+crawl backend path/to/repo  # server-side backend flow analysis
 # OR
-crack architecture path/to/repo  # multi-service architecture map
+crawl architecture path/to/repo  # multi-service architecture map
 # OR
-crack interfaces path/to/repo  # API surface and endpoint sequence
+crawl interfaces path/to/repo  # API surface and endpoint sequence
 # OR
-crack schema path/to/repo     # data model and migration history
+crawl schema path/to/repo     # data model and migration history
 # OR
-crack git-history path/to/repo  # the product story in the commit log
+crawl git-history path/to/repo  # the product story in the commit log
 # OR
-crack product-intent path/to/repo  # the product story in the source
+crawl product-intent path/to/repo  # the product story in the source
 ```
 
 If a **tour** run fails partway through (a bad LLM response after retries, a network error), the files, abstractions, and chapters completed so far are written to `run_state.json` in the target output directory, so you can see how far it got without rerunning the whole pipeline. The other analyses do not do this: a failed run leaves an empty output directory.
@@ -139,12 +139,12 @@ output/nanochat-beginner-tutorial-tour/
 
 ## Swap the output style
 
-Same pipeline and code, driven by a different file under `src/crack/analyses/tour/instructions/`. Set `--instructions` to change what the chapters focus on:
+Same pipeline and code, driven by a different file under `src/crawl/analyses/tour/instructions/`. Set `--instructions` to change what the chapters focus on:
 
 ```bash
-crack tour path/to/repo --instructions architecture-review
-crack tour path/to/repo --instructions security-audit
-crack tour path/to/repo --instructions onboarding-guide
+crawl tour path/to/repo --instructions architecture-review
+crawl tour path/to/repo --instructions security-audit
+crawl tour path/to/repo --instructions onboarding-guide
 ```
 
 | Style                         | What you get                                                                     |
@@ -157,7 +157,7 @@ crack tour path/to/repo --instructions onboarding-guide
 ## Estimate cost before you run it
 
 ```bash
-crack tour path/to/repo --dry-run
+crawl tour path/to/repo --dry-run
 ```
 
 `--dry-run` makes no network calls, needs no API key, and writes nothing to disk. It estimates the size of the prompts a real run would send (file selection, abstraction analysis, relationships, and one chapter prompt repeated for an estimated chapter count) and prints a cost range:
@@ -180,7 +180,7 @@ A real run (without `--dry-run`) prints a `Session` summary at the end with the 
 
 ### Pricing overrides
 
-Built-in pricing covers the default model for each provider. For any other model, crack prompts you once, interactively, for $/1M token pricing, and saves it to `~/.config/crack/pricing.json`. That file is yours to edit directly; an entry there always takes priority over the built-in pricing table. Format:
+Built-in pricing covers the default model for each provider. For any other model, crawl prompts you once, interactively, for $/1M token pricing, and saves it to `~/.config/crawl/pricing.json`. That file is yours to edit directly; an entry there always takes priority over the built-in pricing table. Format:
 
 ```json
 {
@@ -202,7 +202,7 @@ flowchart LR
     relate --> write[WriteChapters]
 ```
 
-1. **SmartCrawl.** Two phases. First, filter files by extension and skip obvious noise (`tests/`, `docs/`, lock files, anything over 500 KB). Then build a preview manifest — the first few hundred characters of each remaining file — and ask the LLM to select the roughly 0.1-2% of files that matter most, using the selection rules in [`src/crack/analyses/tour/prompts/select-files.md`](src/crack/analyses/tour/prompts/select-files.md).
+1. **SmartCrawl.** Two phases. First, filter files by extension and skip obvious noise (`tests/`, `docs/`, lock files, anything over 500 KB). Then build a preview manifest — the first few hundred characters of each remaining file — and ask the LLM to select the roughly 0.1-2% of files that matter most, using the selection rules in [`src/crawl/analyses/tour/prompts/select-files.md`](src/crawl/analyses/tour/prompts/select-files.md).
 2. **ExtractGraph.** No LLM call — deterministically parses each selected file's imports (Python/JS/TS) into `symbol_graph`, the edges Relate later checks against.
 3. **Analyze.** One LLM call. Returns a YAML list of 5-10 abstractions, each with a short description, plus a suggested learning order.
 4. **Relate.** One LLM call. Returns the relationships (edges) between those abstractions, each tagged `EXTRACTED` (backed by a real import edge between the abstractions' files, Python/JS/TS only) or `INFERRED` (LLM judgment). The mermaid diagram in `index.html` draws `EXTRACTED` edges solid, `INFERRED` edges dashed.

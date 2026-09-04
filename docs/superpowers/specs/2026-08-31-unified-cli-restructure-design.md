@@ -1,4 +1,4 @@
-# Unified CLI restructure: coderay becomes crack (coderay-8bg)
+# Unified CLI restructure: coderay becomes crawl (coderay-8bg)
 
 ## Problem
 
@@ -9,25 +9,25 @@ swappable `--instructions` prompt lenses. A sibling project,
 product-intent, git-history, schema, interfaces, architecture, backend) --
 each its own crawl, node graph, and renderer, not a lens on one pipeline. Its
 own `unified-cli-design.md` collapses those six into one installable package
-with one CLI (`crack`).
+with one CLI (`crawl`).
 
 This project wants the same shape: bring the six analyses into coderay as new
 subcommands (see coderay-q2r), reconcile them against coderay's own
 improvements (coderay-dr8), and add ch04-agent's interactive prompts as
 sibling skill files (coderay-buf). All three depend on this one landing
 first: a package restructure that turns coderay's single pipeline into one
-subcommand among several, under the `crack` name.
+subcommand among several, under the `crawl` name.
 
 ## Goals
 
-- One console script, `crack`, dispatching to named analysis subcommands.
-  Today: `crack tour <repo>`. Tomorrow (coderay-q2r): `crack backend <repo>`,
+- One console script, `crawl`, dispatching to named analysis subcommands.
+  Today: `crawl tour <repo>`. Tomorrow (coderay-q2r): `crawl backend <repo>`,
   etc.
-- `src/crack/core/` holds plumbing any analysis can share (LLM calls, prompt
-  filling, YAML retry, crawling, pricing). `src/crack/analyses/tour/` holds
+- `src/crawl/core/` holds plumbing any analysis can share (LLM calls, prompt
+  filling, YAML retry, crawling, pricing). `src/crawl/analyses/tour/` holds
   everything specific to the existing pipeline.
 - Full project rename: git repo, `pyproject.toml` project name, and docs all
-  become `crack`. Confirmed distinct from the sibling project's own `crack`
+  become `crawl`. Confirmed distinct from the sibling project's own `crawl`
   package -- they stay in separate venvs, so the console-script name
   collision this would otherwise cause is a non-issue.
 - Clean break. No `python -m workflow`, no back-compat shim for the old
@@ -40,7 +40,7 @@ subcommand among several, under the `crack` name.
   retry/cache layer, the import graph, cost tracking, or the staleness
   disclaimer (coderay-dr8) -- there's only one analysis today, so nothing to
   reconcile yet.
-- `crack all` (runs every analysis, writes a landing page). Meaningless with
+- `crawl all` (runs every analysis, writes a landing page). Meaningless with
   one analysis; introduced when coderay-q2r lands a second one.
 - A generic per-analysis dry-run/cost-estimation interface. Today's
   estimator is tightly coupled to tour's specific node prompts; premature to
@@ -52,8 +52,8 @@ subcommand among several, under the `crack` name.
 ## Package layout
 
 ```text
-pyproject.toml              # package "crack", console script "crack"
-src/crack/
+pyproject.toml              # package "crawl", console script "crawl"
+src/crawl/
   __init__.py
   cli.py                     # argparse: subcommand dispatch
   core/
@@ -78,14 +78,14 @@ tests/                          # existing tests/, import paths updated to match
 
 `coderay_utils/`, `workflow/`, and the dead top-level `utils/` (confirmed
 empty -- only a stray `__pycache__`, nothing imports it) all go away. Their
-live content moves under `src/crack/`; nothing gets duplicated.
+live content moves under `src/crawl/`; nothing gets duplicated.
 
 ## CLI dispatch and the runner split
 
 ```python
 # cli.py
 def main():
-    parser = argparse.ArgumentParser(prog="crack")
+    parser = argparse.ArgumentParser(prog="crawl")
     parser.add_argument("--version", action="version", ...)
     subparsers = parser.add_subparsers(dest="analysis", required=True)
     for name, analysis in ANALYSES.items():   # today: just {"tour": ...}
@@ -131,15 +131,15 @@ pair per chapter). This already fits the sibling design's own allowance --
 
 ## Migration order
 
-1. Rename the GitHub repo to `crack` (a real external action -- confirmed
+1. Rename the GitHub repo to `crawl` (a real external action -- confirmed
    explicitly with Mark at execution time, not assumed from this design).
-2. `pyproject.toml` skeleton: package name `crack`, `src` layout, console
-   script `crack = crack.cli:main`.
-3. Move `coderay_utils/*` -> `src/crack/core/*`: file moves and import-path
+2. `pyproject.toml` skeleton: package name `crawl`, `src` layout, console
+   script `crawl = crawl.cli:main`.
+3. Move `coderay_utils/*` -> `src/crawl/core/*`: file moves and import-path
    updates, not a rewrite.
-4. Move `workflow/graph/languages/` -> `src/crack/analyses/tour/graph/languages/`.
+4. Move `workflow/graph/languages/` -> `src/crawl/analyses/tour/graph/languages/`.
 5. Move `workflow/nodes.py`, `flow.py`, `prompts/`, `instructions/` ->
-   `src/crack/analyses/tour/`.
+   `src/crawl/analyses/tour/`.
 6. Split `workflow/__main__.py` into `cli.py` (thin dispatch) and
    `analyses/tour/render.py` (everything else it currently does).
 7. Update `tests/` import paths to the new locations. Delete `workflow/`,
@@ -154,14 +154,14 @@ step lands with its test updated (import paths, not behavior) before moving
 on, so the suite never sits broken for more than one step. No behavior
 change is intended anywhere in this migration -- it's a pure restructure, so
 every existing test should pass unmodified except for its imports. A final
-end-to-end smoke run (`crack tour <fixture-repo>`) confirms the console
+end-to-end smoke run (`crawl tour <fixture-repo>`) confirms the console
 script works post-rename, matching the sibling design's own `test_smoke.py`
 pattern (skipped without an API key).
 
 ## Decisions
 
-- **Full project rename to `crack`**, not just the package/command --
-  confirmed distinct from the sibling project's own `crack` package since
+- **Full project rename to `crawl`**, not just the package/command --
+  confirmed distinct from the sibling project's own `crawl` package since
   they stay in separate venvs.
 - **`core/runner.py` stays narrow** (just `flow.run` + failure dump); dry-run
   cost estimation and the session summary stay tour-specific until a second
@@ -169,6 +169,6 @@ pattern (skipped without an API key).
 - **`graph/` stays under `analyses/tour/`**, not `core/`, until a second
   analysis needs import-graph extraction (coderay-wy9 tracks revisiting
   this).
-- **No `crack all`** in this iteration -- meaningless with one analysis.
+- **No `crawl all`** in this iteration -- meaningless with one analysis.
 - **Clean break**: no back-compat shim for `python -m workflow` or the old
   `coderay <repo>` invocation.

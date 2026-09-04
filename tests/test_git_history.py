@@ -3,11 +3,11 @@ import os
 
 import pytest
 
-from crack.analyses import ANALYSES, git_history
+from crawl.analyses import ANALYSES, git_history
 
 
 def test_git_history_is_registered_under_its_hyphenated_name():
-    """The module is git_history; the subcommand is `crack git-history`."""
+    """The module is git_history; the subcommand is `crawl git-history`."""
     assert ANALYSES["git-history"] is git_history
     assert git_history.NAME == "git-history"
 
@@ -18,7 +18,7 @@ def test_git_history_satisfies_the_analysis_interface():
 
 
 def test_git_history_brings_its_own_renderer_instead_of_the_card_contract():
-    """crack.core.render defers to a custom render_html when one exists, so this
+    """crawl.core.render defers to a custom render_html when one exists, so this
     analysis needs no SECTIONS or THEME -- and must not grow them by accident."""
     assert callable(git_history.render_html)
     assert callable(git_history.render_markdown)
@@ -28,7 +28,7 @@ def test_git_history_brings_its_own_renderer_instead_of_the_card_contract():
 
 def test_the_shared_renderer_routes_to_the_analysis_own_renderer():
     """The delegation is what lets regen_golden.py reach a bespoke analysis."""
-    from crack.core import render
+    from crawl.core import render
     called = {}
 
     class Fake:
@@ -83,7 +83,7 @@ def test_init_shared_tolerates_an_args_without_the_flags():
 
 
 def test_build_flow_starts_at_fetch_history():
-    from crack.analyses.git_history.nodes import FetchHistory
+    from crawl.analyses.git_history.nodes import FetchHistory
     assert isinstance(git_history.build_flow().start_node, FetchHistory)
 
 
@@ -108,7 +108,7 @@ def test_overview_spec_names_the_three_sections_and_counts_the_history():
 
 
 def test_overview_spec_name_matches_the_name_the_page_is_rendered_with(tmp_path, monkeypatch):
-    from crack.core.runner import repo_name_of
+    from crawl.core.runner import repo_name_of
     repo = tmp_path / "toy_repo"
     repo.mkdir()
     monkeypatch.chdir(repo)

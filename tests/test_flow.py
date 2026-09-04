@@ -1,6 +1,6 @@
-import crack.core.llm as llm_module
-import crack.analyses.tour.nodes as nodes_module
-from crack.analyses.tour.flow import create_tour_flow
+import crawl.core.llm as llm_module
+import crawl.analyses.tour.nodes as nodes_module
+from crawl.analyses.tour.flow import create_tour_flow
 
 
 def test_full_pipeline_tags_relationships(tmp_path, monkeypatch):

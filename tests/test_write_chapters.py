@@ -3,10 +3,10 @@ import os
 
 import pytest
 
-import crack.analyses.tour as tour
-from crack.analyses.tour import nodes as nodes_module
-from crack.core import max_output_tokens
-from crack.core.call_llm import ResponseTruncated
+import crawl.analyses.tour as tour
+from crawl.analyses.tour import nodes as nodes_module
+from crawl.core import max_output_tokens
+from crawl.core.call_llm import ResponseTruncated
 
 SHARED = {
     "abstractions": [{"name": "Hub", "description": "d1"}, {"name": "Claw", "description": "d2"}],

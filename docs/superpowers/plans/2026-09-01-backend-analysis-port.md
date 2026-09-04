@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Land `crack backend <repo>` as a second analysis, together with the shared card-family render engine the next three ports reuse.
+**Goal:** Land `crawl backend <repo>` as a second analysis, together with the shared card-family render engine the next three ports reuse.
 
-**Architecture:** Copy the sibling fork's finished `core/render.py` card engine, `OverviewNode`, overview writer, and `env_defaults` into `crack/core/`, add a `run_analysis()` helper beside the existing `run_flow()`, then add `crack/analyses/backend/` as the first analysis to declare `SECTIONS`/`THEME`. `tour` is not modified. A committed golden `index.html`/`index.md` pair proves the port reproduces its source byte for byte.
+**Architecture:** Copy the sibling fork's finished `core/render.py` card engine, `OverviewNode`, overview writer, and `env_defaults` into `crawl/core/`, add a `run_analysis()` helper beside the existing `run_flow()`, then add `crawl/analyses/backend/` as the first analysis to declare `SECTIONS`/`THEME`. `tour` is not modified. A committed golden `index.html`/`index.md` pair proves the port reproduces its source byte for byte.
 
 **Tech Stack:** Python 3, PocketFlow, markdown-it-py (already a dependency), pytest, uv.
 
@@ -16,7 +16,7 @@
 
 - **Port source of record:** `~/code/Crack-Any-Codebase-with-AI`, branch `main`, commit `34f0ad2`. Referred to below as `$SIB`. Verify with `git -C ~/code/Crack-Any-Codebase-with-AI rev-parse main` before copying anything; it must print `34f0ad2a7044284555911590ca3773c92e1244ac`.
 - **No new dependencies.** `markdown-it-py>=4.2.0,<5` is already in `pyproject.toml`.
-- **`tour` is not modified.** No file under `src/crack/analyses/tour/` changes in this plan. `src/crack/cli.py` does not change either.
+- **`tour` is not modified.** No file under `src/crawl/analyses/tour/` changes in this plan. `src/crawl/cli.py` does not change either.
 - **Prompt loading uses `importlib.resources`**, never `os.path.join(os.path.dirname(__file__), ...)`. coderay's `read_prompt(prompts_dir, name)` does `(prompts_dir / name).read_text(encoding="utf-8")`, so it needs a Traversable or `Path`, not a `str`.
 - **Output directory default** is `<cwd>/output/<repo-name>-<analysis-name>`, matching `tour`'s `default_output_dir`. Not the sibling's `output/<repo>/<analysis>`.
 - **No em dashes in prose** (docs, comments, docstrings). Use `--` or rewrite. Copied source that already contains them in LLM-facing prompt text or in card copy stays as-is; that is data, not our prose.
@@ -36,14 +36,14 @@ Created:
 
 | Path                                                                | Responsibility                                                                                                                          |
 | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/crack/core/env.py`                                             | `env_defaults` context manager: apply an analysis's env defaults for one run                                                            |
-| `src/crack/core/render.py`                                          | `Section`, `Theme`, the card-family page engine, and the markdown/escaping helpers                                                      |
-| `src/crack/core/overview.py`                                        | `write_overview`: one LLM call for the page welcome and per-section intros                                                              |
-| `src/crack/core/nodes.py`                                           | `OverviewNode`, the reusable PocketFlow node wrapping `write_overview`                                                                  |
-| `src/crack/analyses/backend/__init__.py`                            | the backend analysis: `NAME`, `SECTIONS`, `THEME`, `ENV_DEFAULTS`, `build_flow`, `add_arguments`, `init_shared`, `run`, `overview_spec` |
-| `src/crack/analyses/backend/backend_crawl.py`                       | classify a repo's source into the six layers, build the bundle                                                                          |
-| `src/crack/analyses/backend/nodes.py`                               | `BuildBundle`, `Pipeline`, `LayerCode`, `Trace`                                                                                         |
-| `src/crack/analyses/backend/prompts/{pipeline,layer-code,trace}.md` | the three LLM prompts                                                                                                                   |
+| `src/crawl/core/env.py`                                             | `env_defaults` context manager: apply an analysis's env defaults for one run                                                            |
+| `src/crawl/core/render.py`                                          | `Section`, `Theme`, the card-family page engine, and the markdown/escaping helpers                                                      |
+| `src/crawl/core/overview.py`                                        | `write_overview`: one LLM call for the page welcome and per-section intros                                                              |
+| `src/crawl/core/nodes.py`                                           | `OverviewNode`, the reusable PocketFlow node wrapping `write_overview`                                                                  |
+| `src/crawl/analyses/backend/__init__.py`                            | the backend analysis: `NAME`, `SECTIONS`, `THEME`, `ENV_DEFAULTS`, `build_flow`, `add_arguments`, `init_shared`, `run`, `overview_spec` |
+| `src/crawl/analyses/backend/backend_crawl.py`                       | classify a repo's source into the six layers, build the bundle                                                                          |
+| `src/crawl/analyses/backend/nodes.py`                               | `BuildBundle`, `Pipeline`, `LayerCode`, `Trace`                                                                                         |
+| `src/crawl/analyses/backend/prompts/{pipeline,layer-code,trace}.md` | the three LLM prompts                                                                                                                   |
 | `scripts/regen_golden.py`                                           | regenerate a golden fixture from the sibling checkout                                                                                   |
 | `tests/fixtures/golden/backend/{shared.json,index.html,index.md}`   | the golden fixture                                                                                                                      |
 
@@ -51,11 +51,11 @@ Modified:
 
 | Path                                  | Change                                                                        |
 | ------------------------------------- | ----------------------------------------------------------------------------- |
-| `src/crack/core/llm.py`               | add `extract_mermaid`                                                         |
-| `src/crack/core/__init__.py`          | re-export `extract_mermaid`, `OverviewNode`, `write_overview`, `env_defaults` |
-| `src/crack/core/runner.py`            | add `run_analysis(analysis, args)` beside `run_flow`                          |
-| `src/crack/analyses/__init__.py`      | register `backend` in `ANALYSES`                                              |
-| `pyproject.toml`                      | add the `crack.analyses.backend` package and its prompt package-data          |
+| `src/crawl/core/llm.py`               | add `extract_mermaid`                                                         |
+| `src/crawl/core/__init__.py`          | re-export `extract_mermaid`, `OverviewNode`, `write_overview`, `env_defaults` |
+| `src/crawl/core/runner.py`            | add `run_analysis(analysis, args)` beside `run_flow`                          |
+| `src/crawl/analyses/__init__.py`      | register `backend` in `ANALYSES`                                              |
+| `pyproject.toml`                      | add the `crawl.analyses.backend` package and its prompt package-data          |
 | `README.md`, `CLAUDE.md`, `AGENTS.md` | document the second subcommand                                                |
 
 ---
@@ -64,14 +64,14 @@ Modified:
 
 **Files:**
 
-- Create: `src/crack/core/env.py`
-- Modify: `src/crack/core/__init__.py`
+- Create: `src/crawl/core/env.py`
+- Modify: `src/crawl/core/__init__.py`
 - Test: `tests/test_env.py`
 
 **Interfaces:**
 
 - Consumes: nothing.
-- Produces: `crack.core.env.env_defaults(defaults: dict) -> contextmanager`, also re-exported as `crack.core.env_defaults`.
+- Produces: `crawl.core.env.env_defaults(defaults: dict) -> contextmanager`, also re-exported as `crawl.core.env_defaults`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -80,27 +80,27 @@ Create `tests/test_env.py`:
 ```python
 import os
 
-from crack.core import env_defaults
+from crawl.core import env_defaults
 
 def test_sets_absent_key_and_restores_it():
-    assert "CRACK_TEST_ABSENT" not in os.environ
-    with env_defaults({"CRACK_TEST_ABSENT": "32768"}):
-        assert os.environ["CRACK_TEST_ABSENT"] == "32768"
-    assert "CRACK_TEST_ABSENT" not in os.environ
+    assert "CRAWL_TEST_ABSENT" not in os.environ
+    with env_defaults({"CRAWL_TEST_ABSENT": "32768"}):
+        assert os.environ["CRAWL_TEST_ABSENT"] == "32768"
+    assert "CRAWL_TEST_ABSENT" not in os.environ
 
 def test_a_value_the_user_already_set_wins(monkeypatch):
-    monkeypatch.setenv("CRACK_TEST_PRESENT", "mine")
-    with env_defaults({"CRACK_TEST_PRESENT": "theirs"}):
-        assert os.environ["CRACK_TEST_PRESENT"] == "mine"
-    assert os.environ["CRACK_TEST_PRESENT"] == "mine"
+    monkeypatch.setenv("CRAWL_TEST_PRESENT", "mine")
+    with env_defaults({"CRAWL_TEST_PRESENT": "theirs"}):
+        assert os.environ["CRAWL_TEST_PRESENT"] == "mine"
+    assert os.environ["CRAWL_TEST_PRESENT"] == "mine"
 
 def test_restores_on_exception():
     try:
-        with env_defaults({"CRACK_TEST_RAISES": "1"}):
+        with env_defaults({"CRAWL_TEST_RAISES": "1"}):
             raise RuntimeError("boom")
     except RuntimeError:
         pass
-    assert "CRACK_TEST_RAISES" not in os.environ
+    assert "CRAWL_TEST_RAISES" not in os.environ
 
 def test_empty_defaults_is_a_no_op():
     with env_defaults({}):
@@ -110,14 +110,14 @@ def test_empty_defaults_is_a_no_op():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `uv run python -m pytest tests/test_env.py -q`
-Expected: FAIL, `ImportError: cannot import name 'env_defaults' from 'crack.core'`
+Expected: FAIL, `ImportError: cannot import name 'env_defaults' from 'crawl.core'`
 
 - [ ] **Step 3: Copy the implementation from the sibling**
 
 Run:
 
 ```bash
-cp ~/code/Crack-Any-Codebase-with-AI/src/crack/core/env.py src/crack/core/env.py
+cp ~/code/Crack-Any-Codebase-with-AI/src/crawl/core/env.py src/crawl/core/env.py
 ```
 
 The file is 24 lines and needs no edits. Confirm its content matches:
@@ -132,7 +132,7 @@ def env_defaults(defaults):
     """Set each key only when it is absent, then restore the prior environment.
 
     A value the user already set always wins. Restoring on exit keeps one
-    analysis's default from leaking into the next under `crack all`.
+    analysis's default from leaking into the next under `crawl all`.
     """
     prior = {}
     try:
@@ -151,7 +151,7 @@ def env_defaults(defaults):
 
 - [ ] **Step 4: Re-export it**
 
-In `src/crack/core/__init__.py`, add after the `.crawl` import block:
+In `src/crawl/core/__init__.py`, add after the `.crawl` import block:
 
 ```python
 from .env import env_defaults  # noqa: F401
@@ -165,7 +165,7 @@ Expected: PASS, 149 passed.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/crack/core/env.py src/crack/core/__init__.py tests/test_env.py
+git add src/crawl/core/env.py src/crawl/core/__init__.py tests/test_env.py
 git commit -m "feat(core): add env_defaults for per-analysis environment defaults"
 ```
 
@@ -175,13 +175,13 @@ git commit -m "feat(core): add env_defaults for per-analysis environment default
 
 **Files:**
 
-- Modify: `src/crack/core/llm.py`, `src/crack/core/__init__.py`
+- Modify: `src/crawl/core/llm.py`, `src/crawl/core/__init__.py`
 - Test: `tests/test_llm.py`
 
 **Interfaces:**
 
 - Consumes: nothing.
-- Produces: `crack.core.extract_mermaid(md: str) -> str`. Returns the first fenced mermaid block's body, stripped, or `""` when there is none.
+- Produces: `crawl.core.extract_mermaid(md: str) -> str`. Returns the first fenced mermaid block's body, stripped, or `""` when there is none.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -189,18 +189,18 @@ Append to `tests/test_llm.py`:
 
 ````python
 def test_extract_mermaid_returns_the_first_block_body():
-    from crack.core import extract_mermaid
+    from crawl.core import extract_mermaid
     md = "intro\n\n```mermaid\nflowchart LR\n  a --> b\n```\n\ntail\n"
     assert extract_mermaid(md) == "flowchart LR\n  a --> b"
 
 def test_extract_mermaid_returns_empty_when_absent():
-    from crack.core import extract_mermaid
+    from crawl.core import extract_mermaid
     assert extract_mermaid("no diagram here") == ""
     assert extract_mermaid("") == ""
     assert extract_mermaid(None) == ""
 
 def test_extract_mermaid_ignores_a_non_mermaid_fence():
-    from crack.core import extract_mermaid
+    from crawl.core import extract_mermaid
     assert extract_mermaid("```python\nx = 1\n```") == ""
 ````
 
@@ -211,7 +211,7 @@ Expected: FAIL, `ImportError: cannot import name 'extract_mermaid'`
 
 - [ ] **Step 3: Add the function**
 
-In `src/crack/core/llm.py`, add after `fill`:
+In `src/crawl/core/llm.py`, add after `fill`:
 
 ````python
 def extract_mermaid(md):
@@ -224,7 +224,7 @@ def extract_mermaid(md):
 
 - [ ] **Step 4: Re-export it**
 
-In `src/crack/core/__init__.py`, add `extract_mermaid,` to the existing `from .llm import (...)` block, after `fill,`.
+In `src/crawl/core/__init__.py`, add `extract_mermaid,` to the existing `from .llm import (...)` block, after `fill,`.
 
 - [ ] **Step 5: Run tests to verify they pass**
 
@@ -234,7 +234,7 @@ Expected: PASS, 152 passed.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/crack/core/llm.py src/crack/core/__init__.py tests/test_llm.py
+git add src/crawl/core/llm.py src/crawl/core/__init__.py tests/test_llm.py
 git commit -m "feat(core): add extract_mermaid for diagram-bearing LLM replies"
 ```
 
@@ -244,13 +244,13 @@ git commit -m "feat(core): add extract_mermaid for diagram-bearing LLM replies"
 
 **Files:**
 
-- Create: `src/crack/core/render.py`
+- Create: `src/crawl/core/render.py`
 - Test: `tests/test_core_render.py`
 
 **Interfaces:**
 
 - Consumes: nothing from earlier tasks.
-- Produces, all importable from `crack.core.render`:
+- Produces, all importable from `crawl.core.render`:
   - `Section(number, label, note, rail, width, key, when_empty="always", skip_note=None, md_skip_note=None, prefix=None, cards=None)` -- a frozen dataclass.
   - `Theme(title_suffix, eyebrow, accent, accent_soft, hero_from, hero_to, eyebrow_color, eyebrow_bar, sub_color, card_top_from, subtitle, footer, md_preamble, hero_prefix=None, page_name=None)` -- a frozen dataclass. `subtitle`, `footer`, `md_preamble` and `hero_prefix` are `Callable[[dict], str]`; `page_name` is `Callable[[dict, str], str]`.
   - `md(text) -> str`, `md_rich(text) -> str`, `esc(s) -> str`
@@ -268,7 +268,7 @@ Create `tests/test_core_render.py`:
 ````python
 import pytest
 
-from crack.core.render import (Section, Theme, card, esc, extract_mermaid, md,
+from crawl.core.render import (Section, Theme, card, esc, extract_mermaid, md,
                                md_rich, render_html, render_markdown,
                                split_cards, strip_mermaid)
 
@@ -370,14 +370,14 @@ def test_section_intro_comes_from_the_overview():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `uv run python -m pytest tests/test_core_render.py -q`
-Expected: FAIL, `ModuleNotFoundError: No module named 'crack.core.render'`
+Expected: FAIL, `ModuleNotFoundError: No module named 'crawl.core.render'`
 
 - [ ] **Step 3: Copy the engine from the sibling**
 
 Run:
 
 ```bash
-cp ~/code/Crack-Any-Codebase-with-AI/src/crack/core/render.py src/crack/core/render.py
+cp ~/code/Crack-Any-Codebase-with-AI/src/crawl/core/render.py src/crawl/core/render.py
 ```
 
 357 lines, copied verbatim. Do not edit it. Its only import beyond the standard library is `from markdown_it import MarkdownIt`, already a dependency.
@@ -392,7 +392,7 @@ If `test_render_html_escapes_the_page_name` fails, stop and report it rather tha
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/crack/core/render.py tests/test_core_render.py
+git add src/crawl/core/render.py tests/test_core_render.py
 git commit -m "feat(core): add the card-family render engine"
 ```
 
@@ -402,17 +402,17 @@ git commit -m "feat(core): add the card-family render engine"
 
 **Files:**
 
-- Create: `src/crack/core/overview.py`, `src/crack/core/nodes.py`
-- Modify: `src/crack/core/__init__.py`
+- Create: `src/crawl/core/overview.py`, `src/crawl/core/nodes.py`
+- Modify: `src/crawl/core/__init__.py`
 - Test: `tests/test_overview.py`
 
 **Interfaces:**
 
-- Consumes: `crack.core.call_llm`.
+- Consumes: `crawl.core.call_llm`.
 - Produces:
-  - `crack.core.overview.write_overview(name, what, sections, facts="") -> {"welcome": str, "intros": {title: str}}` where `sections` is a list of `(title, gist)` pairs.
-  - `crack.core.nodes.OverviewNode(spec, max_retries=2, wait=2)`, a PocketFlow `Node`. `spec(shared)` returns `{"name", "what", "sections", "facts"}`. Writes `shared["overview"]`. Its `exec_fallback` returns `{"welcome": "", "intros": {}}` so a failed call leaves the page without intro copy rather than killing the run.
-- Both re-exported as `crack.core.write_overview` and `crack.core.OverviewNode`.
+  - `crawl.core.overview.write_overview(name, what, sections, facts="") -> {"welcome": str, "intros": {title: str}}` where `sections` is a list of `(title, gist)` pairs.
+  - `crawl.core.nodes.OverviewNode(spec, max_retries=2, wait=2)`, a PocketFlow `Node`. `spec(shared)` returns `{"name", "what", "sections", "facts"}`. Writes `shared["overview"]`. Its `exec_fallback` returns `{"welcome": "", "intros": {}}` so a failed call leaves the page without intro copy rather than killing the run.
+- Both re-exported as `crawl.core.write_overview` and `crawl.core.OverviewNode`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -421,7 +421,7 @@ Create `tests/test_overview.py`:
 ```python
 import pytest
 
-from crack.core import OverviewNode, write_overview
+from crawl.core import OverviewNode, write_overview
 
 SECTIONS = [("The pipeline", "the six layers"), ("The code", "the odd bits")]
 
@@ -436,14 +436,14 @@ Only routing is unusual.
 """
 
 def test_write_overview_splits_the_reply_into_welcome_and_intros(monkeypatch):
-    monkeypatch.setattr("crack.core.overview.call_llm", lambda prompt: REPLY)
+    monkeypatch.setattr("crawl.core.overview.call_llm", lambda prompt: REPLY)
     out = write_overview("toy_repo", "a backend", SECTIONS, facts="4 routes")
     assert out["welcome"] == "toy_repo is a small Django service."
     assert out["intros"]["The pipeline"] == "Four routes fan into eleven handlers."
     assert out["intros"]["The code"] == "Only routing is unusual."
 
 def test_write_overview_falls_back_to_the_gist_for_a_missing_header(monkeypatch):
-    monkeypatch.setattr("crack.core.overview.call_llm",
+    monkeypatch.setattr("crawl.core.overview.call_llm",
                         lambda prompt: "## Welcome\nhi\n\n## The pipeline\nthere")
     out = write_overview("toy_repo", "a backend", SECTIONS)
     assert out["intros"]["The code"] == "the odd bits"
@@ -455,14 +455,14 @@ def test_write_overview_prompt_carries_the_name_facts_and_headers(monkeypatch):
         seen["p"] = prompt
         return REPLY
 
-    monkeypatch.setattr("crack.core.overview.call_llm", capture)
+    monkeypatch.setattr("crawl.core.overview.call_llm", capture)
     write_overview("toy_repo", "a backend", SECTIONS, facts="4 routes")
     assert "toy_repo" in seen["p"]
     assert "4 routes" in seen["p"]
     assert "## The pipeline" in seen["p"]
 
 def test_overview_node_stores_the_result_on_shared(monkeypatch):
-    monkeypatch.setattr("crack.core.overview.call_llm", lambda prompt: REPLY)
+    monkeypatch.setattr("crawl.core.overview.call_llm", lambda prompt: REPLY)
     shared = {"repo_path": "/tmp/toy_repo"}
     node = OverviewNode(lambda sh: {"name": "toy_repo", "what": "a backend",
                                     "sections": SECTIONS, "facts": ""})
@@ -472,7 +472,7 @@ def test_overview_node_stores_the_result_on_shared(monkeypatch):
 def test_overview_node_leaves_empty_copy_when_the_call_keeps_failing(monkeypatch):
     def boom(prompt):
         raise RuntimeError("no api key")
-    monkeypatch.setattr("crack.core.overview.call_llm", boom)
+    monkeypatch.setattr("crawl.core.overview.call_llm", boom)
     shared = {}
     node = OverviewNode(lambda sh: {"name": "n", "what": "w", "sections": SECTIONS},
                         max_retries=1, wait=0)
@@ -483,22 +483,22 @@ def test_overview_node_leaves_empty_copy_when_the_call_keeps_failing(monkeypatch
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `uv run python -m pytest tests/test_overview.py -q`
-Expected: FAIL, `ImportError: cannot import name 'OverviewNode' from 'crack.core'`
+Expected: FAIL, `ImportError: cannot import name 'OverviewNode' from 'crawl.core'`
 
 - [ ] **Step 3: Copy both files from the sibling**
 
 Run:
 
 ```bash
-cp ~/code/Crack-Any-Codebase-with-AI/src/crack/core/overview.py src/crack/core/overview.py
-cp ~/code/Crack-Any-Codebase-with-AI/src/crack/core/nodes.py src/crack/core/nodes.py
+cp ~/code/Crack-Any-Codebase-with-AI/src/crawl/core/overview.py src/crawl/core/overview.py
+cp ~/code/Crack-Any-Codebase-with-AI/src/crawl/core/nodes.py src/crawl/core/nodes.py
 ```
 
 `overview.py` is 88 lines, `nodes.py` is 32. Both copy verbatim; their imports (`from .call_llm import call_llm`, `from .overview import write_overview`) are already correct for coderay's layout.
 
 - [ ] **Step 4: Re-export both**
 
-In `src/crack/core/__init__.py`, add after the `.env` import:
+In `src/crawl/core/__init__.py`, add after the `.env` import:
 
 ```python
 from .nodes import OverviewNode  # noqa: F401
@@ -513,7 +513,7 @@ Expected: PASS, 174 passed.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/crack/core/overview.py src/crack/core/nodes.py src/crack/core/__init__.py tests/test_overview.py
+git add src/crawl/core/overview.py src/crawl/core/nodes.py src/crawl/core/__init__.py tests/test_overview.py
 git commit -m "feat(core): add OverviewNode and the page-overview writer"
 ```
 
@@ -523,18 +523,18 @@ git commit -m "feat(core): add OverviewNode and the page-overview writer"
 
 **Files:**
 
-- Modify: `src/crack/core/runner.py`
+- Modify: `src/crawl/core/runner.py`
 - Test: `tests/test_runner.py`
 
 **Interfaces:**
 
-- Consumes: `crack.core.env.env_defaults`, `crack.core.render.render_html`, `crack.core.render.render_markdown`.
-- Produces: `crack.core.runner.run_analysis(analysis, args) -> str` (the output directory). It:
+- Consumes: `crawl.core.env.env_defaults`, `crawl.core.render.render_html`, `crawl.core.render.render_markdown`.
+- Produces: `crawl.core.runner.run_analysis(analysis, args) -> str` (the output directory). It:
   1. resolves `out_dir` from `args.out`, else `<cwd>/output/<repo-name>-<analysis.NAME>`;
   2. creates it before the flow runs, because some analyses write extra files into it mid-run;
   3. calls `analysis.init_shared(args)`;
   4. runs `analysis.build_flow()` inside `env_defaults(getattr(analysis, "ENV_DEFAULTS", {}))`;
-  5. writes `index.md` and `index.html` through `crack.core.render`;
+  5. writes `index.md` and `index.html` through `crawl.core.render`;
   6. prints where it wrote, and returns `out_dir`.
 
 `init_shared` takes only `args`, matching `tour`'s signature, not the sibling's `(args, out_dir)`.
@@ -550,8 +550,8 @@ import os
 
 import pytest
 
-from crack.core.render import Section, Theme
-from crack.core.runner import run_analysis
+from crawl.core.render import Section, Theme
+from crawl.core.runner import run_analysis
 
 class _Args:
     def __init__(self, repo_path, out=None):
@@ -620,11 +620,11 @@ def test_run_analysis_creates_the_output_dir_before_the_flow_runs(tmp_path):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `uv run python -m pytest tests/test_runner.py -q`
-Expected: FAIL, `ImportError: cannot import name 'run_analysis' from 'crack.core.runner'`
+Expected: FAIL, `ImportError: cannot import name 'run_analysis' from 'crawl.core.runner'`
 
 - [ ] **Step 3: Write the implementation**
 
-In `src/crack/core/runner.py`, add the imports at the top and the function below `run_flow`:
+In `src/crawl/core/runner.py`, add the imports at the top and the function below `run_flow`:
 
 ```python
 """Runs a pipeline flow against a shared state dict, common to any analysis."""
@@ -637,7 +637,7 @@ from .render import render_html, render_markdown
 ```python
 def default_output_dir(repo_path, analysis_name):
     """Anchored on the current working directory, not this file's location, so
-    output lands in the same place whether crack runs from an editable checkout
+    output lands in the same place whether crawl runs from an editable checkout
     or as an installed tool."""
     name = os.path.basename(os.path.abspath(repo_path))
     return os.path.join(os.getcwd(), "output", f"{name}-{analysis_name}")
@@ -673,7 +673,7 @@ Expected: PASS, 178 passed.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/crack/core/runner.py tests/test_runner.py
+git add src/crawl/core/runner.py tests/test_runner.py
 git commit -m "feat(core): add run_analysis for the ported card-family analyses"
 ```
 
@@ -683,7 +683,7 @@ git commit -m "feat(core): add run_analysis for the ported card-family analyses"
 
 **Files:**
 
-- Create: `src/crack/analyses/backend/__init__.py` (placeholder for now), `src/crack/analyses/backend/backend_crawl.py`
+- Create: `src/crawl/analyses/backend/__init__.py` (placeholder for now), `src/crawl/analyses/backend/backend_crawl.py`
 - Test: `tests/test_backend_crawl.py`
 
 **Interfaces:**
@@ -702,7 +702,7 @@ import os
 
 import pytest
 
-from crack.analyses.backend import backend_crawl as bc
+from crawl.analyses.backend import backend_crawl as bc
 
 @pytest.mark.parametrize("rel,layer", [
     ("app/urls.py", "route"),
@@ -786,23 +786,23 @@ def test_build_bundle_samples_handlers_and_prefers_core_names(tmp_path):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `uv run python -m pytest tests/test_backend_crawl.py -q`
-Expected: FAIL, `ModuleNotFoundError: No module named 'crack.analyses.backend'`
+Expected: FAIL, `ModuleNotFoundError: No module named 'crawl.analyses.backend'`
 
 - [ ] **Step 3: Create the package and copy the crawl**
 
 Run:
 
 ```bash
-mkdir -p src/crack/analyses/backend
-printf '"""Read a backend as the six layers every request flows through."""\n' > src/crack/analyses/backend/__init__.py
-cp ~/code/Crack-Any-Codebase-with-AI/src/crack/analyses/backend/backend_crawl.py src/crack/analyses/backend/backend_crawl.py
+mkdir -p src/crawl/analyses/backend
+printf '"""Read a backend as the six layers every request flows through."""\n' > src/crawl/analyses/backend/__init__.py
+cp ~/code/Crack-Any-Codebase-with-AI/src/crawl/analyses/backend/backend_crawl.py src/crawl/analyses/backend/backend_crawl.py
 ```
 
 114 lines, copied verbatim, standard library only. Task 8 replaces the placeholder `__init__.py`.
 
 - [ ] **Step 4: Register the package so it installs**
 
-In `pyproject.toml`, add `"crack.analyses.backend",` to the `[tool.setuptools] packages` list.
+In `pyproject.toml`, add `"crawl.analyses.backend",` to the `[tool.setuptools] packages` list.
 
 - [ ] **Step 5: Run tests to verify they pass**
 
@@ -814,7 +814,7 @@ Expected: PASS, 200 passed.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/crack/analyses/backend/ pyproject.toml tests/test_backend_crawl.py
+git add src/crawl/analyses/backend/ pyproject.toml tests/test_backend_crawl.py
 git commit -m "feat(backend): add the six-layer backend crawl"
 ```
 
@@ -824,13 +824,13 @@ git commit -m "feat(backend): add the six-layer backend crawl"
 
 **Files:**
 
-- Create: `src/crack/analyses/backend/nodes.py`, `src/crack/analyses/backend/prompts/{pipeline.md,layer-code.md,trace.md}`
+- Create: `src/crawl/analyses/backend/nodes.py`, `src/crawl/analyses/backend/prompts/{pipeline.md,layer-code.md,trace.md}`
 - Modify: `pyproject.toml`
 - Test: `tests/test_backend_nodes.py`
 
 **Interfaces:**
 
-- Consumes: `crack.core.call_llm`, `read_prompt`, `fill`, `extract_mermaid`; `crack.analyses.backend.backend_crawl`.
+- Consumes: `crawl.core.call_llm`, `read_prompt`, `fill`, `extract_mermaid`; `crawl.analyses.backend.backend_crawl`.
 - Produces: `BuildBundle`, `Pipeline`, `LayerCode`, `Trace`, all PocketFlow `Node`s. They set these keys on `shared`: `codebase`, `layer_counts` (BuildBundle); `pipeline_md`, `pipeline_diagram` (Pipeline); `layercode_md` (LayerCode); `trace_md`, `trace_endpoint` (Trace).
 
 - [ ] **Step 1: Write the failing test**
@@ -840,7 +840,7 @@ Create `tests/test_backend_nodes.py`:
 ````python
 import pytest
 
-from crack.analyses.backend import nodes as n
+from crawl.analyses.backend import nodes as n
 
 CARDS = "### Route\nbody\n\n### Handler\nbody\n"
 
@@ -938,15 +938,15 @@ def test_the_codebase_slot_is_filled(monkeypatch):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `uv run python -m pytest tests/test_backend_nodes.py -q`
-Expected: FAIL, `ModuleNotFoundError: No module named 'crack.analyses.backend.nodes'`
+Expected: FAIL, `ModuleNotFoundError: No module named 'crawl.analyses.backend.nodes'`
 
 - [ ] **Step 3: Copy the nodes and prompts**
 
 Run:
 
 ```bash
-cp ~/code/Crack-Any-Codebase-with-AI/src/crack/analyses/backend/nodes.py src/crack/analyses/backend/nodes.py
-cp -R ~/code/Crack-Any-Codebase-with-AI/src/crack/analyses/backend/prompts src/crack/analyses/backend/prompts
+cp ~/code/Crack-Any-Codebase-with-AI/src/crawl/analyses/backend/nodes.py src/crawl/analyses/backend/nodes.py
+cp -R ~/code/Crack-Any-Codebase-with-AI/src/crawl/analyses/backend/prompts src/crawl/analyses/backend/prompts
 ```
 
 - [ ] **Step 4: Switch prompt loading to importlib.resources**
@@ -970,17 +970,17 @@ from importlib import resources
 ```
 
 ```python
-PROMPTS_DIR = resources.files("crack.analyses.backend") / "prompts"
+PROMPTS_DIR = resources.files("crawl.analyses.backend") / "prompts"
 ```
 
-`os` is no longer used in the file after this change; confirm with `grep -n 'os\.' src/crack/analyses/backend/nodes.py` returning nothing before removing the import.
+`os` is no longer used in the file after this change; confirm with `grep -n 'os\.' src/crawl/analyses/backend/nodes.py` returning nothing before removing the import.
 
 - [ ] **Step 5: Ship the prompts in the package**
 
 In `pyproject.toml`, under `[tool.setuptools.package-data]`, add:
 
 ```toml
-"crack.analyses.backend" = ["prompts/*.md"]
+"crawl.analyses.backend" = ["prompts/*.md"]
 ```
 
 - [ ] **Step 6: Run tests to verify they pass**
@@ -991,7 +991,7 @@ Expected: PASS, 212 passed.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/crack/analyses/backend/nodes.py src/crack/analyses/backend/prompts/ pyproject.toml tests/test_backend_nodes.py
+git add src/crawl/analyses/backend/nodes.py src/crawl/analyses/backend/prompts/ pyproject.toml tests/test_backend_nodes.py
 git commit -m "feat(backend): add the pipeline, layer-code, and trace nodes"
 ```
 
@@ -1001,7 +1001,7 @@ git commit -m "feat(backend): add the pipeline, layer-code, and trace nodes"
 
 **Files:**
 
-- Modify: `src/crack/analyses/backend/__init__.py`, `src/crack/analyses/__init__.py`
+- Modify: `src/crawl/analyses/backend/__init__.py`, `src/crawl/analyses/__init__.py`
 - Create: `scripts/regen_golden.py`, `tests/fixtures/golden/backend/{shared.json,index.html,index.md}`
 - Test: `tests/test_backend.py`, `tests/test_golden.py`
 
@@ -1020,8 +1020,8 @@ import os
 
 import pytest
 
-from crack.analyses import ANALYSES
-from crack.analyses import backend
+from crawl.analyses import ANALYSES
+from crawl.analyses import backend
 
 def test_backend_is_registered():
     assert ANALYSES["backend"] is backend
@@ -1053,7 +1053,7 @@ def test_init_shared_carries_the_repo_path():
     assert backend.init_shared(args) == {"repo_path": "/tmp/toy_repo"}
 
 def test_build_flow_starts_at_build_bundle():
-    from crack.analyses.backend.nodes import BuildBundle
+    from crawl.analyses.backend.nodes import BuildBundle
     assert isinstance(backend.build_flow().start_node, BuildBundle)
 
 def test_run_rejects_a_path_that_is_not_a_directory(tmp_path):
@@ -1077,7 +1077,7 @@ def test_overview_spec_name_matches_the_name_the_page_is_rendered_with(tmp_path,
     would name a different repo than the heading above it. A relative path is
     the case that exposes a divergence.
     """
-    from crack.core.runner import repo_name_of
+    from crawl.core.runner import repo_name_of
 
     repo = tmp_path / "toy_repo"
     repo.mkdir()
@@ -1101,8 +1101,8 @@ import pathlib
 
 import pytest
 
-from crack.analyses import ANALYSES
-from crack.core import render
+from crawl.analyses import ANALYSES
+from crawl.core import render
 
 GOLDEN = pathlib.Path(__file__).parent / "fixtures" / "golden"
 
@@ -1148,36 +1148,36 @@ def test_render_escapes_the_diagram_it_is_handed(name):
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `uv run python -m pytest tests/test_backend.py tests/test_golden.py -q`
-Expected: FAIL, `ImportError: cannot import name 'backend' from 'crack.analyses'`
+Expected: FAIL, `ImportError: cannot import name 'backend' from 'crawl.analyses'`
 
 - [ ] **Step 3: Write the analysis module**
 
 Copy the sibling's version as the starting point:
 
 ```bash
-cp ~/code/Crack-Any-Codebase-with-AI/src/crack/analyses/backend/__init__.py src/crack/analyses/backend/__init__.py
+cp ~/code/Crack-Any-Codebase-with-AI/src/crawl/analyses/backend/__init__.py src/crawl/analyses/backend/__init__.py
 ```
 
 Then make it fit coderay's interface. Change the import block from:
 
 ```python
-from crack.core import OverviewNode
-from crack.core.render import Section, Theme
+from crawl.core import OverviewNode
+from crawl.core.render import Section, Theme
 from .nodes import BuildBundle, Pipeline, LayerCode, Trace
 ```
 
 to:
 
 ```python
-from crack.core import OverviewNode
-from crack.core.render import Section, Theme, esc
-from crack.core.runner import repo_name_of, run_analysis
+from crawl.core import OverviewNode
+from crawl.core.render import Section, Theme, esc
+from crawl.core.runner import repo_name_of, run_analysis
 from .nodes import BuildBundle, Pipeline, LayerCode, Trace
 ```
 
 Then delete the now-unused `import os` from the top of the file and add `import sys` (`run()` below needs it).
 
-**Also in this step, add `repo_name_of` to `src/crack/core/runner.py`** and route the two existing
+**Also in this step, add `repo_name_of` to `src/crawl/core/runner.py`** and route the two existing
 call sites through it, replacing the inline `os.path.basename(os.path.abspath(...))` in both
 `default_output_dir` and `run_analysis`:
 
@@ -1220,21 +1220,19 @@ def run(args) -> None:
     run_analysis(sys.modules[__name__], args)
 ```
 
-
-
 - [ ] **Step 4: Register it**
 
-Replace `src/crack/analyses/__init__.py` with:
+Replace `src/crawl/analyses/__init__.py` with:
 
 ```python
 """Registry of available analyses: name -> module implementing the analysis
 interface (NAME, build_flow, add_arguments, init_shared, run)."""
-from crack.analyses import backend, tour
+from crawl.analyses import backend, tour
 
 ANALYSES = {a.NAME: a for a in (tour, backend)}
 ```
 
-`tour` stays first so `crack --help` lists it first.
+`tour` stays first so `crawl --help` lists it first.
 
 - [ ] **Step 5: Write the golden regeneration script**
 
@@ -1246,8 +1244,8 @@ Create `scripts/regen_golden.py`:
 
 The golden files under tests/fixtures/golden/<analysis>/ pin the exact HTML and
 markdown a ported analysis produces for a fixed `shared` dict. They are
-generated from the port source of record, not from crack itself, so the test
-proves the port stayed faithful rather than proving crack agrees with itself.
+generated from the port source of record, not from crawl itself, so the test
+proves the port stayed faithful rather than proving crawl agrees with itself.
 
 Use it when a deliberate change to the card engine or to an analysis's THEME or
 SECTIONS makes a golden test fail. Never use it to silence an unexplained
@@ -1293,8 +1291,8 @@ def main():
                  f"Check it out, or pass --allow-any-commit deliberately.")
 
     sys.path.insert(0, str(args.sibling / "src"))
-    from crack.analyses import load           # the sibling's registry, not ours
-    from crack.core import render
+    from crawl.analyses import load           # the sibling's registry, not ours
+    from crawl.core import render
 
     analysis = load(args.analysis)
     shared = json.loads(shared_path.read_text())
@@ -1359,9 +1357,9 @@ Expected: PASS, 226 passed.
 Run:
 
 ```bash
-uv run crack --help
-uv run crack backend --help
-uv run crack backend /nonexistent-path; echo "exit=$?"
+uv run crawl --help
+uv run crawl backend --help
+uv run crawl backend /nonexistent-path; echo "exit=$?"
 ```
 
 Expected: `--help` lists both `tour` and `backend`; `backend --help` shows `repo_path` and `--out`; the bad path prints `/nonexistent-path is not a directory` and `exit=1`.
@@ -1369,7 +1367,7 @@ Expected: `--help` lists both `tour` and `backend`; `backend --help` shows `repo
 - [ ] **Step 9: Commit**
 
 ```bash
-git add src/crack/analyses/backend/__init__.py src/crack/analyses/__init__.py \
+git add src/crawl/analyses/backend/__init__.py src/crawl/analyses/__init__.py \
         scripts/regen_golden.py tests/fixtures/golden/ tests/test_backend.py tests/test_golden.py
 git commit -m "feat(backend): register the backend analysis with a golden render test"
 ```
@@ -1395,33 +1393,33 @@ Append to `tests/test_package_skeleton.py`:
 ```python
 def test_every_registered_analysis_is_documented():
     import pathlib
-    from crack.analyses import ANALYSES
+    from crawl.analyses import ANALYSES
     readme = (pathlib.Path(__file__).parent.parent / "README.md").read_text()
     for name in ANALYSES:
-        assert f"crack {name}" in readme, f"README.md does not document `crack {name}`"
+        assert f"crawl {name}" in readme, f"README.md does not document `crawl {name}`"
 
 def test_every_registered_analysis_ships_its_package_data():
     import pathlib
     import tomllib
-    from crack.analyses import ANALYSES
+    from crawl.analyses import ANALYSES
     root = pathlib.Path(__file__).parent.parent
     cfg = tomllib.loads((root / "pyproject.toml").read_text())
     packages = cfg["tool"]["setuptools"]["packages"]
     for name in ANALYSES:
-        pkg = f"crack.analyses.{name.replace('-', '_')}"
+        pkg = f"crawl.analyses.{name.replace('-', '_')}"
         assert pkg in packages, f"{pkg} missing from [tool.setuptools] packages"
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `uv run python -m pytest tests/test_package_skeleton.py -q`
-Expected: FAIL, `AssertionError: README.md does not document 'crack backend'`
+Expected: FAIL, `AssertionError: README.md does not document 'crawl backend'`
 
 - [ ] **Step 3: Update the docs**
 
-In `README.md`, wherever `crack tour path/to/repo` is shown as the invocation, present the two analyses as a list. Add a short section describing `backend`: it reads a server-side backend as six layers (route, middleware, handler, service, database, response), and produces three views -- the pipeline with a file count per layer, the code at the layers built unusually, and a trace of one request through all six. Note that it expects a server-side backend (Django, Express, Rails, FastAPI) and asserts out with a clear message on a repo that has none.
+In `README.md`, wherever `crawl tour path/to/repo` is shown as the invocation, present the two analyses as a list. Add a short section describing `backend`: it reads a server-side backend as six layers (route, middleware, handler, service, database, response), and produces three views -- the pipeline with a file count per layer, the code at the layers built unusually, and a trace of one request through all six. Note that it expects a server-side backend (Django, Express, Rails, FastAPI) and asserts out with a clear message on a repo that has none.
 
-In `CLAUDE.md` and `AGENTS.md`, under "Architecture Overview", note that `crack` now dispatches to more than one analysis: `tour` (the five-node chapter pipeline, unchanged) and `backend` (`BuildBundle -> Pipeline -> LayerCode -> Trace -> OverviewNode`). Add to "Conventions & Patterns" that card-family analyses declare `SECTIONS` and `THEME` and are rendered by `crack/core/render.py`, and that an analysis with a page shape that does not fit declares `render_html`/`render_markdown` instead. State the count as it is TODAY (backend alone), not as the epic's end state. Each later port updates this line as it lands. Keep both files in sync; they are independent files, not symlinks.
+In `CLAUDE.md` and `AGENTS.md`, under "Architecture Overview", note that `crawl` now dispatches to more than one analysis: `tour` (the five-node chapter pipeline, unchanged) and `backend` (`BuildBundle -> Pipeline -> LayerCode -> Trace -> OverviewNode`). Add to "Conventions & Patterns" that card-family analyses declare `SECTIONS` and `THEME` and are rendered by `crawl/core/render.py`, and that an analysis with a page shape that does not fit declares `render_html`/`render_markdown` instead. State the count as it is TODAY (backend alone), not as the epic's end state. Each later port updates this line as it lands. Keep both files in sync; they are independent files, not symlinks.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -1440,8 +1438,8 @@ git commit -m "docs: document the backend analysis and the card-family contract"
 ## Done when
 
 - `uv run python -m pytest tests/ -q` passes with roughly 228 tests, up from the 145 baseline.
-- `uv run crack backend --help` works, and `crack tour` behaves exactly as before.
-- `crack/analyses/tour/` and `crack/cli.py` are untouched: `git diff a7b6df9 --stat -- src/crack/analyses/tour src/crack/cli.py` prints nothing.
+- `uv run crawl backend --help` works, and `crawl tour` behaves exactly as before.
+- `crawl/analyses/tour/` and `crawl/cli.py` are untouched: `git diff a7b6df9 --stat -- src/crawl/analyses/tour src/crawl/cli.py` prints nothing.
 - The golden fixture regenerates identically: `scripts/regen_golden.py backend && git diff --exit-code tests/fixtures/golden/`.
 
 ## Notes for the follow-up ports

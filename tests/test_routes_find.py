@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from crack.analyses.interfaces import routes_find as rf
+from crawl.analyses.interfaces import routes_find as rf
 
 
 @pytest.mark.parametrize("rel", [

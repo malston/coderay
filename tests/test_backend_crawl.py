@@ -1,6 +1,6 @@
 import pytest
 
-from crack.analyses.backend import backend_crawl as bc
+from crawl.analyses.backend import backend_crawl as bc
 
 
 @pytest.mark.parametrize("rel,layer", [

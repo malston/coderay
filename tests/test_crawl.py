@@ -1,10 +1,10 @@
 import os
 import sys
 
-import crack.core  # noqa: F401  (populates sys.modules["crack.core.crawl"])
-from crack.core.crawl import list_files, safe_read
+import crawl.core  # noqa: F401  (populates sys.modules["crawl.core.crawl"])
+from crawl.core.crawl import list_files, safe_read
 
-crawl = sys.modules["crack.core.crawl"]
+crawl = sys.modules["crawl.core.crawl"]
 
 
 def test_wanted_rejects_credential_shaped_names():
@@ -84,7 +84,7 @@ def test_list_files_skips_a_symlink_that_renames_a_credential_file(tmp_path):
     `src/config.py -> ../.env` looked like source and the target was inside
     the repo, and the whole .env was read and sent to the model."""
     import os
-    from crack.core import list_files
+    from crawl.core import list_files
     repo = tmp_path / "repo"
     (repo / "src").mkdir(parents=True)
     (repo / ".env").write_text("SECRET=1\n")
@@ -131,7 +131,7 @@ def test_readable_refuses_a_credential_named_target_unless_the_crawler_opts_in(t
     cannot rename a credential file into source. The architecture crawler
     reads a real .env on purpose (variable names only) and opts in; the opt-in
     never extends to a symlink."""
-    from crack.core import readable
+    from crawl.core import readable
     repo = tmp_path / "repo"
     (repo / "src").mkdir(parents=True)
     (repo / ".env").write_text("SECRET=1\n")
@@ -158,7 +158,7 @@ def test_credential_names_cover_every_dotenv_variant_except_the_templates():
 
 def test_readable_refuses_a_symlink_to_a_dotenv_variant(tmp_path):
     """coderay-q2r.60. Reproduction from the PR #30 review."""
-    from crack.core import readable
+    from crawl.core import readable
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / ".env.staging").write_text("STAGE=stag3\n")

@@ -1,6 +1,6 @@
 import pytest
 
-from crack.analyses.schema import nodes as n
+from crawl.analyses.schema import nodes as n
 
 CARDS = "### 1 · users\nbody\n\n### 2 · orders\nbody\n"
 ERD = "```mermaid\nerDiagram\n  users ||--o{ orders : places\n```"

@@ -1,6 +1,6 @@
 import pytest
 
-from crack.analyses.architecture import nodes as n
+from crawl.analyses.architecture import nodes as n
 
 CARDS = "### 1 · Gateway\nThe front door.\n\n### 2 · Auth\nAuth0.\n"
 

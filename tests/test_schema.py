@@ -2,7 +2,7 @@ import argparse
 
 import pytest
 
-from crack.analyses import ANALYSES, schema
+from crawl.analyses import ANALYSES, schema
 
 
 def test_schema_is_registered():
@@ -62,7 +62,7 @@ def test_init_shared_tolerates_an_args_without_the_flag():
 
 
 def test_build_flow_starts_at_find_schema():
-    from crack.analyses.schema.nodes import FindSchema
+    from crawl.analyses.schema.nodes import FindSchema
     assert isinstance(schema.build_flow().start_node, FindSchema)
 
 

@@ -1,7 +1,7 @@
 import pytest
 
-import crack.core.llm as llm_module
-from crack.analyses.interfaces import nodes as n
+import crawl.core.llm as llm_module
+from crawl.analyses.interfaces import nodes as n
 
 CARDS = "### Booking (12)\nbody\n\n### Auth (3)\nbody\n"
 
@@ -10,7 +10,7 @@ def _fake_llm(monkeypatch, fn):
     """Fake the LLM at both boundaries the node calls through.
 
     EndpointSequence reaches the model two ways: directly via call_llm for the
-    diagram, and via crack.core.yaml_call for the endpoint pick. yaml_call
+    diagram, and via crawl.core.yaml_call for the endpoint pick. yaml_call
     resolves call_llm in its own module, so patching only this module's name
     would leave the pick calling the real API.
     """
@@ -215,7 +215,7 @@ def test_the_routes_slot_is_filled_before_the_prompt_goes_out(monkeypatch):
 
 
 def test_the_endpoint_pick_retries_a_malformed_reply_instead_of_giving_up(tmp_path, monkeypatch):
-    """The pick goes through crack.core.yaml_call, which retries a bad reply
+    """The pick goes through crawl.core.yaml_call, which retries a bad reply
     with a varied tail rather than accepting the first failure.
 
     The distinguishing input is a first reply that is not YAML followed by a
@@ -286,7 +286,7 @@ def test_the_endpoint_pick_retries_well_formed_yaml_that_names_nothing(tmp_path,
 
 
 def test_the_module_does_not_carry_its_own_yaml_parser():
-    """CLAUDE.md: LLM YAML parsing goes through crack.core, not a local copy.
+    """CLAUDE.md: LLM YAML parsing goes through crawl.core, not a local copy.
 
     The duplicate was a real cache/retry defect once before.
     """

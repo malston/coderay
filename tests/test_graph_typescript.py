@@ -1,5 +1,5 @@
-import crack.analyses.tour.graph.languages.typescript as typescript_module
-from crack.analyses.tour.graph.languages.typescript import imports
+import crawl.analyses.tour.graph.languages.typescript as typescript_module
+from crawl.analyses.tour.graph.languages.typescript import imports
 
 
 def test_imports_resolves_ts_relative_specifier():

@@ -3,8 +3,8 @@ import os
 
 import pytest
 
-from crack.analyses import ANALYSES
-from crack.analyses import backend
+from crawl.analyses import ANALYSES
+from crawl.analyses import backend
 
 def test_backend_is_registered():
     assert ANALYSES["backend"] is backend
@@ -36,7 +36,7 @@ def test_init_shared_carries_the_repo_path():
     assert backend.init_shared(args) == {"repo_path": "/tmp/toy_repo"}
 
 def test_build_flow_starts_at_build_bundle():
-    from crack.analyses.backend.nodes import BuildBundle
+    from crawl.analyses.backend.nodes import BuildBundle
     assert isinstance(backend.build_flow().start_node, BuildBundle)
 
 def test_run_rejects_a_path_that_is_not_a_directory(tmp_path):
@@ -60,7 +60,7 @@ def test_overview_spec_name_matches_the_name_the_page_is_rendered_with(tmp_path,
     would name a different repo than the heading above it. "." is the case that
     exposes a divergence.
     """
-    from crack.core.runner import repo_name_of
+    from crawl.core.runner import repo_name_of
 
     repo = tmp_path / "toy_repo"
     repo.mkdir()
