@@ -429,3 +429,16 @@ def test_repo_root_explains_a_directory_that_is_not_a_repo(tmp_path):
 ])
 def test_is_secret_path_covers_the_second_review_pass(path):
     assert gl.is_secret_path(path) is True
+
+
+@pytest.mark.parametrize("path", [".ENV", "Credentials.json", "certs/server.PEM", "ID_RSA"])
+def test_is_secret_path_is_case_folded_like_the_crawler_rule(path):
+    """coderay-q2r.62: a graveyard commit deleting `Credentials.json` sent the
+    body to the LLM because the check was a case-sensitive copy of the rule."""
+    assert gl.is_secret_path(path) is True
+
+
+@pytest.mark.parametrize("path", [".env.example", "config/.env.sample"])
+def test_is_secret_path_leaves_dotenv_templates_alone(path):
+    """Every crawler reads the templates for variable names; their diffs carry no secrets."""
+    assert gl.is_secret_path(path) is False
