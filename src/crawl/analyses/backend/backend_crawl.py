@@ -19,7 +19,7 @@ from crawl.core import DEFAULT_SKIP_DIR, GO_FIXTURE_DIRS, list_files, safe_read
 # The crawler's shared noise set plus the directories a backend keeps that
 # hold no request-path code (coderay-q2r.59: the port's own list missed `env`,
 # `spec` and `.tox`, so a virtualenv or an RSpec tree inflated the counts).
-SKIP_DIRS = DEFAULT_SKIP_DIR | {
+SKIP_DIRS = DEFAULT_SKIP_DIR | GO_FIXTURE_DIRS | {
     '.yarn', 'migrations', 'static', 'locale', 'frontend_tests', 'node_tests',
 }
 SRC_EXT = ('.py', '.ts', '.tsx', '.js', '.rb', '.go', '.java', '.php')
@@ -62,8 +62,6 @@ def classify(rel):
     if any(m in base for m in ('.test.', '.spec.', '_test.', '.stories.')) or base.endswith('_spec.rb'):
         return None
     is_go = p.endswith('.go')
-    if is_go and any(seg in GO_FIXTURE_DIRS for seg in p.split('/')[1:-1]):
-        return None
     # Route
     if (base in ('urls.py', 'routes.rb', 'routes.ts', 'router.ts', 'routes.js', 'router.js')
             or base.endswith('_router.ts') or '/pages/api/' in p or '/routes/' in p or '/urls/' in p
@@ -76,7 +74,7 @@ def classify(rel):
     # Handler
     if ('/views/' in p or '/controllers/' in p or '/handlers/' in p
             or base == 'views.py' or base.endswith(('view.py', '_views.py', 'controller.rb'))
-            or (is_go and (base in GO_HANDLER_NAMES or base.endswith(GO_HANDLER_SUFFIXES)))):
+            or (is_go and (base in GO_HANDLER_NAMES or base.endswith(GO_HANDLER_SUFFIXES) or '/handler/' in p))):
         return 'handler'
     # Service (business logic)
     if ('/actions/' in p or '/services/' in p or '/domain/' in p or '/use' in p and 'case' in p
@@ -85,7 +83,7 @@ def classify(rel):
     # Database
     if ('/models/' in p or base in ('models.py', 'schema.rb') or '/repositories/' in p or '/repository/' in p
             or (is_go and (base in GO_DATABASE_NAMES or base.endswith(GO_DATABASE_SUFFIXES)
-                           or '/store/' in p or '/db/' in p or '/sqlc/' in p))):
+                           or '/store/' in p or '/db/' in p or '/database/' in p or '/sqlc/' in p))):
         return 'database'
     # Response
     if ('serializer' in p or '/serializers/' in p or (base.startswith('response') and base.endswith('.py'))

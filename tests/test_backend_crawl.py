@@ -52,6 +52,8 @@ from crawl.analyses.backend import backend_crawl as bc
     ("pkg/store/users.go", "database"),
     ("internal/repository/user.go", "database"),
     ("internal/sqlc/user.go", "database"),
+    ("internal/handler/user.go", "handler"),
+    ("internal/database/postgres.go", "database"),
     ("internal/api/response.go", "response"),
     ("internal/api/user_response.go", "response"),
     ("internal/dto/user.go", "response"),
@@ -72,8 +74,7 @@ def test_classify_maps_a_path_to_its_layer(rel, layer):
     # Go: a test file, a plain package file, a name that only contains a layer
     # word, and files under fixture directories
     "pkg/hub/db_test.go", "pkg/types/convert.go", "pkg/hub/repository_globs.go",
-    "pkg/hub/model_defaults.go", "pkg/hub/factorytest/server.go", "pkg/hub/testdata/server.go",
-    "internal/testutil/handlers.go",
+    "pkg/hub/model_defaults.go",
     # a client SDK's api.go and a lone models.go are not a handler or a data layer
     "pkg/client/api.go", "internal/api/models.go",
     # main.go outside cmd/ is a tool's entry, not a route
@@ -377,3 +378,19 @@ def test_build_bundle_reads_a_go_service_into_its_layers(tmp_path):
     assert "LAYER ROUTE: pkg/hub/server.go" in bundle and "LAYER DATABASE: pkg/hub/db.go" in bundle
     assert bundle.index("LAYER ROUTE: pkg/hub/server.go") < bundle.index("LAYER ROUTE: cmd/hub/main.go")
     assert "db_test.go" not in bundle and "thing.go" not in bundle
+
+
+def test_build_bundle_skips_fixture_directories_for_every_language(tmp_path):
+    """testdata/, testutil/ and factorytest/ hold fixtures and mocks whatever
+    the language; they are pruned from the walk, so a Python fixture cannot
+    inflate the counts any more than a Go one can."""
+    repo = _repo(tmp_path, {
+        "app/urls.py": "urlpatterns = []\n",
+        "testdata/models.py": "class Fixture: pass\n",
+        "internal/testutil/routes.ts": "export const r = 1;\n",
+        "pkg/hub/factorytest/server.go": "package factorytest\n",
+        "pkg/hub/server.go": "package hub\n",
+    })
+    bundle, stats = bc.build_bundle(repo)
+    assert stats["counts"] == {"route": 2}
+    assert "testdata" not in bundle and "testutil" not in bundle and "factorytest" not in bundle

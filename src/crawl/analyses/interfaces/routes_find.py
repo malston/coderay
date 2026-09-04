@@ -20,7 +20,7 @@ import re
 
 from crawl.core import DEFAULT_SKIP_DIR, GO_FIXTURE_DIRS, readable
 
-SKIP_DIRS = DEFAULT_SKIP_DIR | {'.storybook'}
+SKIP_DIRS = DEFAULT_SKIP_DIR | GO_FIXTURE_DIRS | {'.storybook'}
 
 _TEST_MARKERS = ('.test.', '.spec.', '_test.', '.stories.')
 _ROUTE_BASENAMES = frozenset({
@@ -43,13 +43,10 @@ def go_route_registrations(text):
 
 
 def _go_candidate(rel):
-    """True if a .go file may hold route registrations: not a test file, not a
-    test helper, not under a fixture directory."""
-    p = "/" + rel.replace(os.sep, "/").lstrip("/")
-    base = os.path.basename(p)
-    if not p.endswith(".go") or "test" in base:
-        return False
-    return not any(seg in GO_FIXTURE_DIRS for seg in p.split("/")[1:-1])
+    """True if a .go file may hold route registrations: not a test file and not
+    a test helper. Fixture directories are pruned from the walk."""
+    base = os.path.basename(rel)
+    return rel.endswith(".go") and "test" not in base
 
 
 def _walk(root):

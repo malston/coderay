@@ -126,3 +126,12 @@ def test_build_bundle_abort_does_not_blame_encoding_for_an_unreadable_file(tmp_p
             n.BuildBundle().run({"repo_path": str(tmp_path)})
     finally:
         p.chmod(0o644)
+
+
+def test_the_no_backend_message_names_go_among_the_frameworks(tmp_path):
+    """README lists Go net/http services as supported; the message a Go user
+    reads when nothing classified must not contradict it."""
+    (tmp_path / "README.md").write_text("x\n")
+    with pytest.raises(AssertionError) as e:
+        n.BuildBundle().run({"repo_path": str(tmp_path)})
+    assert "Go" in str(e.value) and "Django" in str(e.value)
