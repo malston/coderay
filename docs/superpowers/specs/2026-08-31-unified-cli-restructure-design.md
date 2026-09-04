@@ -59,7 +59,7 @@ src/crawl/
   core/
     call_llm.py              # from coderay_utils/call_llm.py, import path only
     llm.py                   # read_prompt, fill, parse_yaml, yaml_call
-    crawl.py                 # list_files, safe_read, defaults
+    files.py                 # list_files, safe_read, defaults
     pricing.py                # cost_for, ensure_priced, get_price
     runner.py                 # flow.run(shared); dump run_state.json on failure
   analyses/

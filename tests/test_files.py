@@ -1,27 +1,27 @@
 import os
 import sys
 
-import crawl.core  # noqa: F401  (populates sys.modules["crawl.core.crawl"])
-from crawl.core.crawl import list_files, safe_read
+import crawl.core  # noqa: F401  (populates sys.modules["crawl.core.files"])
+from crawl.core.files import list_files, safe_read
 
-crawl = sys.modules["crawl.core.crawl"]
+files = sys.modules["crawl.core.files"]
 
 
 def test_wanted_rejects_credential_shaped_names():
-    assert not crawl._wanted(".env", crawl.DEFAULT_KEEP_EXT, crawl.DEFAULT_KEEP_NAMES)
-    assert not crawl._wanted("id_rsa", crawl.DEFAULT_KEEP_EXT, crawl.DEFAULT_KEEP_NAMES)
-    assert not crawl._wanted("credentials.json", crawl.DEFAULT_KEEP_EXT, crawl.DEFAULT_KEEP_NAMES)
-    assert not crawl._wanted("service-account.json", crawl.DEFAULT_KEEP_EXT, crawl.DEFAULT_KEEP_NAMES)
+    assert not files._wanted(".env", files.DEFAULT_KEEP_EXT, files.DEFAULT_KEEP_NAMES)
+    assert not files._wanted("id_rsa", files.DEFAULT_KEEP_EXT, files.DEFAULT_KEEP_NAMES)
+    assert not files._wanted("credentials.json", files.DEFAULT_KEEP_EXT, files.DEFAULT_KEEP_NAMES)
+    assert not files._wanted("service-account.json", files.DEFAULT_KEEP_EXT, files.DEFAULT_KEEP_NAMES)
 
 
 def test_wanted_rejects_credential_shaped_suffixes():
-    assert not crawl._wanted("foo.pem", crawl.DEFAULT_KEEP_EXT, crawl.DEFAULT_KEEP_NAMES)
-    assert not crawl._wanted("prod.key", crawl.DEFAULT_KEEP_EXT, crawl.DEFAULT_KEEP_NAMES)
+    assert not files._wanted("foo.pem", files.DEFAULT_KEEP_EXT, files.DEFAULT_KEEP_NAMES)
+    assert not files._wanted("prod.key", files.DEFAULT_KEEP_EXT, files.DEFAULT_KEEP_NAMES)
 
 
 def test_wanted_still_accepts_ordinary_source_files():
-    assert crawl._wanted("main.py", crawl.DEFAULT_KEEP_EXT, crawl.DEFAULT_KEEP_NAMES)
-    assert crawl._wanted("Dockerfile", crawl.DEFAULT_KEEP_EXT, crawl.DEFAULT_KEEP_NAMES)
+    assert files._wanted("main.py", files.DEFAULT_KEEP_EXT, files.DEFAULT_KEEP_NAMES)
+    assert files._wanted("Dockerfile", files.DEFAULT_KEEP_EXT, files.DEFAULT_KEEP_NAMES)
 
 
 def test_list_files_excludes_credential_shaped_files(tmp_path):
@@ -115,8 +115,8 @@ def test_wanted_rejects_credential_shaped_names_in_any_case():
     """The extension match is case-insensitive, so the credential skip has to
     be too, or `credentials.JSON` slips through on the extension alone."""
     for name in ("credentials.JSON", "SECRETS.YML", "token.JSON", "Service-Account.json"):
-        assert not crawl._wanted(name, crawl.DEFAULT_KEEP_EXT, crawl.DEFAULT_KEEP_NAMES), name
-    assert not crawl._wanted("server.PEM", crawl.DEFAULT_KEEP_EXT | {".pem"}, crawl.DEFAULT_KEEP_NAMES)
+        assert not files._wanted(name, files.DEFAULT_KEEP_EXT, files.DEFAULT_KEEP_NAMES), name
+    assert not files._wanted("server.PEM", files.DEFAULT_KEEP_EXT | {".pem"}, files.DEFAULT_KEEP_NAMES)
 
 
 def test_list_files_accepts_an_uppercase_keep_ext_override(tmp_path):
@@ -151,9 +151,9 @@ def test_credential_names_cover_every_dotenv_variant_except_the_templates():
     `.env.staging` and `.envrc` were read whole. Every `.env*` is a credential
     file except the two committed templates the crawlers keep on purpose."""
     for name in (".env.staging", ".env.test", ".ENV.Development", ".envrc"):
-        assert not crawl._wanted(name, set(), {name}), name
+        assert not files._wanted(name, set(), {name}), name
     for name in (".env.example", ".env.sample"):
-        assert crawl._wanted(name, set(), crawl.DEFAULT_KEEP_NAMES), name
+        assert files._wanted(name, set(), files.DEFAULT_KEEP_NAMES), name
 
 
 def test_readable_refuses_a_symlink_to_a_dotenv_variant(tmp_path):
@@ -170,6 +170,6 @@ def test_dotenv_templates_are_the_keep_names_dotenv_entries():
     """PR #30 review. `_wanted` refuses every `.env*` before it consults
     keep_names, so a template listed in one set and not the other silently
     disagrees. One set derives from the other."""
-    assert {n for n in crawl.DEFAULT_KEEP_NAMES if n.startswith('.env')} == crawl.DOTENV_TEMPLATES
-    for name in crawl.DOTENV_TEMPLATES:
-        assert crawl._wanted(name, set(), crawl.DEFAULT_KEEP_NAMES)
+    assert {n for n in files.DEFAULT_KEEP_NAMES if n.startswith('.env')} == files.DOTENV_TEMPLATES
+    for name in files.DOTENV_TEMPLATES:
+        assert files._wanted(name, set(), files.DEFAULT_KEEP_NAMES)

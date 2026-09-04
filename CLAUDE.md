@@ -84,7 +84,7 @@ Crawl dispatches to seven analyses, each a PocketFlow pipeline:
 SmartCrawl -> ExtractGraph -> Analyze -> Relate -> WriteChapters
 ```
 
-- **SmartCrawl** walks the target repo (`src/crawl/core/crawl.py`), builds a preview manifest, and asks the LLM which ~0.1-2% of files matter. Enforces `preview_budget` and `codebase_budget` so large repos can't blow the LLM's context window.
+- **SmartCrawl** walks the target repo (`src/crawl/core/files.py`), builds a preview manifest, and asks the LLM which ~0.1-2% of files matter. Enforces `preview_budget` and `codebase_budget` so large repos can't blow the LLM's context window.
 - **Analyze** / **Relate** / **WriteChapters** call the LLM via `crawl.core.call_llm` and parse its YAML output via `crawl.core.yaml_call`, which retries with a varied prompt on bad output (the retry-safe path -- don't reintroduce a local prompt-parsing loop that bypasses it, see the Rules doc).
 - `src/crawl/analyses/tour/render.py` renders the analysis's output (`shared` dict, typed as `PipelineState` in `src/crawl/analyses/tour/nodes.py`) to markdown + HTML.
 - `src/crawl/analyses/tour/prompts/*.md` are the four LLM prompt templates; `src/crawl/analyses/tour/instructions/*.md` are swappable output lenses (`--instructions <name>`), auto-discovered from the directory -- adding a lens is just adding a file.

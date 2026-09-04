@@ -28,3 +28,11 @@ def test_every_registered_analysis_ships_its_package_data():
     for name in ANALYSES:
         pkg = f"crawl.analyses.{name.replace('-', '_')}"
         assert pkg in packages, f"{pkg} missing from [tool.setuptools] packages"
+
+
+def test_the_file_walker_module_does_not_share_the_package_name():
+    import importlib
+    import pytest
+    importlib.import_module("crawl.core.files")
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("crawl.core.crawl")

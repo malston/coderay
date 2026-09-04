@@ -20,7 +20,7 @@ from .llm import (  # noqa: F401
     json_call,
     yaml_call,
 )
-from .crawl import (  # noqa: F401
+from .files import (  # noqa: F401
     list_files,
     safe_read,
     DEFAULT_KEEP_EXT,

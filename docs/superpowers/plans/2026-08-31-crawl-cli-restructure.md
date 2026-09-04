@@ -37,7 +37,7 @@ src/crawl/
     __init__.py                          # re-exports, same shape as today's coderay_utils/__init__.py
     call_llm.py                          # moved from coderay_utils/call_llm.py, CACHE_DIR -> ~/.cache/crawl
     llm.py                               # moved from coderay_utils/llm.py
-    crawl.py                             # moved from coderay_utils/crawl.py
+    files.py                             # moved from coderay_utils/crawl.py
     pricing.py                           # moved from coderay_utils/pricing.py, CONFIG_DIR -> ~/.config/crawl
     runner.py                            # new: run_flow(flow, shared, out_dir, dump_state)
   analyses/
@@ -186,26 +186,26 @@ git commit -m "Add empty crawl package skeleton alongside workflow/coderay_utils
 
 - Move: `coderay_utils/call_llm.py` → `src/crawl/core/call_llm.py`
 - Move: `coderay_utils/llm.py` → `src/crawl/core/llm.py`
-- Move: `coderay_utils/crawl.py` → `src/crawl/core/crawl.py`
+- Move: `coderay_utils/crawl.py` → `src/crawl/core/files.py`
 - Move: `coderay_utils/pricing.py` → `src/crawl/core/pricing.py`
 - Modify: `src/crawl/core/__init__.py`
 - Modify: `workflow/nodes.py` (import line only)
 - Modify: `workflow/__main__.py` (import line only)
-- Modify: `tests/test_call_llm.py`, `tests/test_crawl.py`, `tests/test_llm.py`, `tests/test_pricing.py`, `tests/test_prompts.py`, `tests/conftest.py` (import paths only)
+- Modify: `tests/test_call_llm.py`, `tests/test_files.py`, `tests/test_llm.py`, `tests/test_pricing.py`, `tests/test_prompts.py`, `tests/conftest.py` (import paths only)
 - Modify: `tests/test_nodes.py` line 3, `tests/test_flow.py` line 1 — both import `coderay_utils.llm as llm_module` on top of the `workflow.nodes`/`workflow.flow` imports Task 4 later updates; that one line must change here too, since `coderay_utils/` is deleted by the end of this task and Task 4 doesn't start until after this one lands green
 - Delete: `coderay_utils/` (whole directory, once nothing references it)
 
 **Interfaces:**
 
 - Consumes: the `crawl.core` empty package from Task 1.
-- Produces: `crawl.core.call_llm`, `crawl.core.llm`, `crawl.core.crawl`, `crawl.core.pricing` modules, and `crawl.core` re-exporting the same symbol set `coderay_utils/__init__.py` did (`call_llm`, `get_usage`, `max_output_tokens`, `reset_usage`, `resolve_provider_and_model`, `DEFAULT_MAX_OUTPUT_TOKENS`, `read_prompt`, `fill`, `parse_yaml`, `yaml_call`, `list_files`, `safe_read`, `DEFAULT_KEEP_EXT`, `DEFAULT_SKIP_DIR`, `DEFAULT_KEEP_NAMES`, `DEFAULT_MAX_FILE_BYTES`, `cost_for`, `ensure_priced`, `get_price`) — later tasks (and `workflow/nodes.py`/`workflow/__main__.py` in this same task) import from `crawl.core`.
+- Produces: `crawl.core.call_llm`, `crawl.core.llm`, `crawl.core.files`, `crawl.core.pricing` modules, and `crawl.core` re-exporting the same symbol set `coderay_utils/__init__.py` did (`call_llm`, `get_usage`, `max_output_tokens`, `reset_usage`, `resolve_provider_and_model`, `DEFAULT_MAX_OUTPUT_TOKENS`, `read_prompt`, `fill`, `parse_yaml`, `yaml_call`, `list_files`, `safe_read`, `DEFAULT_KEEP_EXT`, `DEFAULT_SKIP_DIR`, `DEFAULT_KEEP_NAMES`, `DEFAULT_MAX_FILE_BYTES`, `cost_for`, `ensure_priced`, `get_price`) — later tasks (and `workflow/nodes.py`/`workflow/__main__.py` in this same task) import from `crawl.core`.
 
 - [ ] **Step 1: Move the four files with `git mv` (preserves content and history)**
 
 ```bash
 git mv coderay_utils/call_llm.py src/crawl/core/call_llm.py
 git mv coderay_utils/llm.py src/crawl/core/llm.py
-git mv coderay_utils/crawl.py src/crawl/core/crawl.py
+git mv coderay_utils/crawl.py src/crawl/core/files.py
 git mv coderay_utils/pricing.py src/crawl/core/pricing.py
 ```
 
@@ -267,7 +267,7 @@ from .llm import (  # noqa: F401
     parse_yaml,
     yaml_call,
 )
-from .crawl import (  # noqa: F401
+from .files import (  # noqa: F401
     list_files,
     safe_read,
     DEFAULT_KEEP_EXT,
@@ -331,15 +331,15 @@ from crawl.core.call_llm import _cache_path, _cache_put, call_llm
 `tests/test_call_llm.py` lines 511, 539, 564, 611, 668: `from crawl.core.call_llm import CACHE_BREAKPOINT`
 `tests/test_call_llm.py` line 687: `from crawl.core.call_llm import CACHE_BREAKPOINT, _cache_path`
 
-`tests/test_crawl.py` lines 4-5:
+`tests/test_files.py` lines 4-5:
 
 ```python
 # before
 import coderay_utils  # noqa: F401  (populates sys.modules["coderay_utils.crawl"])
 from coderay_utils.crawl import list_files, safe_read
 # after
-import crawl.core  # noqa: F401  (populates sys.modules["crawl.core.crawl"])
-from crawl.core.crawl import list_files, safe_read
+import crawl.core  # noqa: F401  (populates sys.modules["crawl.core.files"])
+from crawl.core.files import list_files, safe_read
 ```
 
 `tests/test_llm.py` line 3: `from crawl.core.llm import parse_yaml`
@@ -1202,7 +1202,7 @@ Line 72: `python -m workflow path/to/repo   # run the pipeline end to end (needs
 
 Line 79: ``A PocketFlow pipeline with four sequential nodes (`workflow/nodes.py`, wired in `workflow/flow.py`):`` → ``(`src/crawl/analyses/tour/nodes.py`, wired in `src/crawl/analyses/tour/flow.py`):``
 
-Line 85: ``**SmartCrawl** walks the target repo (`coderay_utils/crawl.py`)...`` → ``(`src/crawl/core/crawl.py`)...``
+Line 85: ``**SmartCrawl** walks the target repo (`coderay_utils/crawl.py`)...`` → ``(`src/crawl/core/files.py`)...``
 
 Line 86: ``call the LLM via `coderay_utils.call_llm` and parse its YAML output via `coderay_utils.yaml_call`...`` → ``via `crawl.core.call_llm`... via `crawl.core.yaml_call`...``
 
