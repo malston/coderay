@@ -200,7 +200,7 @@ def test_classify_treats_a_rails_spec_as_a_test():
     assert bc.classify("app/controllers/users_controller.rb") == "handler"
 
 
-def test_build_bundle_gives_every_layer_a_file_before_a_spine_file_takes_the_rest(tmp_path):
+def test_build_bundle_fills_every_sampled_layer_and_drops_a_spine_file_too_big_for_its_share(tmp_path):
     """coderay-q2r.58. Spine files went first and in full, so one 499k routes
     file spent most of the 650k budget and the sampled layers were dropped
     while the header still counted them. Each populated layer gets an equal
@@ -290,3 +290,19 @@ def test_build_bundle_keeps_every_small_spine_file_ahead_of_large_sampled_ones(t
     assert bundle.count("LAYER ROUTE: ") == 40
     for layer in ("HANDLER", "SERVICE", "DATABASE"):
         assert bundle.count(f"LAYER {layer}: ") >= 5, layer
+
+
+def test_build_bundle_share_flows_past_a_layer_whose_files_are_empty(tmp_path):
+    """PR #32 review. A layer populated only by an empty `__init__.py` still
+    took a share, shrinking every real layer's and leaving a service file to
+    lose the leftover race. Each layer's share is what remains divided by the
+    layers still to come, so an unspent share flows forward."""
+    files = {
+        "app/urls.py": "",                                   # phantom route layer
+        "app/middleware/a.py": "# a\n" + "m" * 250,
+        "app/middleware/b.py": "# b\n" + "m" * 200,
+        "app/services/c.py": "# c\n" + "s" * 390,
+    }
+    repo = _repo(tmp_path, files)
+    bundle, stats = bc.build_bundle(repo, max_chars=len("===== LAYER FILE COUNTS (whole repo) =====\n") + 6 * 20 + 800)
+    assert "LAYER SERVICE: app/services/c.py" in bundle

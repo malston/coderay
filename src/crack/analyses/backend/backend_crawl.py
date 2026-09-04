@@ -70,6 +70,10 @@ def classify(rel):
     return None
 
 
+def _block(layer, rel, text):
+    return f"\n===== LAYER {layer.upper()}: {rel} =====\n{text}\n"
+
+
 def _priority(rel):
     b = os.path.basename(rel).lower()
     return (0 if any(h in b for h in CORE_HINTS) else 1)
@@ -106,18 +110,22 @@ def build_bundle(repo, max_chars=650_000, per_layer_sample=18):
     # Every populated layer gets an equal share of the budget first, filled in
     # its priority order with a file that does not fit set aside whole, never
     # cut; the unspent budget then goes round-robin over what was set aside
-    # (coderay-q2r.58, coderay-q2r.64). When everything fits, the selection is
+    # (coderay-q2r.58, coderay-q2r.64). Set-aside files are kept by name and
+    # size, not text, so memory stays near max_chars however large the repo. When everything fits, the selection is
     # the same as one straight pass. Emission is grouped by layer and in
     # priority order inside it, so the prompts see one layout regardless.
     # ponytail: shares are equal, so one legitimate spine file larger than a
     # share (max_chars/4 with four populated layers) is dropped; weight the
     # spine layers if that ever bites.
     populated = [layer for layer in BUNDLE_ORDER if queues[layer]]
-    share = (max_chars - len(header)) // max(len(populated), 1)
     chosen = {layer: [] for layer in LAYERS}       # (rank, block)
-    set_aside = {layer: [] for layer in LAYERS}    # (rank, block), too big for the share
+    set_aside = {layer: [] for layer in LAYERS}    # (rank, rel, size): read again only if chosen
     total = len(header)
-    for layer in populated:
+    for n, layer in enumerate(populated):
+        # What remains, divided by the layers still to come, so a layer that
+        # underspends its share, or is populated by empty files alone, hands
+        # the difference forward.
+        share = (max_chars - total) // (len(populated) - n)
         spent = 0
         for rank, rel in enumerate(queues[layer]):
             if len(chosen[layer]) >= limit.get(layer, float('inf')):
@@ -125,9 +133,9 @@ def build_bundle(repo, max_chars=650_000, per_layer_sample=18):
             text = safe_read(os.path.join(repo, rel))
             if not text or not text.strip():
                 continue
-            block = f"\n===== LAYER {layer.upper()}: {rel} =====\n{text}\n"
+            block = _block(layer, rel, text)
             if spent + len(block) > share:
-                set_aside[layer].append((rank, block))
+                set_aside[layer].append((rank, rel, len(block)))
                 continue
             chosen[layer].append((rank, block))
             spent += len(block)
@@ -138,11 +146,14 @@ def build_bundle(repo, max_chars=650_000, per_layer_sample=18):
                 set_aside[layer] = []
             if not set_aside[layer]:
                 continue
-            rank, block = set_aside[layer].pop(0)
-            if total + len(block) > max_chars:
+            rank, rel, size = set_aside[layer].pop(0)
+            if total + size > max_chars:
                 continue
-            chosen[layer].append((rank, block))
-            total += len(block)
+            text = safe_read(os.path.join(repo, rel))
+            if not text or not text.strip():
+                continue
+            chosen[layer].append((rank, _block(layer, rel, text)))
+            total += size
     parts = [header] + [block for layer in BUNDLE_ORDER for _rank, block in sorted(chosen[layer])]
     kept = len(parts) - 1
 
