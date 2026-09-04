@@ -14,6 +14,8 @@ from .gitlog import repo_root
 from .render import render_html, render_markdown  # noqa: F401
 
 NAME = "git-history"
+# What the first node reads from the repo; left out of run_state.json on failure.
+INPUT_KEYS = frozenset({"commits", "commits_asc", "bulk_adds", "bulk_dels"})
 
 ENV_DEFAULTS = {}
 

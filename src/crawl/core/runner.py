@@ -1,5 +1,7 @@
 """Runs a pipeline flow against a shared state dict, common to any analysis."""
+import json
 import os
+import sys
 
 from .env import env_defaults
 from .render import render_html, render_markdown
@@ -7,13 +9,42 @@ from .render import render_html, render_markdown
 def run_flow(flow, shared, out_dir, dump_state):
     """Run `flow` against `shared`. On an unhandled exception, call
     `dump_state(shared, out_dir)` to write whatever partial progress exists,
-    print where it landed, and re-raise."""
+    say where it landed on stderr beside the traceback, and re-raise. A dump
+    that fails is reported the same way and the pipeline's own error is still
+    the one that propagates; a dump that returns None had nothing to write and
+    says nothing."""
     try:
         flow.run(shared)
     except (Exception, SystemExit):
-        state_path = dump_state(shared, out_dir)
-        print(f"\nPipeline failed. Wrote partial run state to {state_path}")
+        try:
+            state_path = dump_state(shared, out_dir)
+        except (OSError, TypeError, ValueError) as e:
+            print(f"\nPipeline failed, and the partial run state could not be written to {out_dir}: {e}",
+                  file=sys.stderr)
+        else:
+            if state_path:
+                print(f"\nPipeline failed. Wrote partial run state to {state_path}", file=sys.stderr)
         raise
+
+def write_run_state(shared, out_dir, skip=frozenset()):
+    """Write `shared`, minus the keys in `skip`, to run_state.json in out_dir
+    and return the path, or None when nothing is left to write.
+
+    Every LLM result a pipeline has produced so far lives in `shared`, so this
+    is what the user gets back when a later node fails (coderay-q2r.49). The
+    caller passes the pipeline's input keys as `skip`: the source bundle is
+    free to regenerate and can be most of a megabyte. Values JSON cannot
+    represent are written as their str(). Serialised in full before the file
+    is opened, so a serialisation error cannot leave a truncated file."""
+    results = {k: v for k, v in shared.items() if k not in skip}
+    if not results:
+        return None
+    text = json.dumps(results, indent=2, default=str)
+    path = os.path.join(out_dir, "run_state.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    return path
+
 
 def repo_name_of(repo_path):
     """The repo's directory name, used for the output folder and the page title.
@@ -47,14 +78,22 @@ def run_analysis(analysis, args):
     """Run one analysis and write its index.md and index.html. Returns out_dir.
 
     The output directory is created before the flow runs, because an analysis
-    may write extra files into it during the run."""
+    may write extra files into it during the run. If the flow raises, whatever
+    it added to `shared` is written to run_state.json there and the exception
+    propagates; a state file left by an earlier failed run is removed first,
+    since the default output directory is the same run to run."""
     out_dir = args.out or default_output_dir(args.repo_path, analysis.NAME)
     os.makedirs(out_dir, exist_ok=True)
+    stale = os.path.join(out_dir, "run_state.json")
+    if os.path.exists(stale):
+        os.remove(stale)
 
     name = repo_name_of(args.repo_path)
     shared = analysis.init_shared(args)
+    inputs = frozenset(shared) | getattr(analysis, "INPUT_KEYS", frozenset())
     with env_defaults(getattr(analysis, "ENV_DEFAULTS", {})):
-        analysis.build_flow().run(shared)
+        run_flow(analysis.build_flow(), shared, out_dir,
+                 lambda s, o: write_run_state(s, o, skip=inputs))
 
     write_report(analysis, name, shared, out_dir)
 

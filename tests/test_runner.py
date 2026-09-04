@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import sys
@@ -61,6 +62,7 @@ def _fake_analysis(env_defaults_dict=None, record=None):
         init_shared = staticmethod(lambda args: {"repo_path": args.repo_path})
         build_flow = staticmethod(Flow)
 
+    Analysis.INPUT_KEYS = frozenset()
     if env_defaults_dict:
         Analysis.ENV_DEFAULTS = env_defaults_dict
     return Analysis
@@ -169,3 +171,72 @@ def test_write_report_is_the_one_place_index_files_are_written(tmp_path):
     assert out == tmp_path / "out"
     assert (tmp_path / "out" / "index.md").read_text(encoding="utf-8") == render_markdown(analysis, "toy", {"x": 1})
     assert (tmp_path / "out" / "index.html").read_text(encoding="utf-8") == render_html(analysis, "toy", {"x": 1})
+
+
+def _failing_analysis(fail=RuntimeError("boom"), produce=True):
+    """The first node stores the bundle, as every real analysis does, so the
+    skip set must come from the analysis's declared INPUT_KEYS, not from what
+    init_shared happened to set."""
+    class FailingFlow:
+        def run(self, shared):
+            shared["codebase"] = "x" * 1000
+            if produce:
+                shared["pipeline_md"] = "paid prose"
+                shared["odd"] = {"a-set"}
+            raise fail
+
+    analysis = _fake_analysis()
+    analysis.INPUT_KEYS = frozenset({"codebase"})
+    analysis.build_flow = staticmethod(FailingFlow)
+    return analysis
+
+
+def test_run_analysis_writes_partial_state_when_a_later_node_fails(tmp_path, capsys):
+    """coderay-q2r.49. Every earlier LLM result is in `shared` when a late node
+    exhausts its retries; the user paid for it and must get it back. The
+    pipeline's inputs are not results: the source bundle is left out, since it
+    is free to regenerate and can be most of a megabyte."""
+    out = tmp_path / "out"
+    with pytest.raises(RuntimeError):
+        run_analysis(_failing_analysis(), _Args(str(tmp_path), out=str(out)))
+    state = json.loads((out / "run_state.json").read_text(encoding="utf-8"))
+    assert state["pipeline_md"] == "paid prose"
+    assert "a-set" in state["odd"]
+    assert "codebase" not in state and "repo_path" not in state
+    assert not (out / "index.html").exists() and not (out / "index.md").exists()
+    assert f"Wrote partial run state to {out / 'run_state.json'}" in capsys.readouterr().err
+
+
+def test_a_failing_dump_keeps_the_pipeline_error_and_leaves_no_half_written_file(tmp_path, monkeypatch, capsys):
+    """If the state file cannot be written, the traceback the user reads must
+    still end in the pipeline's own error, the notice must say the state was
+    lost, and no truncated run_state.json may pass for partial state."""
+    import crawl.core.runner as runner
+    out = tmp_path / "out"
+    monkeypatch.setattr(runner.json, "dumps", lambda *a, **k: (_ for _ in ()).throw(TypeError("unserialisable")))
+    with pytest.raises(RuntimeError, match="boom"):
+        run_analysis(_failing_analysis(), _Args(str(tmp_path), out=str(out)))
+    assert not (out / "run_state.json").exists()
+    assert "partial run state could not be written" in capsys.readouterr().err
+
+
+def test_a_later_successful_run_removes_the_stale_state_file(tmp_path):
+    """The default output dir is deterministic, so a state file from an earlier
+    failure would sit beside a fresh index.html and read as a second failure."""
+    out = tmp_path / "out"
+    with pytest.raises(RuntimeError):
+        run_analysis(_failing_analysis(), _Args(str(tmp_path), out=str(out)))
+    assert (out / "run_state.json").exists()
+    run_analysis(_fake_analysis(), _Args(str(tmp_path), out=str(out)))
+    assert (out / "index.html").exists() and not (out / "run_state.json").exists()
+
+
+def test_a_failure_before_any_result_writes_no_state_file(tmp_path, capsys):
+    """Every analysis has a pre-flight guard that raises before the first LLM
+    call. With nothing produced there is nothing to keep, so no run_state.json
+    and no partial-state notice above the real diagnostic."""
+    out = tmp_path / "out"
+    with pytest.raises(RuntimeError):
+        run_analysis(_failing_analysis(produce=False), _Args(str(tmp_path), out=str(out)))
+    assert not (out / "run_state.json").exists()
+    assert "partial run state" not in capsys.readouterr().err

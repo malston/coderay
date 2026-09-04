@@ -13,6 +13,8 @@ from crawl.core.runner import repo_name_of, run_analysis
 from .nodes import FindRoutes, ApiMenu, TraceActions, EndpointSequence
 
 NAME = "interfaces"
+# What the first node reads from the repo; left out of run_state.json on failure.
+INPUT_KEYS = frozenset({"routes"})
 
 ENV_DEFAULTS = {"LLM_MAX_OUTPUT_TOKENS": "32768"}
 
