@@ -127,6 +127,15 @@ def _ends_at_segment(path, key):
     return path == key or path.endswith("/" + key)
 
 
+def unresolved(paths, resolved):
+    """The model-named paths that `read_files` did not resolve, in the order
+    named. A path counts as resolved when it is one of `resolved` or a whole
+    trailing run of one's segments, the same rule the lookup applies."""
+    keys = [p.strip().strip("`").lstrip("/").replace(os.sep, "/") for p in paths]
+    return [p for p, key in zip(paths, keys)
+            if not any(_ends_at_segment(r.replace(os.sep, "/"), key) for r in resolved)]
+
+
 def read_files(repo, paths, max_chars=120_000, max_files=8):
     """Read an LLM-picked list of source paths for the sequence-diagram view.
 

@@ -218,3 +218,10 @@ def test_read_files_suffix_match_starts_at_a_path_segment(tmp_path):
     assert rf.read_files(repo, ["sers.py"])[1] == []
     assert rf.read_files(repo, ["users.py"])[1] == ["api/users.py"]
     assert rf.read_files(repo, ["api/users.py"])[1] == ["api/users.py"]
+
+
+def test_unresolved_applies_the_same_segment_rule_as_the_lookup():
+    """coderay-5wu.1. A suffix-resolved name counts as found; a name that only
+    shares a tail with a found file does not."""
+    resolved = ["api/users.py", "pages/api/a.ts"]
+    assert rf.unresolved(["users.py", "/pages/api/a.ts", "sers.py", "gone.ts"], resolved) == ["sers.py", "gone.ts"]

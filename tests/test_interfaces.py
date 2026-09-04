@@ -182,3 +182,34 @@ def test_the_sequence_card_carries_no_warning_on_a_grounded_run():
     html = interfaces._sequence_cards(shared, "The write commits here.")
     assert "No handler source" not in html
     assert "The write commits here." in html
+    assert "not the files the model named" not in html and "not found" not in html
+
+
+def test_the_sequence_card_says_when_the_diagram_came_from_the_fallback_file():
+    """coderay-5wu.1. A valid pick whose files all miss falls back to the
+    largest route file; sequence_grounded is True because source exists, so the
+    card was titled with the model's endpoint over unrelated source with no
+    marker. The card names the file it was drawn from and the files it was not."""
+    shared = {"sequence_endpoint": "POST /api/book", "sequence_grounded": True,
+              "sequence_fallback": "app/urls.py",
+              "sequence_dropped": ["api/book.py", "<b>x</b>.py"]}
+    html = interfaces._sequence_cards(shared, "The write commits here.")
+    assert "Drawn from <code>app/urls.py</code>, not the files the model named" in html
+    assert "api/book.py" in html and "&lt;b&gt;x&lt;/b&gt;.py" in html and "<b>x</b>" not in html
+
+
+def test_the_sequence_card_says_when_some_named_files_were_not_found():
+    shared = {"sequence_endpoint": "POST /api/a", "sequence_grounded": True,
+              "sequence_fallback": None, "sequence_dropped": ["pages/api/missing.ts"]}
+    html = interfaces._sequence_cards(shared, "Body.")
+    assert "1 of the files the model named was not found" in html
+    assert "pages/api/missing.ts" in html
+
+
+def test_the_sequence_card_says_when_the_pick_itself_was_unusable():
+    """The pick failed outright: no files were named, the fallback drew the
+    diagram, and the card must say so rather than pass for a chosen endpoint."""
+    shared = {"sequence_endpoint": "app/urls.py", "sequence_grounded": True,
+              "sequence_fallback": "app/urls.py", "sequence_dropped": []}
+    html = interfaces._sequence_cards(shared, "Body.")
+    assert "endpoint pick was unusable" in html and "<code>app/urls.py</code>" in html

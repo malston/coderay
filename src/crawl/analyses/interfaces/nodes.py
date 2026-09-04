@@ -195,6 +195,8 @@ class EndpointSequence(Node):
             print(f"  Sequence: endpoint pick unusable, falling back ({e})")
             endpoint, paths = "", []
         handler_source, resolved = rf.read_files(ctx["repo"], paths)
+        dropped = rf.unresolved(paths, resolved)
+        fallback = None
         if paths and not resolved:
             # The pick was fine but none of its files exist in the repo, so the
             # fallback below draws the diagram from a file the model never named.
@@ -216,6 +218,7 @@ class EndpointSequence(Node):
                 big = max(candidates, key=lambda f: os.path.getsize(os.path.join(ctx["repo"], f)))
                 handler_source, resolved = rf.read_files(ctx["repo"], [big])
                 endpoint = endpoint or big
+                fallback = big
 
         # Step 2 — draw the diagram from the handler source.
         prompt = fill(load_prompt("endpoint-sequence.md"),
@@ -223,14 +226,20 @@ class EndpointSequence(Node):
                       handler_source=handler_source or "(handler source unavailable)")
         md = call_llm(prompt).strip()
         assert "```mermaid" in md or "sequenceDiagram" in md, "no sequence diagram produced"
+        # `grounded` says source existed; `fallback` and `dropped` say whether it
+        # was the source the model named, so the card can tell the reader
+        # (coderay-5wu.1).
         return {"md": md, "endpoint": endpoint, "files": resolved,
-                "grounded": bool(handler_source.strip())}
+                "grounded": bool(handler_source.strip()),
+                "fallback": fallback, "dropped": dropped}
 
     def post(self, shared, prep_res, exec_res):
         shared["sequence_md"] = exec_res["md"]
         shared["sequence_endpoint"] = exec_res["endpoint"]
         shared["sequence_files"] = exec_res["files"]
         shared["sequence_grounded"] = exec_res["grounded"]
+        shared["sequence_fallback"] = exec_res["fallback"]
+        shared["sequence_dropped"] = exec_res["dropped"]
         print(f"  Sequence: {exec_res['endpoint'] or 'endpoint'} "
               f"(from {len(exec_res['files'])} source files)"
               + ("" if exec_res["grounded"] else " -- NO handler source, diagram is unverified"))

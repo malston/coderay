@@ -374,6 +374,45 @@ def test_a_valid_pick_whose_files_all_miss_says_so_before_falling_back(
     out = capsys.readouterr().out
     assert shared["sequence_files"] == ["pages/api/zzz.ts"]
     assert "nope/none.py" in out and "gone.ts" in out and "falling back" in out
+    # coderay-5wu.1: the card needs the same facts, so they travel in shared.
+    assert shared["sequence_fallback"] == "pages/api/zzz.ts"
+    assert shared["sequence_dropped"] == ["nope/none.py", "gone.ts"]
+
+
+def test_a_partial_miss_records_the_dropped_files_without_a_fallback(tmp_path, monkeypatch):
+    """coderay-5wu.1. Two of three model-named files resolve: the diagram is
+    drawn from the two, no fallback fires, and the one not found is recorded
+    so the card can say the diagram covers a subset."""
+    repo = _repo(tmp_path, {"pages/api/a.ts": "export const a = 1;\n",
+                            "pages/api/b.ts": "export const b = 2;\n"})
+
+    def reply(prompt):
+        if "sequence diagram" in prompt:
+            return '```yaml\nendpoint: "POST /api/a"\nfiles:\n  - pages/api/a.ts\n  - pages/api/b.ts\n  - pages/api/missing.ts\n```'
+        return "```mermaid\nsequenceDiagram\n  a->>b: hi\n```"
+
+    _fake_llm(monkeypatch, reply)
+    shared = {"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "",
+              "route_files": ["pages/api/a.ts", "pages/api/b.ts"]}
+    _sequence_node().run(shared)
+    assert shared["sequence_files"] == ["pages/api/a.ts", "pages/api/b.ts"]
+    assert shared["sequence_fallback"] is None
+    assert shared["sequence_dropped"] == ["pages/api/missing.ts"]
+
+
+def test_a_clean_pick_records_no_fallback_and_nothing_dropped(tmp_path, monkeypatch):
+    repo = _repo(tmp_path, {"pages/api/a.ts": "export const a = 1;\n"})
+
+    def reply(prompt):
+        if "sequence diagram" in prompt:
+            return '```yaml\nendpoint: "POST /api/a"\nfiles:\n  - pages/api/a.ts\n```'
+        return "```mermaid\nsequenceDiagram\n  a->>b: hi\n```"
+
+    _fake_llm(monkeypatch, reply)
+    shared = {"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "",
+              "route_files": ["pages/api/a.ts"]}
+    _sequence_node().run(shared)
+    assert shared["sequence_fallback"] is None and shared["sequence_dropped"] == []
 
 
 def test_the_sequence_fallback_uses_a_non_nextjs_route_file(tmp_path, monkeypatch):

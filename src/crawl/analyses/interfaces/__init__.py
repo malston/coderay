@@ -28,17 +28,38 @@ UNGROUNDED_NOTE = (
     "written from the route list alone, so its steps and any `file:line` "
     "references are the model's inference, not something it read.")
 
+def _source_note(shared):
+    """The sentence that says which source the diagram was drawn from when it
+    was not the source the model named (coderay-5wu.1). Grounded is true in
+    every one of these cases, since source did exist; what differs is whose."""
+    fallback = shared.get("sequence_fallback")
+    dropped = [esc(p) for p in shared.get("sequence_dropped") or []]
+    if fallback and dropped:
+        return (f"**Drawn from `{fallback}`, not the files the model named** "
+                f"({', '.join(dropped)}), which do not exist in the repo.")
+    if fallback:
+        return (f"**The endpoint pick was unusable.** The diagram is drawn from "
+                f"`{fallback}`, the largest route file, not from a chosen endpoint.")
+    if dropped:
+        n = len(dropped)
+        return (f"**{n} of the files the model named {'was' if n == 1 else 'were'} not found** "
+                f"({', '.join(dropped)}); the diagram is drawn from the rest.")
+    return ""
+
+
 def _sequence_cards(shared, body_md):
     """One hand-built card holding the sequence body, with the fence removed.
 
     When no handler source reached the prompt the diagram is inference, and it
     renders identically to a grounded one, so say so in the card rather than
-    only on stdout (coderay-q2r.25)."""
+    only on stdout (coderay-q2r.25). The same goes for source that exists but
+    is not what the model named (coderay-5wu.1)."""
     body = strip_mermaid(body_md)
     if not body and shared.get("sequence_grounded", True):
         return ""
-    if not shared.get("sequence_grounded", True):
-        body = UNGROUNDED_NOTE + ("\n\n" + body if body else "")
+    note = UNGROUNDED_NOTE if not shared.get("sequence_grounded", True) else _source_note(shared)
+    if note:
+        body = note + ("\n\n" + body if body else "")
     return card(esc(shared.get("sequence_endpoint") or "Sequence"), body)
 
 SECTIONS = [
