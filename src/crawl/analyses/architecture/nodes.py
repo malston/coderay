@@ -32,14 +32,17 @@ class BuildBundle(Node):
 
     def post(self, shared, prep_res, exec_res):
         bundle, stats = exec_res
+        reason = stats.get("sdk_unavailable")
         assert bundle.strip(), (
             "No architecture sources found (no compose/env/package/IaC). "
-            "This analysis expects a multi-service app; a single-binary tool "
+            + (f"SDK import evidence was also unavailable: {reason}. " if reason else "")
+            + "This analysis expects a multi-service app; a single-binary tool "
             "has no service graph to draw (§9.1).")
         shared["codebase"] = bundle
         shared["arch_stats"] = stats
         print(f"  Bundle: {stats['config_files']} config files, {stats['env_vars']} env vars, "
-              f"{stats['deps']} deps, {stats['integrations']} integrations, {stats['sdk_lines']} SDK imports")
+              f"{stats['deps']} deps, {stats['integrations']} integrations, {stats['sdk_lines']} SDK imports"
+              + (f" (SDK imports unavailable: {stats['sdk_unavailable']})" if stats.get("sdk_unavailable") else ""))
 
 
 class Inventory(Node):

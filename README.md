@@ -35,7 +35,7 @@ A five-stage pipeline (BuildBundle, Inventory, TechStack, TraceRequest, Overview
 - Known limitations, worth reading before you spend a run:
   - Infrastructure written in a general-purpose language is invisible. AWS CDK and Pulumi stacks are ordinary `.ts`/`.py` programs, and SAM `template.yaml` is an ordinary YAML file, so none of them are classified. A CDK repository reports `0 config files` while its stacks sit in `infra/lib/`. Tracked as `coderay-q2r.10`.
   - Credential values are stripped from the bundle before it is sent, by key name (`password`, `token`, `secret`, and similar), by connection-string position (`postgres://user:pw@host`), and for every value under a Kubernetes `Secret`. Names, service topology, images and ports survive. This is a redactor, not a secret scanner: a credential under an unguessable key name in a file that is not a `Secret` can still get through, so treat the bundle as sensitive.
-  - Outside a git checkout, `git grep` fails and the SDK import lines are silently empty, so a tarball export loses the evidence that a connection is live and the report is built on configuration alone. Tracked as `coderay-q2r.15`.
+  - SDK import evidence comes from `git grep`, so it needs the target to be its own git checkout. Outside one (a tarball export, a directory inside some other repository, no git binary) the bundle, the run's stats line and the report footer say the evidence was unavailable and that every connection is configured, not proven live.
 
 ### Interfaces
 

@@ -288,16 +288,46 @@ def _classify(rel):
 
 
 def _sdk_grep(repo, max_lines=400):
-    """SDK import lines with file:line, via `git grep` (fast). Real proof + paths."""
+    """SDK import lines with file:line, via `git grep` (fast). Real proof + paths.
+
+    Returns (lines, unavailable): `unavailable` is None when the grep ran, even
+    with no matches, and otherwise says why it could not: `git is not
+    installed`, `git could not be run (<error type>)`, `not a git repository`,
+    `not a git checkout (inside another repository)`, or `git grep exited N`. The toplevel must be the target
+    itself: `git -C` walks up to an enclosing repository, whose index does not
+    hold a tarball extracted inside it, and the grep would exit 1. Without that
+    second value a tarball export reads as a repo with no SDK imports and the
+    report is built on configuration alone (coderay-q2r.15). git's own message
+    never travels: it can quote the target repo's .git/config, and the reason
+    lands in the HTML footer and the LLM bundle."""
+    try:
+        top = subprocess.check_output(["git", "-C", repo, "rev-parse", "--show-toplevel"],
+                                      text=True, errors="replace", stderr=subprocess.PIPE).strip()
+    except FileNotFoundError:
+        return "", "git is not installed"
+    except OSError as e:
+        # A `git` on PATH that cannot be executed, say. The type name travels,
+        # not the message, which names paths on the user's machine.
+        return "", f"git could not be run ({type(e).__name__})"
+    except subprocess.CalledProcessError as e:
+        if "not a git repository" in (e.stderr or ""):
+            return "", "not a git repository"
+        return "", f"git rev-parse exited {e.returncode}"
+    if os.path.realpath(top) != os.path.realpath(repo):
+        return "", "not a git checkout (inside another repository)"
     try:
         raw = subprocess.check_output(
             ["git", "-C", repo, "grep", "-nE",
              r"(import .*from ['\"]" + SDK_RE + r"|require\(['\"]" + SDK_RE + r"|new (Stripe|Twilio|Redis|S3Client))",
              "--", "*.ts", "*.tsx", "*.js", "*.py", "*.go"],
-            text=True, errors="replace", stderr=subprocess.DEVNULL,
+            text=True, errors="replace", stderr=subprocess.PIPE,
         )
-    except Exception:
-        return ""
+    except subprocess.CalledProcessError as e:
+        if e.returncode == 1:          # git grep: ran, matched nothing
+            return "", None
+        if "not a git repository" in (e.stderr or ""):
+            return "", "not a git repository"
+        return "", f"git grep exited {e.returncode}"
     # Emit path:line plus the SDK that matched, never the source line itself.
     # The regex deliberately matches constructors like `new Stripe(...)`, so a
     # hardcoded token in one would otherwise be shipped to the LLM verbatim,
@@ -321,7 +351,7 @@ def _sdk_grep(repo, max_lines=400):
         out.append(entry)
         if len(out) >= max_lines:
             break
-    return "\n".join(out)
+    return "\n".join(out), None
 
 
 def _integration_dirs(repo):
@@ -382,9 +412,16 @@ def build_bundle(repo, max_chars=500_000):
         parts.append(f"===== INTEGRATION DIRECTORIES ({idir}, {len(isubs)} total) =====\n"
                      + ", ".join(isubs) + "\n")
 
-    sdk = _sdk_grep(repo)
+    sdk, sdk_unavailable = _sdk_grep(repo)
     if sdk:
         parts.append("===== SDK IMPORTS (git grep — file:line: sdk) =====\n" + sdk + "\n")
+    elif sdk_unavailable and parts:
+        # Only beside real sources: an empty bundle must stay empty so the
+        # no-architecture-sources guard still fires. At the top, because the
+        # budget cut below takes from the end and the model must read this.
+        parts.insert(0, f"===== SDK IMPORTS unavailable: {sdk_unavailable} =====\n"
+                        "No import evidence could be gathered, so every connection below is "
+                        "configured, not proven live.\n")
 
     whole = "\n".join(parts)
     bundle = whole[:max_chars]
@@ -404,5 +441,6 @@ def build_bundle(repo, max_chars=500_000):
         "deps": len(deps),
         "integrations": len(isubs),
         "sdk_lines": sdk.count("\n") + 1 if sdk else 0,
+        "sdk_unavailable": sdk_unavailable,
     }
     return bundle, stats
