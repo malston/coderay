@@ -270,10 +270,10 @@ def test_no_source_sends_a_secret_value_to_the_bundle(tmp_path):
 
 
 def test_sdk_imports_say_so_when_the_target_is_not_a_git_checkout(tmp_path):
-    """coderay-q2r.15. `git grep` exiting 128 (not a repository) used to be
-    swallowed into the same empty result as exit 1 (no matches), so a tarball
-    export lost the one evidence class that proves a connection is live and
-    the report read as if the repo had no SDK imports.
+    """coderay-q2r.15. Without a distinct signal, `git grep` exiting 128 (not
+    a repository) reads the same as exit 1 (no matches), a tarball export
+    loses the one evidence class that proves a connection is live, and the
+    report reads as if the repo had no SDK imports.
 
     The repo below holds a real SDK import a working `git grep` would find;
     tmp_path is not a git checkout. The count stays zero, and the stats and the
@@ -289,15 +289,82 @@ def test_sdk_imports_say_so_when_the_target_is_not_a_git_checkout(tmp_path):
     assert "configured, not proven live" in bundle
 
 
+def _git_grep_fails(monkeypatch, repo, returncode, stderr):
+    """rev-parse answers with the target itself; the grep fails as given."""
+    import subprocess
+    def run(cmd, **kw):
+        if "rev-parse" in cmd:
+            return repo + "\n"
+        raise subprocess.CalledProcessError(returncode, cmd, output="", stderr=stderr)
+    monkeypatch.setattr(ac.subprocess, "check_output", run)
+
+
+def test_sdk_unavailable_reason_never_carries_git_stderr_text(tmp_path, monkeypatch):
+    """git's fatal messages quote the target repo's own .git/config, and the
+    reason reaches the HTML footer and the LLM bundle. Only a known phrase or
+    the exit code may travel; the raw text stays out of both."""
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n"})
+    _git_grep_fails(monkeypatch, repo, 128, "fatal: bad boolean config value '<script>alert(1)</script>' for 'grep.linenumber'\n")
+    bundle, stats = ac.build_bundle(repo)
+    assert stats["sdk_unavailable"] == "git grep exited 128"
+    assert "<script>" not in bundle and "alert" not in bundle
+
+
+def test_sdk_unavailable_reason_finds_the_phrase_behind_a_warning_line(tmp_path, monkeypatch):
+    """git can print warning: lines before fatal:; the phrase is searched in the whole output."""
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n"})
+    _git_grep_fails(monkeypatch, repo, 128, "warning: something\nfatal: not a git repository: '/x'\n")
+    _, stats = ac.build_bundle(repo)
+    assert stats["sdk_unavailable"] == "not a git repository"
+
+
+def test_sdk_unavailable_section_survives_bundle_truncation(tmp_path):
+    """The note the model must read sits at the top of the bundle, since the
+    budget cut takes from the end."""
+    repo = _repo(tmp_path, {"docker-compose.yml": "services:\n" + "  a: b\n" * 2000})
+    bundle, stats = ac.build_bundle(repo, max_chars=2_000)
+    assert stats["truncated"] and stats["sdk_unavailable"]
+    assert "SDK IMPORTS unavailable" in bundle
+
+
+def test_sdk_imports_say_so_when_the_target_sits_inside_another_checkout(tmp_path):
+    """`git -C` walks up to the enclosing repository, and `git grep` searches
+    tracked files only, so a tarball extracted inside some other checkout
+    exits 1 and reads as a real zero. The toplevel must be the target itself."""
+    import subprocess
+    subprocess.run(["git", "-C", str(tmp_path), "init", "-q"], check=True)
+    repo = _repo(tmp_path / "vendor" / "export", {
+        "docker-compose.yml": "services: {}\n",
+        "src/pay.ts": "import Stripe from 'stripe';\n",
+    })
+    bundle, stats = ac.build_bundle(repo)
+    assert stats["sdk_lines"] == 0
+    assert stats["sdk_unavailable"] == "not a git checkout (inside another repository)"
+    assert "SDK IMPORTS unavailable" in bundle
+
+
 def test_sdk_imports_say_so_when_git_is_not_installed(tmp_path, monkeypatch):
-    """No git binary is the third condition the old bare except collapsed."""
-    def no_git(*a, **k):
-        raise FileNotFoundError("git")
-    monkeypatch.setattr(ac.subprocess, "check_output", no_git)
+    """A missing git binary raises FileNotFoundError before git can exit at
+    all; it must be reported as unavailable, not as zero imports. PATH holds
+    one empty directory, so the exec lookup fails for real."""
+    (tmp_path / "emptybin").mkdir()
+    monkeypatch.setenv("PATH", str(tmp_path / "emptybin"))
     repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n"})
     bundle, stats = ac.build_bundle(repo)
     assert stats["sdk_lines"] == 0
     assert "git is not installed" in stats["sdk_unavailable"]
+    assert "SDK IMPORTS unavailable" in bundle
+
+
+def test_sdk_imports_say_so_when_git_cannot_be_run(tmp_path, monkeypatch):
+    """A `git` on PATH that is not executable raises PermissionError, an OSError
+    that is not FileNotFoundError; it must be reported, not crash the run."""
+    bindir = tmp_path / "bin"; bindir.mkdir()
+    (bindir / "git").write_text("not a program\n"); (bindir / "git").chmod(0o644)
+    monkeypatch.setenv("PATH", str(bindir))
+    repo = _repo(tmp_path / "repo", {"docker-compose.yml": "services: {}\n"})
+    bundle, stats = ac.build_bundle(repo)
+    assert stats["sdk_unavailable"] == "git could not be run (PermissionError)"
     assert "SDK IMPORTS unavailable" in bundle
 
 
@@ -348,6 +415,9 @@ def test_build_bundle_returns_nothing_for_a_repo_with_no_architecture_sources(tm
     bundle, stats = ac.build_bundle(repo)
     assert bundle == ""
     assert stats["config_files"] == 0
+    # The unavailable note is set but not written: the bundle stays empty so
+    # the guard fires (coderay-q2r.15).
+    assert stats["sdk_unavailable"] == "not a git repository"
 
 
 def test_build_bundle_skips_ignored_directories(tmp_path):

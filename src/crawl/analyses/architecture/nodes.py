@@ -32,9 +32,11 @@ class BuildBundle(Node):
 
     def post(self, shared, prep_res, exec_res):
         bundle, stats = exec_res
+        reason = stats.get("sdk_unavailable")
         assert bundle.strip(), (
             "No architecture sources found (no compose/env/package/IaC). "
-            "This analysis expects a multi-service app; a single-binary tool "
+            + (f"SDK import evidence was also unavailable: {reason}. " if reason else "")
+            + "This analysis expects a multi-service app; a single-binary tool "
             "has no service graph to draw (§9.1).")
         shared["codebase"] = bundle
         shared["arch_stats"] = stats

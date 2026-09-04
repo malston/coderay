@@ -137,3 +137,10 @@ def test_the_footer_says_when_sdk_import_evidence_was_unavailable():
     footer = architecture._footer({"arch_stats": stats})
     assert "SDK import evidence unavailable (not a git repository)" in footer
     assert "unavailable" not in architecture._footer({"arch_stats": {**stats, "sdk_unavailable": None}})
+
+
+def test_the_footer_escapes_the_unavailable_note():
+    """Defence in depth: the crawler never passes git text through, and the
+    footer escapes what it is handed anyway, since it lands in HTML."""
+    footer = architecture._footer({"arch_stats": {"sdk_unavailable": "<script>x</script>"}})
+    assert "<script>" not in footer and "&lt;script&gt;" in footer

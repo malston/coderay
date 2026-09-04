@@ -42,6 +42,16 @@ def test_build_bundle_refuses_a_repo_with_no_architecture_sources(tmp_path):
         n.BuildBundle().run({"repo_path": repo})
 
 
+def test_the_no_sources_guard_names_missing_sdk_evidence_too(tmp_path):
+    """coderay-q2r.15. A code-only repo with SDK imports runs as a checkout
+    (the bundle is the SDK section) and fails as a tarball; the guard must say
+    the import evidence was unavailable, not only list four config sources
+    that were never the problem."""
+    repo = _repo(tmp_path, {"src/pay.ts": "import Stripe from 'stripe';\n"})
+    with pytest.raises(AssertionError, match="SDK import evidence was also unavailable: not a git repository"):
+        n.BuildBundle().run({"repo_path": repo})
+
+
 def test_inventory_stores_the_markdown_the_diagram_and_the_verdict(monkeypatch):
     reply = ("**Shape verdict:** A gateway in front of four services.\n\n"
              "```mermaid\ngraph LR;\ngateway-->auth;\n```\n\n" + CARDS)
