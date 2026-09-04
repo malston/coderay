@@ -4,6 +4,8 @@ through the backend end to end for a new developer: the most
 central endpoint, the one POST or mutation every user hits at
 least once. Keep it warm and concrete.
 
+{house_style}
+
 ## Input
 The crawled source files, grouped by layer:
 {codebase}
@@ -68,4 +70,4 @@ response is best-effort.
   minor field changes.
 - Open each variant after the first with a one-sentence
   transition. Write for a curious beginner: plain words, an
-  analogy when it helps, no brochure words.
+  analogy when it helps.

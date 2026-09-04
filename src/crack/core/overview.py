@@ -16,11 +16,12 @@ grounded in the real findings, so the page reads as this repo's story.
 import re
 
 from .call_llm import call_llm
+from .llm import fill, house_style
 
 _PROMPT = """You are a senior engineer writing the overview at the top of a page
-that maps {what} for a codebase called "{name}". Your reader is another engineer
-who just opened this repo — smart and capable, and they want the real technical
-picture fast, not a pep talk.
+that maps {what} for a codebase called "{name}".
+
+{house_style}
 
 What the analysis actually found about {name}:
 {facts}
@@ -34,8 +35,7 @@ reveals…", "The API is…" — NOT with "This page/document maps…". Name the
 architectural characteristics the analysis surfaced — e.g. "a multi-tenant
 scheduling system with audit trails, granular access control, and per-seat
 billing." Friendly and clear, but dense with real detail. This paragraph is the
-page's headline summary, so make it stand on its own. NO greetings, no "welcome
-to the team", no hype.
+page's headline summary, so make it stand on its own.
 
 Then one block per section below. Use each section's EXACT name as a `## `
 header, and under it write ONE or TWO sentences that say, concretely, what that
@@ -46,14 +46,7 @@ technical but easy to read. Here are the headers to use, in order:
 The sections and what each contains:
 {sections}
 
-Rules: write like a knowledgeable colleague giving a crisp rundown — specific,
-technical, and friendly, never chatty or salesy. Prefer concrete nouns (tables,
-endpoints, migrations, transactions, indexes) over adjectives. Explain a term in
-a few words only if a junior engineer would miss it. Precise technical
-descriptors are good ("multi-tenant", "normalized", "idempotent", "audit
-trail"); empty marketing words are banned ("seamless", "powerful", "leverage",
-"cutting-edge", "world-class", "robust" when it means nothing). No greetings, no
-bullet lists, no sub-headers of your own."""
+Rules: no bullet lists, no sub-headers of your own."""
 
 
 def write_overview(name, what, sections, facts=""):
@@ -68,9 +61,9 @@ def write_overview(name, what, sections, facts=""):
     titles = [t for t, _ in sections]
     slist = "\n".join(f"- {t}: {g}" for t, g in sections)
     headers = "\n".join(f"## {t}" for t in titles)
-    raw = call_llm(_PROMPT.format(
-        name=name, what=what, facts=facts.strip() or "(no extra facts)",
-        sections=slist, headers=headers))
+    raw = call_llm(fill(
+        _PROMPT, name=name, what=what, facts=facts.strip() or "(no extra facts)",
+        sections=slist, headers=headers, house_style=house_style(with_evidence=False)))
 
     blocks = {}
     for m in re.finditer(r'^##[ \t]+(.+?)[ \t]*\n(.*?)(?=^##[ \t]|\Z)', raw, re.MULTILINE | re.DOTALL):

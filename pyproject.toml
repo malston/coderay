@@ -41,6 +41,7 @@ packages = [
 ]
 
 [tool.setuptools.package-data]
+"crack.core" = ["prompts/*.md"]
 "crack.analyses.tour" = ["prompts/*.md", "instructions/*.md"]
 "crack.analyses.backend" = ["prompts/*.md"]
 "crack.analyses.architecture" = ["prompts/*.md"]

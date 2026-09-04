@@ -11,6 +11,7 @@ from .call_llm import (  # noqa: F401
     resolve_provider_and_model,
 )
 from .llm import (  # noqa: F401
+    house_style,
     read_prompt,
     fill,
     extract_mermaid,

@@ -4,6 +4,8 @@ through a product's API for a new developer: one gesture,
 many endpoints, in the order they fire. Explain it warmly, so
 a beginner follows every hop.
 
+{house_style}
+
 ## Input
 The crawled API routes, and the feature groups from the menu:
 {routes}
@@ -60,4 +62,4 @@ it (method, path, one-line description). For example:
   recap.
 - Lead with what it means for the user or product before
   naming the code behind it. Write for a curious beginner:
-  plain words, an analogy when it helps, no brochure words.
+  plain words, an analogy when it helps.

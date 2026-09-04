@@ -3,6 +3,8 @@ Write a GRAVEYARD ENTRY for one bulk-deletion event from
 a repo's git history: a dated record of a feature the
 team built and then chose to kill.
 
+{house_style}
+
 ## Input
 COMMIT
   Hash:    {hash}
@@ -65,8 +67,6 @@ Make them understand what died and why it mattered.
 - Reach for an everyday analogy when it helps ("AMP was like
   keeping a fax machine because one big customer still used
   it — until they stopped").
-- No brochure words: no "seamless", "robust", "powerful",
-  "leverage", "cutting-edge", "modern".
 
 ## Optional picture
 If (and only if) it genuinely helps a beginner see what the

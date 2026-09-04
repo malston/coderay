@@ -4,6 +4,8 @@ what a codebase does when one real user triggers the
 product's core action, hop by hop, with a file name for each
 step. Keep it warm and concrete.
 
+{house_style}
+
 ## Input
 The architecture bundle, and the node inventory from the
 first prompt:
@@ -60,5 +62,4 @@ shipping webhook fire in the background.
   change.
 - Open each variant after the first with a one-sentence
   transition naming the new scenario it covers. Write for a
-  curious beginner: plain words, an analogy when it helps, no
-  brochure words.
+  curious beginner: plain words, an analogy when it helps.

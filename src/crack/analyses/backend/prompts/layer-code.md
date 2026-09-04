@@ -4,6 +4,8 @@ code at each of the six layers: which layers the team built
 in an unusual way, and which just follow the framework. Keep
 it warm and concrete.
 
+{house_style}
+
 ## Input
 The crawled source files, grouped by layer:
 {codebase}
@@ -49,4 +51,4 @@ a service that makes an ORM call; nothing to read closely."
 - Point at 3-5 sibling files where the same idiom recurs.
 - Open each card after the first with a one-sentence
   transition. Write for a curious beginner: plain words, an
-  analogy when it helps, no brochure words.
+  analogy when it helps.

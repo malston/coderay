@@ -4,6 +4,8 @@ database when one user action fires: a single gesture, many
 tables touched, in the order they happen. Explain it warmly,
 like walking a new teammate through it.
 
+{house_style}
+
 ## Input
 The crawled schema, and the core tables from the tour:
 {schema}
@@ -58,4 +60,4 @@ or semicolons.
   naming the code behind it. An everyday analogy is welcome
   when it makes the chain of steps click.
 - Write for a curious beginner: plain words, explain any
-  technical term the first time, and no brochure words.
+  technical term the first time.

@@ -47,3 +47,92 @@ def test_prompt_templates_still_render_with_dummy_args():
         rendered = fill(template, **dummy)
         for key in dummy:
             assert "{" + key + "}" not in rendered, f"{path}: unfilled slot {{{key}}}"
+
+
+# coderay-aph: the house style is one shipped block, injected by read_prompt.
+ANALYSES_DIR = os.path.join(os.path.dirname(__file__), "..", "src", "crack", "analyses")
+# Prompts that do not carry the block: replies that are parsed, not read (a
+# JSON or YAML shape), and the two product-intent prompts whose reader is a
+# general undergraduate on purpose, so the engineer-facing voice would
+# contradict their task.
+OWN_VOICE_PROMPTS = {
+    "tour/prompts/select-files.md", "tour/prompts/identify-abstractions.md",
+    "tour/prompts/analyze-relationships.md",
+    "git_history/prompts/name-eras.md", "git_history/prompts/profile-era.md",
+    "product_intent/prompts/competitive-positioning.md",
+    "product_intent/prompts/surprises-and-absences.md",
+    "product_intent/prompts/pain-scene.md", "product_intent/prompts/variant-sentence.md",
+}
+
+
+def _analysis_prompts():
+    paths = sorted(glob.glob(os.path.join(ANALYSES_DIR, "*", "prompts", "*.md")))
+    assert len(paths) >= 24
+    return {os.path.relpath(p, ANALYSES_DIR): open(p).read() for p in paths}
+
+
+def test_house_style_block_is_clean_prose():
+    from crack.core import house_style
+    text = house_style()
+    assert "concrete nouns" in text
+    assert "—" not in text                       # the block enforces no em dashes; it must obey
+    assert not [m for m in __import__("re").findall(r"\{[a-z_]+\}", text)], "an unfilled slot"
+
+
+def test_read_prompt_fills_the_house_style_slot(tmp_path):
+    from crack.core import read_prompt
+    (tmp_path / "p.md").write_text("Rules first.\n{house_style}\nThen the task: {codebase}\n", encoding="utf-8")
+    text = read_prompt(tmp_path, "p.md")
+    assert "{house_style}" not in text
+    assert "concrete nouns" in text
+    assert "{codebase}" in text                      # only the style slot is filled here
+
+
+def test_read_prompt_leaves_a_template_without_the_slot_alone(tmp_path):
+    from crack.core import read_prompt
+    (tmp_path / "p.md").write_text("Return JSON: {codebase}\n", encoding="utf-8")
+    assert read_prompt(tmp_path, "p.md") == "Return JSON: {codebase}\n"
+
+
+def test_every_house_voice_prompt_carries_the_slot_and_no_other_does():
+    from crack.core.call_llm import CACHE_BREAKPOINT
+    for rel, template in _analysis_prompts().items():
+        if rel in OWN_VOICE_PROMPTS:
+            assert "{house_style}" not in template, rel
+            continue
+        assert template.count("{house_style}") == 1, rel
+        if CACHE_BREAKPOINT in template:
+            assert "{house_style}" in template.partition(CACHE_BREAKPOINT)[0], f"{rel}: slot must be in the cached prefix"
+
+
+def test_prose_prompts_do_not_restate_the_house_style():
+    """The block owns the voice; a prompt that repeats a rule drifts from it."""
+    restated = ("seamless", "marketing words", "concrete nouns", "no greetings", "brochure words")
+    for rel, template in _analysis_prompts().items():
+        if rel in OWN_VOICE_PROMPTS:
+            continue
+        for phrase in restated:
+            assert phrase not in template.lower(), f"{rel} restates: {phrase}"
+
+
+def test_house_style_exempts_required_output_syntax_and_adds_no_header_of_its_own():
+    """Codex review of PR #33. The block bans em dashes and "welcome", and the
+    prompts it rides in require `## Welcome` and `### Layer N — Name` headers
+    that a parser keys on. The block says those are written exactly as given,
+    and it carries no `## ` header that an "only these headers" instruction
+    could be read against."""
+    from crack.core import house_style
+    text = house_style()
+    assert "exactly as given" in text
+    assert not [l for l in text.splitlines() if l.startswith("#")]
+
+
+def test_house_style_evidence_rules_can_be_left_out():
+    """Codex review of PR #33. The overview receives aggregate facts and no
+    source, so the citation and trace rules would make it invent evidence."""
+    from crack.core import house_style
+    full, voice = house_style(), house_style(with_evidence=False)
+    assert "Cite the file and symbol" in full and "Trace one real path" in full
+    assert "Cite the file and symbol" not in voice and "Trace one real path" not in voice
+    assert "concrete nouns" in voice
+    assert voice in full

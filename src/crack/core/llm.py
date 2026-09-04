@@ -4,17 +4,48 @@ flaky model drops a field or returns malformed YAML.
 """
 import json
 import re
+from importlib import resources
 
 import yaml
 
 from .call_llm import call_llm
 
+HOUSE_STYLE_SLOT = "{house_style}"
+
+
+def _core_prompt(name):
+    return (resources.files("crack.core") / "prompts" / name).read_text(encoding="utf-8").strip()
+
+
+def house_style(with_evidence=True):
+    """The voice every report is written in: one shipped block, the single
+    source for the rules, read by the model at generation time and by anyone
+    writing or editing a prompt (coderay-aph). A prompt whose reader is
+    deliberately not an engineer (product-intent's pain scene and variant
+    sentence) keeps its own voice and has no slot.
+
+    The evidence rules (cite file and symbol, trace one real path) ride along
+    by default. A prompt that is handed no source, only counts and section
+    gists like the overview, passes with_evidence=False so the model is not
+    told to cite what it cannot see."""
+    text = _core_prompt("house-style.md")
+    if with_evidence:
+        text += "\n\n" + _core_prompt("evidence-discipline.md")
+    return text
+
 
 def read_prompt(prompts_dir, name):
     """Read a prompt file from a directory (an importlib.resources Traversable
     or a pathlib.Path). `crack/analyses/tour/prompts/` stays the source of truth
-    for every prompt."""
-    return (prompts_dir / name).read_text(encoding="utf-8")
+    for every prompt.
+
+    A prompt that writes prose carries `{house_style}` in its static prefix and
+    gets the shared block filled here, so no prompt restates the voice rules; a
+    prompt whose reply is parsed (JSON, YAML) has no slot and is returned as is."""
+    template = (prompts_dir / name).read_text(encoding="utf-8")
+    if HOUSE_STYLE_SLOT in template:
+        template = template.replace(HOUSE_STYLE_SLOT, house_style())
+    return template
 
 
 def fill(template, **kwargs):

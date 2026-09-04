@@ -4,6 +4,8 @@ a new developer a guided tour of a database schema on their
 first day: the story of what the product remembers and why,
 not a reference doc.
 
+{house_style}
+
 ## Input
 The crawled schema (every table, column, and relation):
 {schema}
@@ -65,4 +67,4 @@ the table behind it.
   naming the code behind it. Reach for an everyday analogy
   when it helps a beginner picture the table.
 - Write for a curious beginner: plain words, explain any
-  technical term the first time, and no brochure words.
+  technical term the first time.
