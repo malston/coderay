@@ -14,7 +14,7 @@ Nothing calls an LLM.
 import os
 from collections import Counter
 
-from crawl.core import DEFAULT_SKIP_DIR, list_files, safe_read
+from crawl.core import DEFAULT_SKIP_DIR, GO_FIXTURE_DIRS, list_files, safe_read
 
 # The crawler's shared noise set plus the directories a backend keeps that
 # hold no request-path code (coderay-q2r.59: the port's own list missed `env`,
@@ -44,8 +44,6 @@ GO_SERVICE_SUFFIXES = ('_service.go',)
 GO_DATABASE_NAMES = ('db.go', 'database.go', 'store.go', 'queries.go')
 GO_DATABASE_SUFFIXES = ('_store.go', '.sql.go', '_repository.go')
 GO_RESPONSE_SUFFIXES = ('_response.go',)
-# Go directories that hold fixtures and mocks rather than request-path code.
-GO_TEST_DIRS = frozenset({'testdata', 'testutil', 'testutils', 'httptest', 'factorytest'})
 
 
 def classify(rel):
@@ -64,7 +62,7 @@ def classify(rel):
     if any(m in base for m in ('.test.', '.spec.', '_test.', '.stories.')) or base.endswith('_spec.rb'):
         return None
     is_go = p.endswith('.go')
-    if is_go and any(seg in GO_TEST_DIRS for seg in p.split('/')[1:-1]):
+    if is_go and any(seg in GO_FIXTURE_DIRS for seg in p.split('/')[1:-1]):
         return None
     # Route
     if (base in ('urls.py', 'routes.rb', 'routes.ts', 'router.ts', 'routes.js', 'router.js')

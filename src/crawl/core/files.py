@@ -105,6 +105,10 @@ DEFAULT_MAX_FILE_BYTES = 500_000
 # Credential-shaped files. Never sent to the LLM or cached, regardless of
 # keep_ext/keep_names — these are excluded even if a caller explicitly asks
 # for their extension.
+# Go directories that hold fixtures and mocks rather than request-path code;
+# a crawler reading a Go repo skips them (backend layers, interfaces routes).
+GO_FIXTURE_DIRS = frozenset({'testdata', 'testutil', 'testutils', 'httptest', 'factorytest'})
+
 DEFAULT_SKIP_NAMES = frozenset({
     '.netrc', '.npmrc', '.pypirc',
     'credentials', 'credentials.json', 'service-account.json', 'client_secret.json',

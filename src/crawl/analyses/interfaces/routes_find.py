@@ -9,15 +9,16 @@ We collect the surface files across the common conventions:
   Next.js          **/pages/api/**/*.ts, **/app/**/route.ts   (path IS the URL)
   tRPC             **/_router.ts
   GraphQL / gRPC   **/*.graphql, **/*.proto
-  Go               **/cmd/*.go
+  Go               any .go file that registers handlers (by content, not name)
 
 `crawl_routes` concatenates them (capped) into the `{routes}` the prompts read.
 `read_files` resolves an LLM-picked list of source paths for the sequence view.
 Nothing here calls an LLM.
 """
 import os
+import re
 
-from crawl.core import DEFAULT_SKIP_DIR, readable
+from crawl.core import DEFAULT_SKIP_DIR, GO_FIXTURE_DIRS, readable
 
 SKIP_DIRS = DEFAULT_SKIP_DIR | {'.storybook'}
 
@@ -26,6 +27,29 @@ _ROUTE_BASENAMES = frozenset({
     'routes.rb', 'urls.py', 'routes.ts', 'router.ts', 'routes.js', 'router.js',
     'schema.graphql',
 })
+# A Go handler registration: a mux or router being built, or a method that
+# takes a path literal. `r.Header.Get("X-Token")` reads a header and does not
+# match, because its argument is not a path (coderay-5wu.12).
+_GO_REGISTRATION = re.compile(
+    r'\bHandleFunc\(|http\.NewServeMux\(|\bNewRouter\(|gin\.(?:Default|New)\(|echo\.New\('
+    r'|\.(?:Get|Post|Put|Delete|Patch|GET|POST|PUT|DELETE|PATCH|Handle|Route|Mount|Group)\(\s*"/')
+# Go route files with at least this many registrations are manifests, read first.
+_GO_MANIFEST_MIN = 5
+
+
+def go_route_registrations(text):
+    """How many handler registrations a Go source file makes."""
+    return len(_GO_REGISTRATION.findall(text))
+
+
+def _go_candidate(rel):
+    """True if a .go file may hold route registrations: not a test file, not a
+    test helper, not under a fixture directory."""
+    p = "/" + rel.replace(os.sep, "/").lstrip("/")
+    base = os.path.basename(p)
+    if not p.endswith(".go") or "test" in base:
+        return False
+    return not any(seg in GO_FIXTURE_DIRS for seg in p.split("/")[1:-1])
 
 
 def _walk(root):
@@ -53,19 +77,29 @@ def is_route_file(rel):
         return True
     if "/app/" in p and base in ("route.ts", "route.js", "route.tsx"):
         return True
-    if "/cmd/" in p and p.endswith(".go"):
-        return True
     return False
 
 
-def find_route_files(repo):
+def _surface(repo):
+    """Every surface file as (rel, text, weight), text read once with the
+    containment check. Name-matched files carry weight 0; a Go file is on the
+    surface only when its text registers handlers, and its weight is how many."""
     out = []
     for dirpath, _dirnames, filenames in _walk(repo):
         for f in filenames:
             rel = os.path.relpath(os.path.join(dirpath, f), repo)
             if is_route_file(rel):
-                out.append(rel)
-    return sorted(out)
+                out.append((rel, _read(os.path.join(repo, rel), repo), 0))
+            elif _go_candidate(rel):
+                text = _read(os.path.join(repo, rel), repo)
+                weight = go_route_registrations(text)
+                if weight:
+                    out.append((rel, text, weight))
+    return out
+
+
+def find_route_files(repo):
+    return sorted(rel for rel, _text, _weight in _surface(repo))
 
 
 def _read(path, repo=None):
@@ -86,18 +120,22 @@ def crawl_routes(repo, max_chars=900_000):
     """Concatenate the surface files with path headers, capped at max_chars.
     tRPC aggregators and Rails/Django manifests come first (they list many
     endpoints per file), so a cap trims single Next.js handlers, not the map."""
-    files = find_route_files(repo)
+    surface = _surface(repo)
 
-    def priority(rel):
+    def priority(rel, weight):
         base = os.path.basename(rel)
         if base in _ROUTE_BASENAMES or base.endswith(("_router.ts", ".proto", ".graphql")):
             return 0  # aggregators / manifests first
+        if weight >= _GO_MANIFEST_MIN:
+            return 0  # a Go file registering many routes is the manifest
         return 1
 
-    files.sort(key=lambda r: (priority(r), r))
+    # Manifests first, the busiest Go manifest ahead of the rest; single
+    # handlers in name order, whatever language they are in.
+    surface.sort(key=lambda e: (priority(e[0], e[2]), -e[2] if e[2] >= _GO_MANIFEST_MIN else 0, e[0]))
+    files = [rel for rel, _text, _weight in surface]
     parts, total, kept = [], 0, []
-    for rel in files:
-        text = _read(os.path.join(repo, rel), repo)
+    for rel, text, _weight in surface:
         if not text.strip():
             continue
         block = f"{'=' * 60}\nFile: {rel}\n{'=' * 60}\n{text}\n"

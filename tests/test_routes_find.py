@@ -9,7 +9,7 @@ from crawl.analyses.interfaces import routes_find as rf
     "config/routes.rb", "app/urls.py", "src/routes.ts", "src/router.ts",
     "server/routes.js", "schema.graphql", "api/user.proto",
     "src/trpc/_router.ts", "pages/api/login.ts", "src/pages/api/login.tsx",
-    "app/users/route.ts", "cmd/server/main.go",
+    "app/users/route.ts",
 ])
 def test_is_route_file_recognises_a_framework_convention(rel):
     assert rf.is_route_file(rel) is True
@@ -23,15 +23,15 @@ def test_is_route_file_rejects_a_non_surface_file(rel):
     assert rf.is_route_file(rel) is False
 
 
-@pytest.mark.parametrize("rel", ["pages/api/login.ts", "app/users/route.ts", "cmd/server/main.go"])
+@pytest.mark.parametrize("rel", ["pages/api/login.ts", "app/users/route.ts"])
 def test_is_route_file_reads_a_convention_directory_at_the_repo_root(rel):
     """Was the interfaces half of the fix in upstream 4a74f7e, at pin 34f0ad2.
 
-    Next.js keeps pages/api/ and app/ at the repo root and Go keeps cmd/ there,
-    which is the layout each framework generates. The rules match on their
-    surrounding slashes, so before the fix FindRoutes refused to run at all on
-    a stock Next.js app. Both the root and nested forms must work, which is
-    what separates the fix from one that merely stripped the slashes.
+    Next.js keeps pages/api/ and app/ at the repo root, which is the layout the
+    framework generates. The rules match on their surrounding slashes, so
+    before the fix FindRoutes refused to run at all on a stock Next.js app.
+    Both the root and nested forms must work, which is what separates the fix
+    from one that merely stripped the slashes.
     """
     assert rf.is_route_file(rel) is True
     assert rf.is_route_file("src/" + rel) is True
@@ -239,3 +239,49 @@ def test_read_files_reports_the_paths_cut_by_the_size_budget(tmp_path):
     repo = _repo(tmp_path / "repo", {f"b{i}.py": "x" * 50 + "\n" for i in range(4)})
     text, resolved, skipped = rf.read_files(repo, [f"b{i}.py" for i in range(4)], max_chars=400)
     assert resolved == ["b0.py", "b1.py"] and skipped == ["b2.py", "b3.py"]
+
+
+# coderay-5wu.12: Go has no route-file name. A file is part of the surface when
+# it registers handlers, wherever it sits.
+@pytest.mark.parametrize("text,count", [
+    ('mux := http.NewServeMux()\nmux.HandleFunc("/api/x", h)\nmux.Handle("/", fs)\n', 3),
+    ('r := chi.NewRouter()\nr.Get("/users", list)\nr.Post("/users", create)\nr.Mount("/v2", sub)\n', 4),
+    ('g := gin.Default()\ng.GET("/ping", ping)\n', 2),
+    ('e := echo.New()\ne.POST("/login", login)\n', 2),
+    ('token := r.Header.Get("X-Token")\nresp.Header.Get("ETag")\n', 0),
+    ('func main() { cmd.Execute() }\n', 0),
+])
+def test_go_route_registrations_counts_handler_registrations_only(text, count):
+    """`r.Header.Get("X-Token")` reads a header; `r.Get("/users", h)` registers
+    a route. The path literal after the call is what tells them apart."""
+    assert rf.go_route_registrations(text) == count
+
+
+def test_find_route_files_reads_go_files_that_register_routes(tmp_path):
+    """A cmd/*.go rule by name swept every Cobra subcommand into the surface
+    and missed the file that registers every route. Go route files are found
+    by content; test scaffolding (a _test.go, a fixture directory, a
+    testhelpers.go) stays out even when it starts a mock server."""
+    repo = _repo(tmp_path / "repo", {
+        "pkg/hub/server.go": 'mux.HandleFunc("/api/a", a)\nmux.HandleFunc("/api/b", b)\n',
+        "pkg/hub/db.go": "func open() {}\n",
+        "cmd/tool/convert.go": "func run() { cmd.Execute() }\n",
+        "cmd/bridge/main.go": "m := http.NewServeMux()\nm.Handle(path, h)\n",
+        "pkg/hub/factorytest/mock_github.go": 'mux.HandleFunc("/repos", fake)\n',
+        "pkg/hub/testhelpers.go": 'srv.HandleFunc("/", fake)\n',
+        "pkg/hub/server_test.go": 'mux.HandleFunc("/x", h)\n',
+    })
+    assert rf.find_route_files(repo) == ["cmd/bridge/main.go", "pkg/hub/server.go"]
+
+
+def test_crawl_routes_puts_the_go_file_with_the_most_registrations_first(tmp_path):
+    """The file registering dozens of routes is the manifest; a mux with two
+    lines in an entry point is not. The cap must trim the latter."""
+    repo = _repo(tmp_path / "repo", {
+        "cmd/bridge/main.go": "m := http.NewServeMux()\nm.Handle(path, h)\n",
+        "pkg/hub/server.go": "".join(f'mux.HandleFunc("/api/{i}", h{i})\n' for i in range(6)),
+        "pages/api/aaa.ts": "export default aaa\n",
+    })
+    routes, files, kept = rf.crawl_routes(repo)
+    assert routes.index("pkg/hub/server.go") < min(routes.index("pages/api/aaa.ts"), routes.index("cmd/bridge/main.go"))
+    assert files[0] == "pkg/hub/server.go"
