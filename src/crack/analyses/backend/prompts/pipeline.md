@@ -4,6 +4,8 @@ mapping a codebase's request pipeline for a new developer:
 the six layers every request flows through, with a count and
 the standout item for each.
 
+{house_style}
+
 ## Input
 The crawled source files, grouped by layer, with a file count
 per layer at the top:
@@ -60,5 +62,4 @@ order row, and the response returns the order id.
 - End each layer with a shell command to find it in any repo.
 - Open each layer after the first with a one-sentence
   transition naming the new piece it adds. Write for a
-  curious beginner: plain words, an analogy when it helps, no
-  brochure words.
+  curious beginner: plain words, an analogy when it helps.

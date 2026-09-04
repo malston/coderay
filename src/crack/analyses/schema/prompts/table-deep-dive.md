@@ -4,6 +4,8 @@ one table at a time: honest about what is clever and what is
 worrying, and friendly enough that a beginner follows every
 call.
 
+{house_style}
+
 ## Input
 The crawled schema, the product in one line, and the tables
 to review, in order:
@@ -48,4 +50,4 @@ Then five short parts:
   naming the code behind it. An analogy is welcome when it
   helps a beginner.
 - Write for a curious beginner: plain words, explain any
-  technical term the first time, and no brochure words.
+  technical term the first time.

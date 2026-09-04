@@ -4,6 +4,8 @@ a product's whole API surface for a new developer: turn the
 full list of endpoints into a menu of features, then a short
 tour of the groups that say the most about the product.
 
+{house_style}
+
 ## Input
 The crawled route and endpoint definition files:
 {routes}
@@ -61,4 +63,4 @@ code handling what goes wrong than what goes right.
   recap.
 - Lead with what it means for the user or product before
   naming the code behind it. Write for a curious beginner:
-  plain words, an analogy when it helps, no brochure words.
+  plain words, an analogy when it helps.

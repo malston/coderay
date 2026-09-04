@@ -4,6 +4,8 @@ new developer: show the exact order of messages between
 services, from the request arriving to the response going
 back. Keep it friendly enough that a beginner follows it.
 
+{house_style}
+
 ## Input
 The route definition, the flow it belongs to, and the
 handler's source code:
@@ -80,5 +82,4 @@ the shopper sees "Order placed."
   can fail without the user knowing.
 - Lead each message label and paragraph with the user-visible
   effect before naming the internal service. Write for a
-  curious beginner: plain words, an analogy when it helps, no
-  brochure words.
+  curious beginner: plain words, an analogy when it helps.

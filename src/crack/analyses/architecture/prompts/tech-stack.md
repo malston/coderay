@@ -6,6 +6,8 @@ cache") into the specific technology it is built from, so a
 teammate can open the right file without guessing. Keep it
 friendly enough for someone who's never seen the code.
 
+{house_style}
+
 ## Input
 The architecture bundle, and the node inventory from the
 previous prompt:
@@ -62,5 +64,4 @@ For example:
   libraries and protocols only in the second.
 - Open each card after the first with a one-sentence
   transition naming the new role this node plays. Write for a
-  curious beginner: plain words, an analogy when it helps, no
-  brochure words.
+  curious beginner: plain words, an analogy when it helps.

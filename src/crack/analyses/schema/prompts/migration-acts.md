@@ -3,6 +3,8 @@ You are a senior engineer reading a codebase's migration
 history to reconstruct what the team built and when, and
 retelling it as a story a new teammate can follow.
 
+{house_style}
+
 ## Input
 The timestamped migration folder names, oldest first:
 {migration_names}
@@ -57,4 +59,4 @@ page reads as a story, not a wall of text:
   naming the code behind it. An analogy is welcome when it
   helps a beginner.
 - Write for a curious beginner: plain words, explain any
-  technical term the first time, and no brochure words.
+  technical term the first time.

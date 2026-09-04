@@ -78,3 +78,18 @@ def test_overview_node_does_not_report_a_failure_on_success(monkeypatch, capsys)
     out = capsys.readouterr().out
     assert "Overview written" in out
     assert "failed" not in out.lower()
+
+
+def test_write_overview_prompt_carries_the_house_style(monkeypatch):
+    """coderay-aph: the overview prompt used to restate the voice rules."""
+    seen = {}
+
+    def capture(prompt):
+        seen["p"] = prompt
+        return REPLY
+
+    monkeypatch.setattr("crack.core.overview.call_llm", capture)
+    write_overview("toy_repo", "a backend", SECTIONS)
+    assert "concrete nouns" in seen["p"]
+    assert "{house_style}" not in seen["p"]
+    assert '("seamless", "powerful"' not in seen["p"]   # the old inline banned-word list is gone
