@@ -2,8 +2,8 @@
 
 An analysis either declares THEME + SECTIONS and lets this module build its
 page, or defines its own render_html/render_markdown and this module steps
-aside. product-intent and git-history take the second path: their pages are hand-built from
-structured data rather than markdown blobs.
+aside. product-intent and git-history take the second path: their pages are
+hand-built from structured data rather than markdown blobs.
 """
 import html as _html
 import re
@@ -27,7 +27,8 @@ class Section:
       "always"    render the section anyway, with an empty rail (the default,
                   backend, architecture and most schema sections)
       "omit"      drop the section entirely (the interfaces tour)
-      "skip-note" render the head with skip_note() as its note, no rail (schema migration acts)
+      "skip-note" render the head with skip_note() as its note, no rail
+                  (schema migration acts)
     """
     number: str
     label: str
@@ -347,7 +348,7 @@ def _render_card_markdown(analysis, name, shared):
         if not body and spec.md_skip_note:
             parts.append(spec.md_skip_note(shared))
         else:
-            # Matches the chapters, which append body.strip() + "\n"
+            # Matches the tour's chapter files, which append body.strip() + "\n"
             # unconditionally: an absent key still emits a blank line.
             parts.append(body.strip() + "\n")
     return "\n".join(parts)
