@@ -51,7 +51,7 @@ A five-stage pipeline (FindRoutes, ApiMenu, TraceActions, EndpointSequence, Over
 
 A six-stage pipeline (FindSchema, SchemaTour, TraceFlows, TableDeepDive, MigrationActs, OverviewNode) that reads a database schema as a map of the business:
 
-- Finds the schema by convention in priority order: Prisma `schema.prisma`, Rails `db/schema.rb`, a dumped `schema.sql`, or the Django and SQLAlchemy `models.py` files concatenated. `--schema path/to/file` overrides the search. The schema goes into every deep-dive batch, so a total size budget caps how many files are included and records when it truncated.
+- Finds the schema by convention in priority order: Prisma `schema.prisma`, Rails `db/schema.rb`, a dumped `schema.sql`, the Django and SQLAlchemy `models.py` files concatenated, or, for a Go service that migrates in code, the DDL inside its `.go` string literals. `--schema path/to/file` overrides the search. The schema goes into every deep-dive batch, so a total size budget caps how many files are included and records when it truncated.
 - Renders four views: the schema told as a story with an ER diagram, one user action traced across tables, the columns and indexes of the core tables, and the migration history clustered into product eras.
 - The deep dive reviews four tables per LLM call rather than all at once, which is why this analysis does not raise the output-token ceiling the way the others do.
 - The migration section is skipped, with a note saying so, when fewer than four migrations are found. That is a real finding about the repository rather than a gap in the report, so it stays on the page.

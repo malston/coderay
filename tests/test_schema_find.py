@@ -95,15 +95,13 @@ def test_find_migrations_returns_the_names_oldest_first(tmp_path):
     ("20210605225044_init", "20210605225044_init"),          # Prisma: fourteen
     ("20210101120000_create_users.rb", "20210101120000_create_users"),  # Rails
     ("00001_init.sql", "00001_init"),                                    # goose
-    ("000001_init.up.sql", "000001_init.up"),                            # golang-migrate
+    ("000001_init.up.sql", "000001_init"),                               # golang-migrate
 ])
 def test_find_migrations_reads_every_framework_numbering(tmp_path, name, expected):
-    """Was coderay-q2r.21: the pattern demanded six leading digits.
-
-    Prisma and Rails both use fourteen, so only Django's four-digit numbering
-    was dropped -- and dropped silently, as 'history squashed'. Django is the
-    distinguishing input; the other two passed before the fix and must still.
-    """
+    """TIMESTAMP_RE accepts four or more leading digits, so Django (four), goose
+    (five), golang-migrate (six) and Prisma or Rails (fourteen) all pass; a
+    six-digit minimum drops every Django history silently, as "squashed"
+    (coderay-q2r.21)."""
     repo = _repo(tmp_path, {f"app/migrations/{name}": "x\n"})
     _reldir, names = sf.find_migrations(repo)
     assert names == [expected]
@@ -260,9 +258,74 @@ def test_find_schema_prefers_a_schema_file_over_embedded_sql(tmp_path):
     assert sf.find_schema(repo)["kind"] == "sql"
 
 
-def test_find_schema_prefers_embedded_sql_over_model_files(tmp_path):
+def test_find_schema_prefers_model_files_over_embedded_sql(tmp_path):
+    """A models.py is a schema by convention; DDL inside Go strings is a
+    heuristic. A Django repo with a Go sidecar keeps its models."""
     repo = _repo(tmp_path, {"app/models.py": "class A: pass\n", "pkg/hub/db.go": GO_DB})
-    assert sf.find_schema(repo)["kind"] == "embedded-sql"
+    assert sf.find_schema(repo)["kind"] == "models"
+
+
+def test_embedded_sql_keeps_only_literals_that_are_statements(tmp_path):
+    """An error message that mentions creating a table is prose, not schema;
+    a literal counts when it begins with a DDL statement."""
+    prose = 'package a\n_ = fmt.Errorf("failed to create table %s: %w", name, err)\nlog.Printf("create table %q failed", n)\n'
+    repo = _repo(tmp_path, {"pkg/hub/errors.go": prose})
+    assert sf.find_schema(repo)["kind"] is None
+    assert sf.embedded_sql(prose) == ""
+
+
+def test_embedded_sql_ignores_comments_and_rune_literals(tmp_path):
+    """A backtick in a comment or a rune literal must not pair with a raw
+    string's opening backtick; the scanner walks comments and runes as Go does."""
+    text = ("package a\n// the ` rune starts a raw string\nr := '`'\nq := '\"'\n"
+            "func migrate(db *sql.DB) {\n\tdb.Exec(`CREATE TABLE t (id int)`)\n}\n"
+            "/* db.Exec(`CREATE TABLE old (id int)`) */\n")
+    ddl = sf.embedded_sql(text)
+    assert ddl == "CREATE TABLE t (id int)"
+
+
+def test_embedded_sql_unescapes_interpreted_strings_and_keeps_inner_quotes(tmp_path):
+    text = 'a := "CREATE TABLE \\"users\\" (id int)"\nb := `ALTER TABLE t RENAME TO "new_t"`\n'
+    ddl = sf.embedded_sql(text)
+    assert 'CREATE TABLE "users" (id int)' in ddl and 'RENAME TO "new_t"' in ddl
+    from crawl.analyses.schema.nodes import schema_table_names
+    assert schema_table_names(ddl) == {"users"}
+
+
+def test_a_file_with_only_alter_table_statements_joins_the_schema(tmp_path):
+    """Migrating in code often splits the CREATEs and the ALTERs across files;
+    the columns added later belong to the schema."""
+    repo = _repo(tmp_path, {
+        "pkg/hub/schema.go": GO_DB,
+        "pkg/hub/migrations.go": "package hub\n_ = `ALTER TABLE claws ADD COLUMN nix INTEGER NOT NULL DEFAULT 0`\n",
+    })
+    found = sf.find_schema(repo)
+    assert "ADD COLUMN nix" in found["text"]
+    assert found["text"].index("schema.go") < found["text"].index("migrations.go")
+
+
+def test_go_files_are_not_read_when_a_schema_file_wins(tmp_path, monkeypatch):
+    """The Go scan reads every candidate file whole; a repo that has a schema
+    file must not pay for it, and a generated .go file over the per-file cap is
+    never read at all."""
+    from crawl.core import DEFAULT_MAX_FILE_BYTES
+    repo = _repo(tmp_path, {"schema.prisma": "model User {}\n", "pkg/gen/big.go": "x" * (DEFAULT_MAX_FILE_BYTES + 1)})
+    opened = []
+    real = sf._read
+    monkeypatch.setattr(sf, "_read", lambda path, *a, **k: opened.append(path) or real(path, *a, **k))
+    assert sf.find_schema(repo)["kind"] == "prisma"
+    assert not any(p.endswith(".go") for p in opened)
+    repo2 = _repo(tmp_path / "two", {"pkg/gen/big.go": "x" * (DEFAULT_MAX_FILE_BYTES + 1), "pkg/hub/db.go": GO_DB})
+    opened.clear()
+    assert sf.find_schema(repo2)["kind"] == "embedded-sql"
+    assert not any(p.endswith("big.go") for p in opened)
+
+
+def test_find_migrations_counts_a_golang_migrate_pair_once(tmp_path):
+    repo = _repo(tmp_path, {"db/migrations/000001_init.up.sql": "x\n", "db/migrations/000001_init.down.sql": "x\n",
+                            "db/migrations/000002_users.up.sql": "x\n", "db/migrations/000002_users.down.sql": "x\n"})
+    _reldir, names = sf.find_migrations(repo)
+    assert names == ["000001_init", "000002_users"]
 
 
 def test_embedded_sql_is_refused_from_a_go_file_symlinked_out_of_the_repo(tmp_path):
