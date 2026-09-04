@@ -182,12 +182,15 @@ def test_read_files_refuses_a_symlink_to_an_in_repo_credential_file(tmp_path):
 
 def test_read_files_refuses_a_credential_named_path_the_model_picked(tmp_path):
     """coderay-q2r.56 review. The model names the paths here, and it has been
-    reading the untrusted repo, so it may name `.env` itself; no symlink
-    needed. `env` covers the suffix match resolving to the same file."""
-    repo = _repo(tmp_path / "repo", {"pages/api/login.ts": "x\n", ".env": "TOKEN=hunter2\n"})
+    reading the untrusted repo, so it may name a dotenv file itself; no symlink
+    needed. `.env` resolves to `config/.env` by suffix and is refused there;
+    `settings.py` resolves the same way and is read, so the suffix path is live."""
+    repo = _repo(tmp_path / "repo", {"pages/api/login.ts": "x\n",
+                                     "config/.env": "TOKEN=hunter2\n",
+                                     "config/settings.py": "DEBUG = True\n"})
 
-    text, resolved = rf.read_files(repo, [".env", "env"])
-    assert resolved == []
+    text, resolved = rf.read_files(repo, ["config/.env", ".env", "settings.py"])
+    assert resolved == ["config/settings.py"]
     assert "hunter2" not in text
 
 
@@ -200,3 +203,18 @@ def test_find_route_files_skips_a_virtualenv_named_env(tmp_path):
         ".storybook/routes.ts": "ignored\n",
     })
     assert rf.find_route_files(repo) == ["app/urls.py"]
+
+
+def test_read_files_suffix_match_starts_at_a_path_segment(tmp_path):
+    """coderay-q2r.61. An unanchored endswith lets `env` resolve to `.env.example`,
+    `y` to the first file ending in y, and an empty key to the first file in walk
+    order, so the diagram is drawn from the wrong file. The model's path must
+    match whole segments from the right."""
+    repo = _repo(tmp_path / "repo", {"config/.env.example": "TOKEN=\n",
+                                     "api/users.py": "def users(): pass\n"})
+    assert rf.read_files(repo, ["env"])[1] == []
+    for blank in ("", "`", "/"):
+        assert rf.read_files(repo, [blank])[1] == []
+    assert rf.read_files(repo, ["sers.py"])[1] == []
+    assert rf.read_files(repo, ["users.py"])[1] == ["api/users.py"]
+    assert rf.read_files(repo, ["api/users.py"])[1] == ["api/users.py"]

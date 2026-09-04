@@ -19,7 +19,7 @@ import subprocess
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 
-from crawl.core import DEFAULT_SKIP_NAMES, DEFAULT_SKIP_SUFFIXES
+from crawl.core import credential_named
 
 # coderay-q2r.35. The record separator is NUL: git refuses it in a commit
 # message and no filesystem stores it in a path, so a hostile subject cannot
@@ -223,12 +223,10 @@ def landmarks(era):
 def is_secret_path(path):
     """True if a file's CONTENTS must never reach a prompt.
 
-    Reuses the crawler's own skip sets rather than a second list beside them.
+    The crawlers' own credential-name rule, so the graveyard redacts every
+    file a crawler refuses by name (coderay-q2r.62).
     """
-    base = os.path.basename(path)
-    return (base in DEFAULT_SKIP_NAMES
-            or base.startswith(".env")
-            or path.endswith(DEFAULT_SKIP_SUFFIXES))
+    return credential_named(os.path.basename(path))
 
 
 def redact_secret_files(diff_text):

@@ -227,6 +227,7 @@ def test_bulk_changes_reports_the_full_hash(tmp_path):
     "diff --cc .env",                                                        # merge, combined
     "diff --combined .env",
     "diff --git a/b/deploy.pem b/b/deploy.pem",                              # dir named b/
+    "diff --git a/Credentials.JSON b/Credentials.JSON",                      # case-folded (q2r.62)
 ])
 def test_redact_secret_files_recognises_every_header_git_emits(header):
     """coderay-q2r.36. git C-quotes non-ASCII paths, prints merges as
@@ -429,3 +430,16 @@ def test_repo_root_explains_a_directory_that_is_not_a_repo(tmp_path):
 ])
 def test_is_secret_path_covers_the_second_review_pass(path):
     assert gl.is_secret_path(path) is True
+
+
+@pytest.mark.parametrize("path", [".ENV", "Credentials.json", "certs/server.PEM", "ID_RSA"])
+def test_is_secret_path_is_case_folded_like_the_crawler_rule(path):
+    """coderay-q2r.62: a case-sensitive copy of the rule lets a graveyard commit
+    deleting `Credentials.json` send the body to the LLM."""
+    assert gl.is_secret_path(path) is True
+
+
+@pytest.mark.parametrize("path", [".env.example", "config/.env.sample", ".ENV.EXAMPLE"])
+def test_is_secret_path_leaves_dotenv_templates_alone(path):
+    """Templates carry variable names with placeholder values, so their diffs hold no secrets."""
+    assert gl.is_secret_path(path) is False

@@ -152,10 +152,15 @@ def readable(repo, path, *, credential_names=False):
         return False
     if credential_names and not os.path.islink(path):
         return True
-    return not _credential_named(os.path.basename(os.path.realpath(path)))
+    return not credential_named(os.path.basename(os.path.realpath(path)))
 
 
-def _credential_named(filename):
+def credential_named(filename):
+    """True if a file's name marks it as credential-bearing: a dotenv file other
+    than the committed templates (DOTENV_TEMPLATES), a name on DEFAULT_SKIP_NAMES,
+    or a DEFAULT_SKIP_SUFFIXES suffix (keys, certs, Terraform state and vars).
+    The one rule every crawler and the git-history redaction apply; a crawler
+    that reads a credential-named file on purpose opts in through `readable`."""
     # Case-folded so `credentials.JSON` is refused the same way `credentials.json` is.
     lowered = filename.lower()
     if lowered.startswith('.env'):
@@ -166,7 +171,7 @@ def _credential_named(filename):
 def _wanted(filename, keep_ext, keep_names):
     # keep_names stays exact (Dockerfile, README); the extension check is
     # case-folded like the credential skip.
-    if _credential_named(filename):
+    if credential_named(filename):
         return False
     if filename in keep_names:
         return True

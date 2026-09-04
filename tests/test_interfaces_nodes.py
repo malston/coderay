@@ -329,16 +329,16 @@ def test_a_scalar_files_reply_is_rejected_rather_than_iterated_per_character(
     """`files: path/to/one.ts` is a plausible reply, and iterating a string
     yields its characters.
 
-    Those one-character paths reach read_files' suffix matcher, which resolves
-    each against the repo index -- "s" matches the first file ending in s -- so
-    the diagram gets drawn from files unrelated to the endpoint, with a card
-    header naming the endpoint and a stdout line reporting a plausible file
-    count. `decoy.ts` below is what a per-character read would pull in; the
-    fallback picks the largest pages/api handler instead.
+    Those one-character paths reach read_files' matcher, which resolves each
+    against the repo index -- "s" matches a file at path `s` -- so the diagram
+    gets drawn from files unrelated to the endpoint, with a card header naming
+    the endpoint and a stdout line reporting a plausible file count. The file
+    `s` below is what a per-character read would pull in; the fallback picks
+    the largest pages/api handler instead.
     """
     repo = _repo(tmp_path, {"pages/api/aaa.ts": "small\n",
                             "pages/api/zzz.ts": "much longer handler\n" * 20,
-                            "decoy.ts": "unrelated\n"})
+                            "s": "unrelated\n"})
 
     def reply(prompt):
         if "sequence diagram" in prompt:
@@ -350,7 +350,30 @@ def test_a_scalar_files_reply_is_rejected_rather_than_iterated_per_character(
               "route_files": ["pages/api/aaa.ts", "pages/api/zzz.ts"]}
     _sequence_node().run(shared)
     assert shared["sequence_files"] == ["pages/api/zzz.ts"]
-    assert "decoy.ts" not in shared["sequence_files"]
+    assert "s" not in shared["sequence_files"]
+
+
+def test_a_valid_pick_whose_files_all_miss_says_so_before_falling_back(
+        tmp_path, monkeypatch, capsys):
+    """The pick names an endpoint and files that resolve to nothing in the repo.
+    The fallback draws the diagram from the largest route file, so the terminal
+    must say which model-named files were dropped; otherwise a card titled with
+    the model's endpoint is drawn from an unrelated file with no marker."""
+    repo = _repo(tmp_path, {"pages/api/aaa.ts": "small\n",
+                            "pages/api/zzz.ts": "much longer handler\n" * 20})
+
+    def reply(prompt):
+        if "sequence diagram" in prompt:
+            return '```yaml\nendpoint: "POST /api/book"\nfiles:\n  - nope/none.py\n  - gone.ts\n```'
+        return "```mermaid\nsequenceDiagram\n  a->>b: hi\n```"
+
+    _fake_llm(monkeypatch, reply)
+    shared = {"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "",
+              "route_files": ["pages/api/aaa.ts", "pages/api/zzz.ts"]}
+    _sequence_node().run(shared)
+    out = capsys.readouterr().out
+    assert shared["sequence_files"] == ["pages/api/zzz.ts"]
+    assert "nope/none.py" in out and "gone.ts" in out and "falling back" in out
 
 
 def test_the_sequence_fallback_uses_a_non_nextjs_route_file(tmp_path, monkeypatch):
