@@ -200,3 +200,15 @@ def test_find_route_files_skips_a_virtualenv_named_env(tmp_path):
         ".storybook/routes.ts": "ignored\n",
     })
     assert rf.find_route_files(repo) == ["app/urls.py"]
+
+
+def test_read_files_suffix_match_starts_at_a_path_segment(tmp_path):
+    """coderay-q2r.61. An unanchored endswith let `env` resolve to `.env.example`
+    and `y` to the first file ending in y, so the diagram was drawn from the
+    wrong file. The model's path must match whole segments from the right."""
+    repo = _repo(tmp_path / "repo", {"config/.env.example": "TOKEN=\n",
+                                     "api/users.py": "def users(): pass\n"})
+    assert rf.read_files(repo, ["env"])[1] == []
+    assert rf.read_files(repo, ["sers.py"])[1] == []
+    assert rf.read_files(repo, ["users.py"])[1] == ["api/users.py"]
+    assert rf.read_files(repo, ["api/users.py"])[1] == ["api/users.py"]

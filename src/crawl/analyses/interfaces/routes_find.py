@@ -122,11 +122,18 @@ def _within(repo, full):
     return readable(repo, full)
 
 
+def _ends_at_segment(path, key):
+    """True if `key` is `path` or a whole trailing run of its segments."""
+    return path == key or path.endswith("/" + key)
+
+
 def read_files(repo, paths, max_chars=120_000, max_files=8):
     """Read an LLM-picked list of source paths for the sequence-diagram view.
 
     Resolves each path exactly if it exists, else by a suffix match against the
-    repo (the model often gives a path that's right but for a leading dir).
+    repo (the model often gives a path that's right but for a leading dir). The
+    suffix must start at a path segment, so `env` cannot resolve to `.env.example`
+    and a one-letter tail cannot pick an unrelated file (coderay-q2r.61).
 
     `paths` is model output and the model has been reading the target repo's own
     untrusted files, so a path that leaves the repo is refused rather than read.
@@ -148,7 +155,7 @@ def read_files(repo, paths, max_chars=120_000, max_files=8):
                     for f in fn:
                         index.append(os.path.relpath(os.path.join(dp, f), repo))
             key = rel.replace(os.sep, "/")
-            match = next((r for r in index if r.replace(os.sep, "/").endswith(key)), None)
+            match = next((r for r in index if _ends_at_segment(r.replace(os.sep, "/"), key)), None)
             if not match:
                 continue
             full, rel = os.path.join(repo, match), match
