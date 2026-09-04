@@ -107,7 +107,7 @@ These are coderay's, and the sibling's code does not already follow them:
   path fails.
 - **Output directory** defaults to `<cwd>/output/<repo-name>-<analysis>`,
   matching `tour`'s `default_output_dir`, not the sibling's
-  `crack-output/<repo>/<analysis>`.
+  `output/<repo>/<analysis>`.
 - **Packaging**: every new analysis package needs an entry in
   `[tool.setuptools] packages` and a `[tool.setuptools.package-data]` line for
   its `prompts/*.md`.

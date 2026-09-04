@@ -18,7 +18,7 @@
 - **No new dependencies.** `markdown-it-py>=4.2.0,<5` is already in `pyproject.toml`.
 - **`tour` is not modified.** No file under `src/crack/analyses/tour/` changes in this plan. `src/crack/cli.py` does not change either.
 - **Prompt loading uses `importlib.resources`**, never `os.path.join(os.path.dirname(__file__), ...)`. coderay's `read_prompt(prompts_dir, name)` does `(prompts_dir / name).read_text(encoding="utf-8")`, so it needs a Traversable or `Path`, not a `str`.
-- **Output directory default** is `<cwd>/output/<repo-name>-<analysis-name>`, matching `tour`'s `default_output_dir`. Not the sibling's `crack-output/<repo>/<analysis>`.
+- **Output directory default** is `<cwd>/output/<repo-name>-<analysis-name>`, matching `tour`'s `default_output_dir`. Not the sibling's `output/<repo>/<analysis>`.
 - **No em dashes in prose** (docs, comments, docstrings). Use `--` or rewrite. Copied source that already contains them in LLM-facing prompt text or in card copy stays as-is; that is data, not our prose.
 - **Tests need no network and no API key.** Fake at the `call_llm` / `yaml_call` boundary.
 - **Every file read and write passes an explicit `encoding="utf-8"`.** A C locale, which is the
