@@ -62,6 +62,7 @@ def _fake_analysis(env_defaults_dict=None, record=None):
         init_shared = staticmethod(lambda args: {"repo_path": args.repo_path})
         build_flow = staticmethod(Flow)
 
+    Analysis.INPUT_KEYS = frozenset()
     if env_defaults_dict:
         Analysis.ENV_DEFAULTS = env_defaults_dict
     return Analysis
@@ -172,15 +173,20 @@ def test_write_report_is_the_one_place_index_files_are_written(tmp_path):
     assert (tmp_path / "out" / "index.html").read_text(encoding="utf-8") == render_html(analysis, "toy", {"x": 1})
 
 
-def _failing_analysis(fail=RuntimeError("boom")):
+def _failing_analysis(fail=RuntimeError("boom"), produce=True):
+    """The first node stores the bundle, as every real analysis does, so the
+    skip set must come from the analysis's declared INPUT_KEYS, not from what
+    init_shared happened to set."""
     class FailingFlow:
         def run(self, shared):
-            shared["pipeline_md"] = "paid prose"
-            shared["odd"] = {"a-set"}
+            shared["codebase"] = "x" * 1000
+            if produce:
+                shared["pipeline_md"] = "paid prose"
+                shared["odd"] = {"a-set"}
             raise fail
 
     analysis = _fake_analysis()
-    analysis.init_shared = staticmethod(lambda args: {"repo_path": args.repo_path, "codebase": "x" * 1000})
+    analysis.INPUT_KEYS = frozenset({"codebase"})
     analysis.build_flow = staticmethod(FailingFlow)
     return analysis
 
@@ -223,3 +229,14 @@ def test_a_later_successful_run_removes_the_stale_state_file(tmp_path):
     assert (out / "run_state.json").exists()
     run_analysis(_fake_analysis(), _Args(str(tmp_path), out=str(out)))
     assert (out / "index.html").exists() and not (out / "run_state.json").exists()
+
+
+def test_a_failure_before_any_result_writes_no_state_file(tmp_path, capsys):
+    """Every analysis has a pre-flight guard that raises before the first LLM
+    call. With nothing produced there is nothing to keep, so no run_state.json
+    and no partial-state notice above the real diagnostic."""
+    out = tmp_path / "out"
+    with pytest.raises(RuntimeError):
+        run_analysis(_failing_analysis(produce=False), _Args(str(tmp_path), out=str(out)))
+    assert not (out / "run_state.json").exists()
+    assert "partial run state" not in capsys.readouterr().err

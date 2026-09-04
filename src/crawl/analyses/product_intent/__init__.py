@@ -11,6 +11,8 @@ from .nodes import FetchRepo, PainScene, VariantSentence, CompetitivePositioning
 from .render import render_html, render_markdown  # noqa: F401
 
 NAME = "product-intent"
+# What the first node reads from the repo; left out of run_state.json on failure.
+INPUT_KEYS = frozenset({"codebase"})
 
 ENV_DEFAULTS = {}
 

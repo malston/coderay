@@ -12,6 +12,8 @@ from .nodes import (FindSchema, SchemaTour, TraceFlows, TableDeepDive,
                     MigrationActs, MIGRATION_FLOOR)
 
 NAME = "schema"
+# What the first node reads from the repo; left out of run_state.json on failure.
+INPUT_KEYS = frozenset({"schema"})
 
 ENV_DEFAULTS = {}
 

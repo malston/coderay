@@ -11,7 +11,8 @@ def run_flow(flow, shared, out_dir, dump_state):
     `dump_state(shared, out_dir)` to write whatever partial progress exists,
     say where it landed on stderr beside the traceback, and re-raise. A dump
     that fails is reported the same way and the pipeline's own error is still
-    the one that propagates."""
+    the one that propagates; a dump that returns None had nothing to write and
+    says nothing."""
     try:
         flow.run(shared)
     except (Exception, SystemExit):
@@ -21,12 +22,13 @@ def run_flow(flow, shared, out_dir, dump_state):
             print(f"\nPipeline failed, and the partial run state could not be written to {out_dir}: {e}",
                   file=sys.stderr)
         else:
-            print(f"\nPipeline failed. Wrote partial run state to {state_path}", file=sys.stderr)
+            if state_path:
+                print(f"\nPipeline failed. Wrote partial run state to {state_path}", file=sys.stderr)
         raise
 
-def dump_run_state(shared, out_dir, skip=frozenset()):
+def write_run_state(shared, out_dir, skip=frozenset()):
     """Write `shared`, minus the keys in `skip`, to run_state.json in out_dir
-    and return the path.
+    and return the path, or None when nothing is left to write.
 
     Every LLM result a pipeline has produced so far lives in `shared`, so this
     is what the user gets back when a later node fails (coderay-q2r.49). The
@@ -34,7 +36,10 @@ def dump_run_state(shared, out_dir, skip=frozenset()):
     free to regenerate and can be most of a megabyte. Values JSON cannot
     represent are written as their str(). Serialised in full before the file
     is opened, so a serialisation error cannot leave a truncated file."""
-    text = json.dumps({k: v for k, v in shared.items() if k not in skip}, indent=2, default=str)
+    results = {k: v for k, v in shared.items() if k not in skip}
+    if not results:
+        return None
+    text = json.dumps(results, indent=2, default=str)
     path = os.path.join(out_dir, "run_state.json")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(text)
@@ -85,10 +90,10 @@ def run_analysis(analysis, args):
 
     name = repo_name_of(args.repo_path)
     shared = analysis.init_shared(args)
-    inputs = frozenset(shared)
+    inputs = frozenset(shared) | getattr(analysis, "INPUT_KEYS", frozenset())
     with env_defaults(getattr(analysis, "ENV_DEFAULTS", {})):
         run_flow(analysis.build_flow(), shared, out_dir,
-                 lambda s, o: dump_run_state(s, o, skip=inputs))
+                 lambda s, o: write_run_state(s, o, skip=inputs))
 
     write_report(analysis, name, shared, out_dir)
 

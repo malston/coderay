@@ -11,6 +11,8 @@ from crawl.core.runner import repo_name_of, run_analysis
 from .nodes import BuildBundle, Pipeline, LayerCode, Trace
 
 NAME = "backend"
+# What the first node reads from the repo; left out of run_state.json on failure.
+INPUT_KEYS = frozenset({"codebase"})
 
 # The pipeline and layer-code passes emit a card per layer with code excerpts,
 # which is more output than the default cap allows.
