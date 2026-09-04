@@ -25,7 +25,7 @@ SRC_EXT = ('.py', '.ts', '.tsx', '.js', '.rb', '.go', '.java', '.php')
 LAYERS = ('route', 'middleware', 'handler', 'service', 'database', 'response')
 # Spine layers lead the bundle; the sampled layers follow.
 BUNDLE_ORDER = ('route', 'middleware', 'response', 'handler', 'service', 'database')
-# Files where teams most often write custom idioms — always included in full.
+# Files where teams most often write custom idioms.
 SPINE_NAMES = ('urls.py', 'rest.py', 'response.py', 'decorator.py', 'decorators.py',
                'middleware.py', 'computed_settings.py', 'routes.rb', 'application_controller.rb')
 # Core-action keywords: sample these files first so the trace has the spine endpoint.
@@ -43,7 +43,7 @@ def classify(rel):
     base = os.path.basename(p)
     if not p.endswith(SRC_EXT):
         return None
-    if any(m in base for m in ('.test.', '.spec.', '_test.', '_spec.', '.stories.')):
+    if any(m in base for m in ('.test.', '.spec.', '_test.', '.stories.')) or base.endswith('_spec.rb'):
         return None
     # Route
     if (base in ('urls.py', 'routes.rb', 'routes.ts', 'router.ts', 'routes.js', 'router.js')
@@ -88,13 +88,15 @@ def build_bundle(repo, max_chars=650_000, per_layer_sample=18):
             counts[layer] += 1
             files_by_layer[layer].append(rel)
 
-    # Candidates per layer: every spine file; handlers/services/models sampled.
-    queues = {}
+    # Candidates per layer: every spine file; handlers/services/models ranked,
+    # and sampled from the files that actually have text, so an empty or
+    # undecodable file does not use up a sample slot.
+    queues, limit = {}, {}
     for layer in ('route', 'middleware', 'response'):
         queues[layer] = sorted(files_by_layer[layer])
     for layer in ('handler', 'service', 'database'):
-        ranked = sorted(files_by_layer[layer], key=lambda r: (_priority(r), r))
-        queues[layer] = ranked[:per_layer_sample]
+        queues[layer] = sorted(files_by_layer[layer], key=lambda r: (_priority(r), r))
+        limit[layer] = per_layer_sample
 
     header = "===== LAYER FILE COUNTS (whole repo) =====\n" + "\n".join(
         f"{layer}: {counts[layer]} files" for layer in LAYERS) + "\n"
@@ -110,6 +112,8 @@ def build_bundle(repo, max_chars=650_000, per_layer_sample=18):
     total = len(header)
     while any(queues.values()):
         for layer in BUNDLE_ORDER:
+            if len(chosen[layer]) >= limit.get(layer, float('inf')):
+                queues[layer] = []
             if not queues[layer]:
                 continue
             rel = queues[layer].pop(0)

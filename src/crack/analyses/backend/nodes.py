@@ -33,10 +33,11 @@ class BuildBundle(Node):
         bundle, stats = exec_res
         c = stats["counts"]
         if c:
-            # Files matched the layers but every body was left out: empty, or
-            # not UTF-8 (safe_read drops those whole, coderay-q2r.57).
+            # Files matched the layers but every body was left out: empty,
+            # unreadable, or not UTF-8 (safe_read drops those whole,
+            # coderay-q2r.57).
             found = ", ".join(f"{v} file{'s' if v != 1 else ''} in {k}" for k, v in sorted(c.items()))
-            why = f"Found {found}, but none had readable text: each is empty or not UTF-8."
+            why = f"Found {found}, but none had readable text: each is empty, unreadable or not UTF-8."
         else:
             why = ("No backend source found (no routes/views/models). This analysis "
                    "expects a server-side backend (Django, Express, Rails, FastAPI, …).")

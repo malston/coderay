@@ -17,13 +17,9 @@ Nothing here calls an LLM.
 """
 import os
 
-from crack.core import readable
+from crack.core import DEFAULT_SKIP_DIR, readable
 
-SKIP_DIRS = frozenset({
-    '.git', '.hg', '.svn', 'node_modules', 'dist', 'build', '.next', '.nuxt',
-    'target', 'vendor', 'venv', '.venv', '__pycache__', '.cache', 'coverage',
-    'test', 'tests', '__tests__', 'examples', 'docs', '.turbo', '.storybook',
-})
+SKIP_DIRS = DEFAULT_SKIP_DIR | {'.storybook'}
 
 _TEST_MARKERS = ('.test.', '.spec.', '_test.', '.stories.')
 _ROUTE_BASENAMES = frozenset({

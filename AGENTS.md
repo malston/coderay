@@ -81,7 +81,7 @@ FindRoutes -> ApiMenu -> TraceActions -> EndpointSequence -> OverviewNode
 FindSchema -> SchemaTour -> TraceFlows -> TableDeepDive -> MigrationActs -> OverviewNode
 ```
 
-- `src/crack/analyses/schema/schema_find.py` locates the schema by convention (Prisma, Rails, raw SQL, or concatenated `models.py`) and reads the migration directory with the most timestamped entries. Its `_read` goes through `crack.core.readable`, so a schema or migration that is a symlink to an in-repo credential file is refused by its target name (coderay-q2r.56, a deliberate divergence from the port source).
+- `src/crack/analyses/schema/schema_find.py` locates the schema by convention (Prisma, Rails, raw SQL, or concatenated `models.py`) and reads the migration directory with the most timestamped entries. Its `_read` goes through `crack.core.readable`, so a schema file that is a symlink to an in-repo credential file is refused by its target name (coderay-q2r.56, a deliberate divergence from the port source).
 - SchemaTour runs first among the LLM passes: its ER diagram names the core tables the flows and deep-dive passes then reuse, filtered against the table names actually declared in the schema so an invented entity never reaches them.
 - The only card-family analysis with a flag of its own (`--schema`; tour has `--instructions` and `--dry-run`), the only one that retitles the page from LLM output (`THEME.page_name`), and the only one using `when_empty="skip-note"`. TableDeepDive batches four tables per call, which is why its `ENV_DEFAULTS` is empty where the other card analyses raise `LLM_MAX_OUTPUT_TOKENS`.
 

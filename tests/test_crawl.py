@@ -164,3 +164,12 @@ def test_readable_refuses_a_symlink_to_a_dotenv_variant(tmp_path):
     (repo / ".env.staging").write_text("STAGE=stag3\n")
     (repo / "cfg.ts").symlink_to(repo / ".env.staging")
     assert not readable(repo, repo / "cfg.ts")
+
+
+def test_dotenv_templates_are_the_keep_names_dotenv_entries():
+    """PR #30 review. `_wanted` refuses every `.env*` before it consults
+    keep_names, so a template listed in one set and not the other silently
+    disagrees. One set derives from the other."""
+    assert {n for n in crawl.DEFAULT_KEEP_NAMES if n.startswith('.env')} == crawl.DOTENV_TEMPLATES
+    for name in crawl.DOTENV_TEMPLATES:
+        assert crawl._wanted(name, set(), crawl.DEFAULT_KEEP_NAMES)

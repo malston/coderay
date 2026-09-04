@@ -60,16 +60,19 @@ DEFAULT_KEEP_EXT = frozenset({
     '.ejs', '.hbs', '.handlebars', '.erb', '.jinja', '.j2', '.liquid',
 })
 
+# Committed dotenv templates: variable names with placeholder values. The only
+# `.env*` files a crawler reads (coderay-q2r.60).
+DOTENV_TEMPLATES = frozenset({'.env.example', '.env.sample'})
+
 # Extensionless filenames that ARE source. Without this set,
 # os.path.splitext('Dockerfile')[1] == '' silently drops them.
-DEFAULT_KEEP_NAMES = frozenset({
+DEFAULT_KEEP_NAMES = DOTENV_TEMPLATES | frozenset({
     'Dockerfile', 'Containerfile', '.dockerignore',
     'Makefile', 'GNUmakefile', 'Justfile',
     'Rakefile', 'Gemfile', 'Procfile', 'Vagrantfile', 'Brewfile',
     'CMakeLists.txt',
     'README', 'LICENSE', 'NOTICE',
     '.gitignore', '.gitattributes', '.editorconfig',
-    '.env.example', '.env.sample',
 })
 
 # Directories to skip. Covers the noise categories the Ch3 chapter calls out:
@@ -150,11 +153,6 @@ def readable(repo, path, *, credential_names=False):
     if credential_names and not os.path.islink(path):
         return True
     return not _credential_named(os.path.basename(os.path.realpath(path)))
-
-
-# Committed templates: variable names with placeholder values. The only `.env*`
-# files a crawler reads (coderay-q2r.60).
-DOTENV_TEMPLATES = frozenset({'.env.example', '.env.sample'})
 
 
 def _credential_named(filename):

@@ -189,3 +189,14 @@ def test_read_files_refuses_a_credential_named_path_the_model_picked(tmp_path):
     text, resolved = rf.read_files(repo, [".env", "env"])
     assert resolved == []
     assert "hunter2" not in text
+
+
+def test_find_route_files_skips_a_virtualenv_named_env(tmp_path):
+    """PR #30 review. The hand-written SKIP_DIRS missed `env`, so a checked-out
+    virtualenv put Django's own urls.py in the crawl as a priority-0 aggregator."""
+    repo = _repo(tmp_path / "repo", {
+        "app/urls.py": "ok\n",
+        "env/lib/python3.12/site-packages/django/contrib/admin/urls.py": "ignored\n",
+        ".storybook/routes.ts": "ignored\n",
+    })
+    assert rf.find_route_files(repo) == ["app/urls.py"]

@@ -17,15 +17,11 @@ Everything here is plain filesystem walking; nothing calls an LLM.
 import os
 import re
 
-from crack.core import readable
+from crack.core import DEFAULT_SKIP_DIR, readable
 
-# Directories that never hold a schema (mirrors utils.crawl's skip set, minus
-# `migrations`, which we DO want to find).
-SKIP_DIRS = frozenset({
-    '.git', '.hg', '.svn', 'node_modules', 'dist', 'build', '.next', '.nuxt',
-    'target', 'vendor', 'venv', '.venv', '__pycache__', '.cache', 'coverage',
-    'test', 'tests', '__tests__', 'examples', 'docs', '.turbo',
-})
+# Directories that never hold a schema: the shared skip set, which does not
+# prune `migrations`, the one directory this crawler must find.
+SKIP_DIRS = DEFAULT_SKIP_DIR
 
 # Prisma and Rails use 14-digit timestamps; Django numbers its migrations
 # 0001_, 0002_, ... Requiring six digits matched the first two and silently

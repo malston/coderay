@@ -18,13 +18,11 @@ import os
 import re
 import subprocess
 
-from crack.core import readable
+from crack.core import DEFAULT_SKIP_DIR, readable
 
-SKIP_DIRS = frozenset({
-    '.git', '.hg', '.svn', 'node_modules', 'dist', 'build', '.next', '.nuxt',
-    'target', 'vendor', 'venv', '.venv', '__pycache__', '.cache', 'coverage',
-    '.turbo', '.yarn', 'test', 'tests', '__tests__',
-})
+# The shared noise set, keeping docs/ and examples/ because a compose file
+# there is exactly the kind of process declaration this crawler is after.
+SKIP_DIRS = (DEFAULT_SKIP_DIR - {'docs', 'examples'}) | {'.yarn'}
 
 GATEWAY_NAMES = frozenset({
     'kong.yml', 'kong.yaml', 'nginx.conf', 'vercel.json', 'netlify.toml',
@@ -49,10 +47,14 @@ def _walk(root):
 def _read(path, limit=200_000, repo=None):
     # A config file in the target repo may be a symlink pointing out of it, and
     # the contents go into a prompt sent to a third-party LLM (coderay-q2r.28).
-    # A symlink to an in-repo credential file is refused by its target name;
-    # a real `.env` or `.tfvars` is still read, names only or redacted
-    # (coderay-q2r.56).
-    if repo is not None and not readable(repo, path, credential_names=True):
+    # A symlink to an in-repo credential file is refused by its target name.
+    # The only credential-named files this crawler reads on purpose are a real
+    # `.env*` (variable names only) and `.tfvars` (redacted); every other
+    # DEFAULT_SKIP_NAMES entry it walks to, `deploy/credentials.yaml` say, is
+    # refused like anywhere else (coderay-q2r.56).
+    base = os.path.basename(path).lower()
+    wanted_anyway = base.startswith('.env') or base.endswith('.tfvars')
+    if repo is not None and not readable(repo, path, credential_names=wanted_anyway):
         return ""
     try:
         return open(path, encoding='utf-8', errors='replace').read()[:limit]

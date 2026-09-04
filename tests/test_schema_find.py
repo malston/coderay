@@ -186,3 +186,17 @@ def test_find_schema_refuses_a_schema_symlinked_to_an_in_repo_credential_file(tm
     os.symlink(os.path.join(repo, ".env"), os.path.join(repo, "db", "schema.rb"))
 
     assert "hunter2" not in sf.find_schema(repo)["text"]
+
+
+def test_find_schema_skips_a_virtualenv_named_env(tmp_path):
+    """PR #30 review. Django's own models.py and auth migrations under env/
+    outranked the app's; SKIP_DIRS is the shared DEFAULT_SKIP_DIR."""
+    repo = _repo(tmp_path, {
+        "app/models.py": "class User: pass\n",
+        "env/lib/python3.12/site-packages/django/contrib/auth/models.py": "ignored\n",
+        "app/migrations/0001_initial.py": "",
+        **{f"env/lib/python3.12/site-packages/django/contrib/auth/migrations/{i:04d}_x.py": ""
+           for i in range(1, 13)},
+    })
+    assert "ignored" not in sf.find_schema(repo)["text"]
+    assert sf.find_migrations(repo)[0] == "app/migrations"

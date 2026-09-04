@@ -109,6 +109,20 @@ def test_build_bundle_names_the_files_it_found_when_none_could_be_read(tmp_path)
     own counts contradicted."""
     (tmp_path / "app").mkdir()
     (tmp_path / "app" / "urls.py").write_bytes(b"urlpatterns = [] # caf\xe9\n")
-    with pytest.raises(AssertionError, match=r"1 file.* route.*none .*UTF-8") as info:
+    with pytest.raises(AssertionError, match=r"1 file.* route.*none .*unreadable or not UTF-8") as info:
         n.BuildBundle().run({"repo_path": str(tmp_path)})
     assert "No backend source found" not in str(info.value)
+
+
+def test_build_bundle_abort_does_not_blame_encoding_for_an_unreadable_file(tmp_path):
+    """PR #30 review. safe_read also drops a file it cannot open (permission
+    denied, vanished), so the abort must not name UTF-8 as the only cause."""
+    (tmp_path / "app").mkdir()
+    p = tmp_path / "app" / "urls.py"
+    p.write_text("urlpatterns = []\n", encoding="utf-8")
+    p.chmod(0)
+    try:
+        with pytest.raises(AssertionError, match=r"Found 1 file in route.*unreadable"):
+            n.BuildBundle().run({"repo_path": str(tmp_path)})
+    finally:
+        p.chmod(0o644)
