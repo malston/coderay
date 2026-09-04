@@ -1,4 +1,5 @@
 """Runs a pipeline flow against a shared state dict, common to any analysis."""
+import json
 import os
 
 from .env import env_defaults
@@ -14,6 +15,18 @@ def run_flow(flow, shared, out_dir, dump_state):
         state_path = dump_state(shared, out_dir)
         print(f"\nPipeline failed. Wrote partial run state to {state_path}")
         raise
+
+def dump_run_state(shared, out_dir):
+    """Write the whole shared dict to run_state.json in out_dir and return the path.
+
+    Every LLM result a pipeline has produced so far lives in `shared`, so this
+    is what the user gets back when a later node fails (coderay-q2r.49).
+    Values JSON cannot represent are written as their str()."""
+    path = os.path.join(out_dir, "run_state.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(shared, fh, indent=2, default=str)
+    return path
+
 
 def repo_name_of(repo_path):
     """The repo's directory name, used for the output folder and the page title.
@@ -54,7 +67,7 @@ def run_analysis(analysis, args):
     name = repo_name_of(args.repo_path)
     shared = analysis.init_shared(args)
     with env_defaults(getattr(analysis, "ENV_DEFAULTS", {})):
-        analysis.build_flow().run(shared)
+        run_flow(analysis.build_flow(), shared, out_dir, dump_run_state)
 
     write_report(analysis, name, shared, out_dir)
 

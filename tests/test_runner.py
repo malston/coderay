@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import sys
@@ -169,3 +170,25 @@ def test_write_report_is_the_one_place_index_files_are_written(tmp_path):
     assert out == tmp_path / "out"
     assert (tmp_path / "out" / "index.md").read_text(encoding="utf-8") == render_markdown(analysis, "toy", {"x": 1})
     assert (tmp_path / "out" / "index.html").read_text(encoding="utf-8") == render_html(analysis, "toy", {"x": 1})
+
+
+def test_run_analysis_writes_partial_state_when_a_later_node_fails(tmp_path):
+    """coderay-q2r.49. Every earlier LLM result is in `shared` when a late node
+    exhausts its retries; the user paid for it and must get it back."""
+    from crawl.core.runner import dump_run_state  # noqa: F401  (the dump is the runner's own)
+
+    class FailingFlow:
+        def run(self, shared):
+            shared["pipeline_md"] = "paid prose"
+            shared["odd"] = {"a-set"}
+            raise RuntimeError("boom")
+
+    analysis = _fake_analysis()
+    analysis.build_flow = staticmethod(FailingFlow)
+    out = tmp_path / "out"
+    with pytest.raises(RuntimeError):
+        run_analysis(analysis, _Args(str(tmp_path), out=str(out)))
+    state = json.loads((out / "run_state.json").read_text(encoding="utf-8"))
+    assert state["pipeline_md"] == "paid prose"
+    assert "a-set" in state["odd"]
+    assert not (out / "index.html").exists()
