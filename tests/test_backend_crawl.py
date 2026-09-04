@@ -200,11 +200,12 @@ def test_classify_treats_a_rails_spec_as_a_test():
     assert bc.classify("app/controllers/users_controller.rb") == "handler"
 
 
-def test_build_bundle_gives_every_layer_a_file_before_a_spine_file_takes_the_rest(tmp_path):
+def test_build_bundle_fills_every_sampled_layer_and_drops_a_spine_file_too_big_for_its_share(tmp_path):
     """coderay-q2r.58. Spine files went first and in full, so one 499k routes
     file spent most of the 650k budget and the sampled layers were dropped
-    while the header still counted them. Selection is round-robin across the
-    layers; a file that does not fit is dropped whole, never cut."""
+    while the header still counted them. Each populated layer gets an equal
+    share first (coderay-q2r.64), so the route file that fits no share is
+    dropped whole, never cut, and every sampled layer is fully represented."""
     files = {"app/routes/bundle.js": "r" * 499_000}
     for layer_dir in ("views", "services", "models"):
         for i in range(18):
@@ -213,11 +214,10 @@ def test_build_bundle_gives_every_layer_a_file_before_a_spine_file_takes_the_res
     bundle, stats = bc.build_bundle(repo)
     assert stats["counts"] == {"route": 1, "handler": 18, "service": 18, "database": 18}
     assert len(bundle) <= 650_000
-    assert "LAYER ROUTE: app/routes/bundle.js" in bundle
-    shares = [bundle.count(f"LAYER {layer}: ") for layer in ("HANDLER", "SERVICE", "DATABASE")]
-    assert min(shares) >= 1 and max(shares) - min(shares) <= 1, shares
+    assert "LAYER ROUTE: app/routes/bundle.js" not in bundle
+    assert [bundle.count(f"LAYER {layer}: ") for layer in ("HANDLER", "SERVICE", "DATABASE")] == [18, 18, 18]
     # Grouped emission: the prompts see the layers in the same order as before.
-    assert bundle.index("LAYER ROUTE:") < bundle.index("LAYER HANDLER:") < bundle.index("LAYER DATABASE:")
+    assert bundle.index("LAYER HANDLER:") < bundle.index("LAYER SERVICE:") < bundle.index("LAYER DATABASE:")
 
 
 def test_classify_keeps_a_non_rails_file_whose_name_contains_spec():
@@ -256,3 +256,53 @@ def test_build_bundle_counts_the_handler_layer_of_a_flat_django_app(tmp_path):
     bundle, stats = bc.build_bundle(repo)
     assert stats["counts"] == {"route": 1, "handler": 1, "database": 1}
     assert "LAYER HANDLER: myapp/views.py" in bundle
+
+
+def test_build_bundle_drops_a_spine_file_too_big_for_its_share_rather_than_starving_a_layer(tmp_path):
+    """coderay-q2r.64. Round-robin still charged each accepted block to one
+    shared budget, so a 499k route plus 100k handler, service and database
+    candidates kept the route and handler and starved the other two. Each
+    populated layer now gets an equal share first; the route file that fits no
+    share is dropped whole, and every layer is represented."""
+    files = {"app/routes/bundle.js": "r" * 499_000}
+    for layer_dir in ("views", "services", "models"):
+        for i in range(3):
+            files[f"app/{layer_dir}/f{i}.py"] = f"# {layer_dir} {i}\n" + "x" * 100_000
+    repo = _repo(tmp_path, files)
+    bundle, stats = bc.build_bundle(repo)
+    assert len(bundle) <= 650_000
+    assert "LAYER ROUTE: app/routes/bundle.js" not in bundle
+    for layer in ("HANDLER", "SERVICE", "DATABASE"):
+        assert bundle.count(f"LAYER {layer}: ") >= 1, layer
+
+
+def test_build_bundle_keeps_every_small_spine_file_ahead_of_large_sampled_ones(tmp_path):
+    """coderay-q2r.64. Forty 2k urls.py files against 18 x 30k views, services
+    and models: round-robin kept eight routes while the header said forty. The
+    route share holds all forty."""
+    files = {f"app/{i:02d}/urls.py": f"# route {i}\n" + "u" * 2_000 for i in range(40)}
+    for layer_dir in ("views", "services", "models"):
+        for i in range(18):
+            files[f"app/{layer_dir}/f{i}.py"] = f"# {layer_dir} {i}\n" + "x" * 30_000
+    repo = _repo(tmp_path, files)
+    bundle, stats = bc.build_bundle(repo)
+    assert stats["counts"]["route"] == 40
+    assert bundle.count("LAYER ROUTE: ") == 40
+    for layer in ("HANDLER", "SERVICE", "DATABASE"):
+        assert bundle.count(f"LAYER {layer}: ") >= 5, layer
+
+
+def test_build_bundle_share_flows_past_a_layer_whose_files_are_empty(tmp_path):
+    """PR #32 review. A layer populated only by an empty `__init__.py` still
+    took a share, shrinking every real layer's and leaving a service file to
+    lose the leftover race. Each layer's share is what remains divided by the
+    layers still to come, so an unspent share flows forward."""
+    files = {
+        "app/urls.py": "",                                   # phantom route layer
+        "app/middleware/a.py": "# a\n" + "m" * 250,
+        "app/middleware/b.py": "# b\n" + "m" * 200,
+        "app/services/c.py": "# c\n" + "s" * 390,
+    }
+    repo = _repo(tmp_path, files)
+    bundle, stats = bc.build_bundle(repo, max_chars=len("===== LAYER FILE COUNTS (whole repo) =====\n") + 6 * 20 + 800)
+    assert "LAYER SERVICE: app/services/c.py" in bundle
