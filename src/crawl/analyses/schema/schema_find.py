@@ -165,7 +165,7 @@ def find_schema(repo, override=None):
         text, kept = _join_within_budget([(os.path.relpath(full, repo), ddl) for _c, full, ddl in embedded], "--")
         note = "" if len(kept) == len(embedded) else f" of {len(embedded)} found"
         return {"kind": "embedded-sql",
-                "path": f"{len(kept)} Go files with embedded SQL ({', '.join(kept)}){note}",
+                "path": f"{len(kept)} Go file{'s' if len(kept) != 1 else ''} with embedded SQL ({', '.join(kept)}){note}",
                 "text": text}
 
     return {"kind": None, "path": None, "text": ""}

@@ -209,7 +209,12 @@ GO_DB = '''package hub
 import "database/sql"
 
 func migrate(db *sql.DB) error {
+	if db == nil {
+		return fmt.Errorf("open db: %w", errNil)
+	}
 	_, _ = db.Exec(`ALTER TABLE claws ADD COLUMN provider TEXT NOT NULL DEFAULT ''`)
+	_, _ = db.Exec("create table sessions (id TEXT PRIMARY KEY)")
+	_, _ = db.Exec(`CREATE UNIQUE INDEX idx_claws_tenant ON claws(tenant_id)`)
 	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS tenants (
 		id TEXT PRIMARY KEY
@@ -232,7 +237,10 @@ def test_find_schema_reads_create_table_statements_embedded_in_go(tmp_path):
     assert "pkg/hub/db.go" in found["path"]
     assert "CREATE TABLE IF NOT EXISTS claws" in found["text"]
     assert "ALTER TABLE claws ADD COLUMN provider" in found["text"]
+    assert "create table sessions" in found["text"]            # interpreted string, lowercase
+    assert "CREATE UNIQUE INDEX idx_claws_tenant" in found["text"]
     assert "func migrate" not in found["text"] and "db.Exec" not in found["text"]
+    assert "database/sql" not in found["text"] and "open db" not in found["text"]
 
 
 def test_embedded_sql_files_are_ordered_by_how_many_tables_they_create(tmp_path):
@@ -344,4 +352,25 @@ def test_embedded_sql_table_names_reach_the_filter(tmp_path):
     declared; the extracted SQL must carry the CREATE TABLE lines whole."""
     from crawl.analyses.schema.nodes import schema_table_names
     repo = _repo(tmp_path, {"pkg/hub/db.go": GO_DB})
-    assert schema_table_names(sf.find_schema(repo)["text"]) == {"tenants", "claws"}
+    assert schema_table_names(sf.find_schema(repo)["text"]) == {"tenants", "claws", "sessions"}
+
+
+def test_embedded_sql_ties_break_alphabetically_and_only_go_files_are_candidates(tmp_path):
+    one = 'package a\n_ = `CREATE TABLE IF NOT EXISTS t (id TEXT)`\n'
+    repo = _repo(tmp_path, {"pkg/b.go": one, "pkg/a.go": one, "pkg/c.sql.txt": one, "pkg/d.go.bak": one})
+    found = sf.find_schema(repo)
+    assert found["path"] == "2 Go files with embedded SQL (pkg/a.go, pkg/b.go)"
+
+
+def test_embedded_sql_keeps_whole_files_and_drops_the_tail_under_the_budget(tmp_path, monkeypatch):
+    """Same rule as the model files: whole blocks, fewer of them, and the path
+    says how many were found. The first block is kept even when it alone
+    exceeds the budget, so a single large schema is never silently empty."""
+    monkeypatch.setattr(sf, "SCHEMA_BUDGET", 600)
+    ddl = "CREATE TABLE IF NOT EXISTS t%d (\n" + "  c TEXT,\n" * 20 + "  id TEXT\n)"
+    files = {f"pkg/m{i}.go": "package a\n_ = `" + ddl % i + "`\n" for i in range(4)}
+    found = sf.find_schema(_repo(tmp_path, files))
+    assert found["path"].startswith("2 Go files with embedded SQL") and found["path"].endswith(" of 4 found")
+    monkeypatch.setattr(sf, "SCHEMA_BUDGET", 50)
+    found = sf.find_schema(_repo(tmp_path / "one", {"pkg/m.go": files["pkg/m0.go"]}))
+    assert "CREATE TABLE IF NOT EXISTS t0" in found["text"] and found["path"].startswith("1 Go file with")
