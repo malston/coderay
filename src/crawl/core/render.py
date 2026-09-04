@@ -2,7 +2,7 @@
 
 An analysis either declares THEME + SECTIONS and lets this module build its
 page, or defines its own render_html/render_markdown and this module steps
-aside. ch05 and ch06 take the second path: their pages are hand-built from
+aside. product-intent and git-history take the second path: their pages are hand-built from
 structured data rather than markdown blobs.
 """
 import html as _html
@@ -25,9 +25,9 @@ class Section:
 
     when_empty controls what happens when shared[key] is falsy:
       "always"    render the section anyway, with an empty rail (the default,
-                  matching ch07 01-03, ch09, and ch10)
-      "omit"      drop the section entirely (ch08's tour)
-      "skip-note" render the head with skip_note() as its note, no rail (ch07 04)
+                  backend, architecture and most schema sections)
+      "omit"      drop the section entirely (the interfaces tour)
+      "skip-note" render the head with skip_note() as its note, no rail (schema migration acts)
     """
     number: str
     label: str
@@ -58,7 +58,7 @@ class Theme:
     footer: Callable
     md_preamble: Callable
     hero_prefix: Optional[Callable] = None
-    # ch07 titles its page with shared["product_name"] rather than the repo
+    # schema titles its page with shared["product_name"] rather than the repo
     # directory name. page_name covers both the HTML hero and the markdown H1.
     page_name: Optional[Callable] = None
 

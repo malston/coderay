@@ -1,4 +1,4 @@
-"""Reverse engineer the product story from the source (ch05)."""
+"""Reverse engineer the product story from the source."""
 import os
 import sys
 

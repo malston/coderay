@@ -1,4 +1,4 @@
-"""Crawl a backend into the six layers a request flows through (§10.3).
+"""Crawl a backend into the six layers a request flows through.
 
 Every backend is the same six layers with different names:
   route → middleware → handler → service → database → response

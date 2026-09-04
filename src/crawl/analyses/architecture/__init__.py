@@ -1,4 +1,4 @@
-"""Map a multi-service architecture in three passes (ch09)."""
+"""Map a multi-service architecture in three passes."""
 
 import os
 import re

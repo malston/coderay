@@ -1,4 +1,4 @@
-"""Tour the data model and the migrations that shaped it (ch07)."""
+"""Tour the data model and the migrations that shaped it."""
 
 import os
 import sys
@@ -104,7 +104,7 @@ def build_flow():
     return Flow(start=find)
 
 def overview_spec(shared):
-    """The chapter-specific bits the shared OverviewNode needs (see crawl/core/nodes.py)."""
+    """The analysis-specific bits the shared OverviewNode needs (see crawl/core/nodes.py)."""
     name = shared.get("product_name") or repo_name_of(shared["repo_path"]) or shared["repo_path"]
     return {
         "name": name,

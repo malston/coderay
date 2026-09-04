@@ -5,7 +5,7 @@ description: Produce a tour of an unfamiliar codebase, in the lens you pick (beg
 
 # Skill: Codebase Tour
 
-The agent equivalent of Chapter 3's Codebase Knowledge Builder. Drop this file into `.claude/skills/codebase-tour/SKILL.md` (Claude Code) or paste into a Cursor rule.
+The agent equivalent of `crawl tour`: the same five steps, run by hand inside a coding agent. Drop this file into `.claude/skills/codebase-tour/SKILL.md` (Claude Code) or paste into a Cursor rule.
 
 When the user asks for a tour or onboarding doc, follow this pipeline. Do one step at a time. Show output between steps so the user can correct course.
 

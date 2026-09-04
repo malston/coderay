@@ -1,6 +1,6 @@
-"""Ch6 nodes: read a product's story out of its git history.
+"""Git-history nodes: read a product's story out of its git history.
 
-Four steps, each a slice of the same commit list (§6.3 to §6.5):
+Four steps, each a slice of the same commit list:
   1. FetchHistory  run the crawler; pull bulk additions/deletions once
   2. NameEras      compress 13 years into 3-5 named eras (bird's-eye)
   3. ProfileEras   for each era, the cast (who) and mood (what) — one era at a time
@@ -75,7 +75,7 @@ class FetchHistory(Node):
 _YEAR_MONTH = re.compile(r"\d{4}-\d{2}")
 
 
-# Step 2. Name the eras from a bird's-eye survey (§6.3).
+# Step 2. Name the eras from a bird's-eye survey.
 class NameEras(Node):
     def __init__(self):
         super().__init__(max_retries=3, wait=2)
@@ -112,7 +112,7 @@ class NameEras(Node):
         print(f"  Named {len(exec_res)} eras: " + " -> ".join(e["name"] for e in exec_res))
 
 
-# Step 3. Profile each era's cast and mood (§6.4), one era at a time.
+# Step 3. Profile each era's cast and mood, one era at a time.
 class ProfileEras(Node):
     """A plain Node, not a BatchNode: each era's prompt carries the previous
     eras' summaries for cross-era contrast, so they run in sequence."""
@@ -191,7 +191,7 @@ class ProfileEras(Node):
         shared["profiles"] = exec_res
 
 
-# Step 4. Read the graveyard of killed features (§6.5).
+# Step 4. Read the graveyard of killed features.
 class Graveyard(Node):
     def __init__(self):
         super().__init__(max_retries=3, wait=2)

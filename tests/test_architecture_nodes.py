@@ -130,3 +130,12 @@ def test_the_codebase_slot_is_filled_before_the_prompt_goes_out(monkeypatch):
     n.Inventory().run({"codebase": "COMPOSE-BUNDLE"})
     assert "{codebase}" not in prompts[0]
     assert "COMPOSE-BUNDLE" in prompts[0]
+
+
+def test_the_no_sources_guard_speaks_to_the_reader_not_to_a_book(tmp_path):
+    """coderay-5wu.17. The message reaches the user; a section marker from the
+    course the analysis was ported from means nothing to them."""
+    repo = _repo(tmp_path, {"README.md": "x\n"})
+    with pytest.raises(AssertionError) as e:
+        n.BuildBundle().run({"repo_path": repo})
+    assert "§" not in str(e.value) and "single-binary tool" in str(e.value)

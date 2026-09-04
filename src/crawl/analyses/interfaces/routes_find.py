@@ -1,4 +1,4 @@
-"""Find a repo's interface: the files that declare its entry points (§8.2).
+"""Find a repo's interface: the files that declare its entry points.
 
 A route manifest is rarely named `api`; its location is a framework convention.
 We collect the surface files across the common conventions:

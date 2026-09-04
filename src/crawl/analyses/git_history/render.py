@@ -1,6 +1,6 @@
 """Render the git-history read as markdown and a clean, self-contained HTML page.
 
-One HTML section per prompt in the chapter, so the page mirrors the analyses:
+One HTML section per prompt, so the page mirrors the analysis:
   1. The eras       (name-eras)      — a horizontal timeline you swipe through
   2. Cast & mood    (profile-era)    — one card per era: who drove it, what the work was
   3. The graveyard  (graveyard-entry)— tombstones for the killed features

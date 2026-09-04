@@ -1,4 +1,4 @@
-"""Ch10 nodes: read a backend as the same six layers, every time (§10.3-10.5).
+"""Backend nodes: read a backend as the same six layers, every time.
 
   1. BuildBundle   crawl the source, grouped into the six layers
   2. Pipeline      draw the six-layer pipeline, a count per layer

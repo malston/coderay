@@ -1,6 +1,6 @@
-"""Ch8 nodes: read an API surface at three levels of zoom.
+"""Interfaces nodes: read an API surface at three levels of zoom.
 
-One node per prompt in the chapter (§8.3-8.5):
+One node per prompt:
   1. FindRoutes        collect the surface files (the route manifest)
   2. ApiMenu           group ~300 endpoints into a feature menu + a tour
   3. TraceActions      trace 4-8 user gestures across services (swimlanes)

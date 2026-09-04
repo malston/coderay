@@ -7,7 +7,7 @@ it at the end and hands it a small `spec(shared)` function that returns the bits
 that DO differ per chapter (the product name, what the page maps, the section
 list, and a few real findings).
 
-The chapter-specific *analysis* nodes stay in each chapter's own `nodes.py`.
+The *analysis* nodes stay in each analysis's own `nodes.py`.
 """
 from pocketflow import Node
 
