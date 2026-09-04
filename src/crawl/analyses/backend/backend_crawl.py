@@ -46,6 +46,8 @@ def classify(rel):
         return None
     if any(m in base for m in ('.test.', '.spec.', '_test.', '.stories.')) or base.endswith('_spec.rb'):
         return None
+    if p.endswith('.go'):
+        return _classify_go(p, base)
     # Route
     if (base in ('urls.py', 'routes.rb', 'routes.ts', 'router.ts', 'routes.js', 'router.js')
             or base.endswith('_router.ts') or '/pages/api/' in p or '/routes/' in p or '/urls/' in p):
@@ -67,6 +69,30 @@ def classify(rel):
     # Response
     if 'serializer' in p or '/serializers/' in p or (base.startswith('response') and base.endswith('.py')):
         return 'response'
+    return None
+
+
+def _classify_go(p, base):
+    """Go has no framework layout to key on, so the layers come from the names
+    a net/http service gives its files: routes are registered in server.go,
+    router.go or routes.go and a process starts in main.go; handlers are
+    *_api.go, *_handler.go or handler(s).go; the data layer is db.go, a store,
+    a queries file or sqlc output. A directory whose name ends in test holds
+    fixtures and mocks, not request-path code."""
+    if any(seg.endswith(('test', 'tests')) for seg in p.split('/')[1:-1]):
+        return None
+    if base in ('server.go', 'router.go', 'routes.go', 'mux.go', 'main.go'):
+        return 'route'
+    if 'middleware' in p:
+        return 'middleware'
+    if base in ('handler.go', 'handlers.go', 'api.go') or base.endswith(('_api.go', '_handler.go', '_handlers.go')) or '/handlers/' in p:
+        return 'handler'
+    if base == 'service.go' or base.endswith('_service.go') or '/services/' in p or '/service/' in p:
+        return 'service'
+    if (base in ('db.go', 'database.go', 'store.go', 'queries.go', 'models.go')
+            or base.endswith(('_store.go', '.sql.go', '_repository.go'))
+            or '/store/' in p or '/db/' in p or '/repository/' in p or '/repositories/' in p or '/sqlc/' in p):
+        return 'database'
     return None
 
 
