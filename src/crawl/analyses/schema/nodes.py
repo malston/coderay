@@ -1,6 +1,6 @@
-"""Ch7 nodes: project a flat schema file into four focused views.
+"""Schema nodes: project a flat schema file into four focused views.
 
-One node per prompt in the chapter (§7.4-7.6):
+One node per prompt:
   1. FindSchema     locate + read the schema file and migration history
   2. SchemaTour     narrate it as a story + a Mermaid ERD (the spine)
   3. TraceFlows     trace 3-6 user actions across the tables
@@ -216,8 +216,8 @@ class MigrationActs(Node):
 
     def exec(self, migration_names):
         if len(migration_names) < MIGRATION_FLOOR:
-            # Too few (or squashed) to reconstruct a roadmap — §7.6 says don't
-            # ask the LLM to hallucinate one.
+            # Too few (or squashed) to reconstruct a roadmap; don't ask the LLM
+            # to hallucinate one.
             return None
         prompt = fill(load_prompt("migration-acts.md"),
                       migration_names="\n".join(migration_names))

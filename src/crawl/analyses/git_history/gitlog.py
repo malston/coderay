@@ -1,7 +1,7 @@
-"""Turn a repo's git log into structured data the Ch6 prompts can read.
+"""Turn a repo's git log into structured data the git-history prompts can read.
 
-`git_log_commits` is the twenty-line crawler from listing 6.2, kept faithful to
-the book: one dict per commit (hash, month, author, subject, files). Everything
+`git_log_commits` is the twenty-line crawler: one dict per commit (hash, month,
+author, subject, files). Everything
 else here is the compression the three prompts need:
 
   - name-eras   wants a bird's-eye view: directory-by-month activity, when each
@@ -53,7 +53,7 @@ def _records(raw):
 
 
 def git_log_commits(repo_path):
-    """One dict per commit: hash, month, author, subject, files (listing 6.2)."""
+    """One dict per commit: hash, month, author, subject, files."""
     raw = subprocess.check_output(
         ["git", "-C", repo_path, "log",
          f"--pretty=format:%x00%H|%at|%an|%s", "--name-only"],

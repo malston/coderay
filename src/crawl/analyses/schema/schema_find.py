@@ -1,6 +1,6 @@
 """Find and read a repo's schema, plus its migration history.
 
-The schema is almost never a file literally called `schema` (§7.3). Most repos
+The schema is almost never a file literally called `schema`. Most repos
 follow one of a few conventions, so we look for them in priority order:
 
   Prisma (Node/TS)     packages/**/schema.prisma        one typed DSL file
@@ -10,7 +10,7 @@ follow one of a few conventions, so we look for them in priority order:
 
 `find_schema` returns the single most-schema-like text it can (concatenating the
 Django/SQLAlchemy model files when there's no single-file schema). `find_migrations`
-returns the timestamped migration names — the chronological record §7.6 mines.
+returns the timestamped migration names, the chronological record MigrationActs mines.
 
 Everything here is plain filesystem walking; nothing calls an LLM.
 """

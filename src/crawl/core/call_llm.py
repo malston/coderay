@@ -99,8 +99,8 @@ def _pick():
 
 
 def _model_for(provider):
-    # Defaults aim for "good enough quality, low cost" so the chapter examples
-    # are cheap to reproduce. Bump to the pro/opus tier if you want the best
+    # Defaults aim for "good enough quality, low cost" so a run is cheap to
+    # reproduce. Bump to the pro/opus tier if you want the best
     # answers and don't mind the cost.
     #
     # Override per call with ANTHROPIC_MODEL / OPENAI_MODEL / GEMINI_MODEL.

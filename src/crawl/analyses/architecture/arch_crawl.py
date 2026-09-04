@@ -1,4 +1,4 @@
-"""Assemble a compact 'architecture bundle' from a repo's four sources (§9.2).
+"""Assemble a compact 'architecture bundle' from a repo's four sources.
 
 An architecture never lives in one file; you overlay four sources:
   compose / Procfile / k8s   the services the team RUNS

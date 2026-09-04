@@ -1,6 +1,6 @@
-"""Ch5 nodes: extract a product story from a codebase.
+"""Product-intent nodes: extract a product story from a codebase.
 
-Four independent extractions (§5.1 to §5.4 of the chapter):
+Four independent extractions:
   - Pain scene (Curse of Knowledge)
   - Variant sentence (reproduce-it test)
   - Competitive positioning (counter-positioning)

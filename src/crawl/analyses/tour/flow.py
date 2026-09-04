@@ -1,4 +1,4 @@
-"""Codebase Knowledge Builder pipeline."""
+"""Tour pipeline."""
 from pocketflow import Flow
 from crawl.analyses.tour.nodes import Analyze, ExtractGraph, Relate, SmartCrawl, WriteChapters
 

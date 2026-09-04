@@ -1,6 +1,6 @@
-"""Write the technical-but-friendly copy that wraps a chapter's HTML page.
+"""Write the technical-but-friendly copy that wraps an analysis's HTML page.
 
-Every chapter's page is a stack of dense analysis panels. This helper asks the
+Every analysis's page is a stack of dense panels. This helper asks the
 model, in one call, for two kinds of "big picture" copy:
 
   - a page **welcome**: a sharp, specific technical read on what this codebase

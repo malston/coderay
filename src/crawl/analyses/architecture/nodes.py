@@ -1,4 +1,4 @@
-"""Ch9 nodes: map a multi-service architecture in three passes (§9.3-9.5).
+"""Architecture nodes: map a multi-service architecture in three passes.
 
   1. BuildBundle   assemble the architecture bundle from the four sources
   2. Inventory     name every node, sort into 4 bands, draw the service graph
@@ -37,7 +37,7 @@ class BuildBundle(Node):
             "No architecture sources found (no compose/env/package/IaC). "
             + (f"SDK import evidence was also unavailable: {reason}. " if reason else "")
             + "This analysis expects a multi-service app; a single-binary tool "
-            "has no service graph to draw (§9.1).")
+            "has no service graph to draw.")
         shared["codebase"] = bundle
         shared["arch_stats"] = stats
         print(f"  Bundle: {stats['config_files']} config files, {stats['env_vars']} env vars, "

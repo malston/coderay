@@ -1,4 +1,4 @@
-"""Read the product roadmap already written in the git log (ch06)."""
+"""Read the product roadmap already written in the git log."""
 
 import os
 import sys
@@ -42,7 +42,7 @@ def build_flow():
 
 
 # The friendly "start here" welcome runs on the shared OverviewNode
-# (crawl/core/nodes.py); this just supplies the chapter-specific bits it needs.
+# (crawl/core/nodes.py); this just supplies the analysis-specific bits it needs.
 def overview_spec(shared):
     name = repo_name_of(shared["repo_path"]) or shared["repo_path"]
     eras = shared.get("eras", [])

@@ -1,13 +1,13 @@
-"""Reusable PocketFlow nodes shared across chapters.
+"""Reusable PocketFlow nodes shared across analyses.
 
 So far this holds one node — `OverviewNode`, which writes the friendly-but-
 technical page overview (the hero summary + a short intro per section). It's
-identical work in every chapter, so it lives here once. Each chapter's flow adds
+identical work in every analysis, so it lives here once. Each analysis's flow adds
 it at the end and hands it a small `spec(shared)` function that returns the bits
-that DO differ per chapter (the product name, what the page maps, the section
+that DO differ per analysis (the product name, what the page maps, the section
 list, and a few real findings).
 
-The chapter-specific *analysis* nodes stay in each chapter's own `nodes.py`.
+The *analysis* nodes stay in each analysis's own `nodes.py`.
 """
 from pocketflow import Node
 
@@ -18,7 +18,7 @@ class OverviewNode(Node):
     """Write the page's welcome + per-section intros (see utils/overview.py).
 
     Construct with a `spec` callable: `spec(shared) -> {name, what, sections,
-    facts}` (facts optional). Runs last in a chapter's flow and stores the result
+    facts}` (facts optional). Runs last in an analysis's flow and stores the result
     at `shared["overview"]`; the renderer reads it. Optional so a failed call
     just leaves the page without the intro copy rather than killing the run."""
 

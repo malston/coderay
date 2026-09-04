@@ -75,7 +75,7 @@ DEFAULT_KEEP_NAMES = DOTENV_TEMPLATES | frozenset({
     '.gitignore', '.gitattributes', '.editorconfig',
 })
 
-# Directories to skip. Covers the noise categories the Ch3 chapter calls out:
+# Directories to skip. Covers the usual noise categories:
 # tests, docs, examples, locales, vendored code, build, caches.
 DEFAULT_SKIP_DIR = frozenset({
     # vcs
@@ -88,7 +88,7 @@ DEFAULT_SKIP_DIR = frozenset({
     '.turbo', '.parcel-cache', '.vercel', '.netlify', '.output',
     # go / rust / java / swift
     'target', 'vendor', '.gradle', 'Pods', 'DerivedData',
-    # tests, docs, examples, i18n (the book §3.2 noise categories)
+    # tests, docs, examples, i18n: the usual noise categories
     'test', 'tests', '__tests__', 'spec',
     'docs', 'examples',
     'locales', 'translations', 'i18n',

@@ -1,4 +1,4 @@
-"""Read a backend as the six layers every request flows through (ch10)."""
+"""Read a backend as the six layers every request flows through."""
 
 import os
 import sys
