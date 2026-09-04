@@ -128,3 +128,12 @@ def test_the_footer_reports_the_crawl_stats():
     assert "9 config files" in footer
     assert "42 dependencies" in footer
     assert "6 integrations" in footer
+
+
+def test_the_footer_says_when_sdk_import_evidence_was_unavailable():
+    """coderay-q2r.15: a report built on configuration alone must say so."""
+    stats = {"config_files": 9, "deps": 42, "integrations": 6, "sdk_lines": 0,
+             "sdk_unavailable": "not a git repository"}
+    footer = architecture._footer({"arch_stats": stats})
+    assert "SDK import evidence unavailable (not a git repository)" in footer
+    assert "unavailable" not in architecture._footer({"arch_stats": {**stats, "sdk_unavailable": None}})

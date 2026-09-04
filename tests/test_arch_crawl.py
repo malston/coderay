@@ -269,33 +269,50 @@ def test_no_source_sends_a_secret_value_to_the_bundle(tmp_path):
     assert "image: api:1.2" in bundle
 
 
-def test_sdk_imports_report_zero_outside_a_git_checkout(tmp_path):
-    """Known defect, tracked as coderay-q2r.15.
+def test_sdk_imports_say_so_when_the_target_is_not_a_git_checkout(tmp_path):
+    """coderay-q2r.15. `git grep` exiting 128 (not a repository) used to be
+    swallowed into the same empty result as exit 1 (no matches), so a tarball
+    export lost the one evidence class that proves a connection is live and
+    the report read as if the repo had no SDK imports.
 
-    _sdk_grep catches every exception and returns "", so `git grep` failing
-    with exit 128 (not a repository) is indistinguishable from it succeeding
-    with no matches. A tarball export loses the whole evidence class that
-    proves a connection is live, and nothing in the stats says so.
-
-    The repo below holds a real SDK import that a working `git grep` would
-    find, which is what separates the two cases; tmp_path is not a git
-    checkout, so the count is zero anyway. Inherited from the port source and
-    deliberately not fixed here.
-
-    The assertion is on the MISSING SIGNAL, not on the count. Fixing q2r.15
-    means making a non-git target distinguishable, and the natural fix -- say
-    so while still reporting no lines -- leaves sdk_lines at zero. So this
-    asserts that nothing in stats tells the two apart, which is what the bead
-    actually complains about, and it flips the moment that is addressed.
-    """
+    The repo below holds a real SDK import a working `git grep` would find;
+    tmp_path is not a git checkout. The count stays zero, and the stats and the
+    bundle both say why."""
     repo = _repo(tmp_path, {
         "docker-compose.yml": "services: {}\n",
         "src/pay.ts": "import Stripe from 'stripe';\n",
     })
     bundle, stats = ac.build_bundle(repo)
     assert stats["sdk_lines"] == 0
-    assert not any("git" in k or "avail" in k or "error" in k for k in stats), stats
-    assert "SDK IMPORT LINES" not in bundle
+    assert "not a git repository" in stats["sdk_unavailable"]
+    assert "SDK IMPORTS unavailable" in bundle and "not a git repository" in bundle
+    assert "configured, not proven live" in bundle
+
+
+def test_sdk_imports_say_so_when_git_is_not_installed(tmp_path, monkeypatch):
+    """No git binary is the third condition the old bare except collapsed."""
+    def no_git(*a, **k):
+        raise FileNotFoundError("git")
+    monkeypatch.setattr(ac.subprocess, "check_output", no_git)
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n"})
+    bundle, stats = ac.build_bundle(repo)
+    assert stats["sdk_lines"] == 0
+    assert "git is not installed" in stats["sdk_unavailable"]
+    assert "SDK IMPORTS unavailable" in bundle
+
+
+def test_sdk_grep_with_no_matches_is_not_reported_as_unavailable(tmp_path):
+    """Exit 1 from `git grep` means it ran and found nothing; that is a real
+    zero and must not carry the unavailable note."""
+    import subprocess
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n", "a.ts": "const x = 1;\n"})
+    for cmd in (["init", "-q"], ["add", "-A"]):
+        subprocess.run(["git", "-C", repo] + cmd, check=True)
+    subprocess.run(["git", "-C", repo, "-c", "user.email=a@b.c", "-c", "user.name=t",
+                    "commit", "-qm", "x"], check=True)
+    bundle, stats = ac.build_bundle(repo)
+    assert stats["sdk_lines"] == 0 and stats["sdk_unavailable"] is None
+    assert "SDK IMPORTS unavailable" not in bundle
 
 
 def test_build_bundle_overlays_the_four_sources_and_counts_them(tmp_path):
@@ -311,7 +328,8 @@ def test_build_bundle_overlays_the_four_sources_and_counts_them(tmp_path):
     bundle, stats = ac.build_bundle(repo)
 
     assert stats == {"config_files": 4, "config_files_found": 4, "truncated": False,
-                     "env_vars": 2, "deps": 2, "integrations": 0, "sdk_lines": 0}
+                     "env_vars": 2, "deps": 2, "integrations": 0, "sdk_lines": 0,
+                     "sdk_unavailable": "not a git repository"}
     assert "PROCESS DECLARATION (compose / k8s): docker-compose.yml" in bundle
     assert "KUBERNETES MANIFESTS: deploy/k8s/api.yaml" in bundle
     assert "GATEWAY / PLATFORM CONFIG: Procfile" in bundle
@@ -451,7 +469,7 @@ def test_sdk_evidence_carries_the_path_and_the_sdk_but_not_the_source(tmp_path):
     bundle, stats = ac.build_bundle(repo)
     assert "sk_live_HARDCODED" not in bundle
     assert "pay.ts:2: Stripe" in bundle    # the edge is still reported
-    assert stats["sdk_lines"] == 2
+    assert stats["sdk_lines"] == 2 and stats["sdk_unavailable"] is None
 
 
 def test_build_bundle_refuses_a_config_file_symlinked_out_of_the_repo(tmp_path):

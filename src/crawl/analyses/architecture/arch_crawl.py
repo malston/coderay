@@ -288,16 +288,29 @@ def _classify(rel):
 
 
 def _sdk_grep(repo, max_lines=400):
-    """SDK import lines with file:line, via `git grep` (fast). Real proof + paths."""
+    """SDK import lines with file:line, via `git grep` (fast). Real proof + paths.
+
+    Returns (lines, unavailable): `unavailable` is None when the grep ran, even
+    with no matches, and otherwise says why it could not (the target is not a
+    git checkout, or there is no git binary). The three used to collapse into
+    one empty string, so a tarball export read as a repo with no SDK imports
+    and the report was built on configuration alone (coderay-q2r.15)."""
     try:
         raw = subprocess.check_output(
             ["git", "-C", repo, "grep", "-nE",
              r"(import .*from ['\"]" + SDK_RE + r"|require\(['\"]" + SDK_RE + r"|new (Stripe|Twilio|Redis|S3Client))",
              "--", "*.ts", "*.tsx", "*.js", "*.py", "*.go"],
-            text=True, errors="replace", stderr=subprocess.DEVNULL,
+            text=True, errors="replace", stderr=subprocess.PIPE,
         )
-    except Exception:
-        return ""
+    except FileNotFoundError:
+        return "", "git is not installed"
+    except subprocess.CalledProcessError as e:
+        if e.returncode == 1:          # git grep: ran, matched nothing
+            return "", None
+        msg = (e.stderr or "").strip().splitlines()
+        msg = msg[0].removeprefix("fatal: ") if msg else f"git grep exited {e.returncode}"
+        # git's own wording varies by version; the part a reader needs does not.
+        return "", "not a git repository" if "not a git repository" in msg else msg
     # Emit path:line plus the SDK that matched, never the source line itself.
     # The regex deliberately matches constructors like `new Stripe(...)`, so a
     # hardcoded token in one would otherwise be shipped to the LLM verbatim,
@@ -321,7 +334,7 @@ def _sdk_grep(repo, max_lines=400):
         out.append(entry)
         if len(out) >= max_lines:
             break
-    return "\n".join(out)
+    return "\n".join(out), None
 
 
 def _integration_dirs(repo):
@@ -382,9 +395,15 @@ def build_bundle(repo, max_chars=500_000):
         parts.append(f"===== INTEGRATION DIRECTORIES ({idir}, {len(isubs)} total) =====\n"
                      + ", ".join(isubs) + "\n")
 
-    sdk = _sdk_grep(repo)
+    sdk, sdk_unavailable = _sdk_grep(repo)
     if sdk:
         parts.append("===== SDK IMPORTS (git grep — file:line: sdk) =====\n" + sdk + "\n")
+    elif sdk_unavailable and parts:
+        # Only beside real sources: an empty bundle must stay empty so the
+        # no-architecture-sources guard still fires.
+        parts.append(f"===== SDK IMPORTS unavailable: {sdk_unavailable} =====\n"
+                     "No import evidence could be gathered, so every connection above is "
+                     "configured, not proven live.\n")
 
     whole = "\n".join(parts)
     bundle = whole[:max_chars]
@@ -404,5 +423,6 @@ def build_bundle(repo, max_chars=500_000):
         "deps": len(deps),
         "integrations": len(isubs),
         "sdk_lines": sdk.count("\n") + 1 if sdk else 0,
+        "sdk_unavailable": sdk_unavailable,
     }
     return bundle, stats

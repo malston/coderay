@@ -21,6 +21,13 @@ def test_build_bundle_populates_the_codebase_and_the_stats(tmp_path):
     assert shared["arch_stats"]["config_files"] == 1
 
 
+def test_build_bundle_prints_why_sdk_imports_were_unavailable(tmp_path, capsys):
+    """coderay-q2r.15: the run's own stats line names the missing evidence."""
+    repo = _repo(tmp_path, {"docker-compose.yml": "services:\n  api:\n    image: api\n"})
+    n.BuildBundle().run({"repo_path": repo})
+    assert "SDK imports unavailable: not a git repository" in capsys.readouterr().out
+
+
 def test_build_bundle_refuses_a_repo_with_no_architecture_sources(tmp_path):
     """arch_crawl prepends no header, so an ordinary single-binary repo really
     does produce an empty bundle and the assertion stops the run before it

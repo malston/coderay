@@ -45,9 +45,11 @@ def _hero_prefix(shared):
 
 def _footer(shared):
     stats = shared.get("arch_stats", {})
+    note = stats.get("sdk_unavailable")
     return (f"Overlaid from {stats.get('config_files', 0)} config files, "
             f"{stats.get('deps', 0)} dependencies, "
-            f"{stats.get('integrations', 0)} integrations.")
+            f"{stats.get('integrations', 0)} integrations."
+            + (f" SDK import evidence unavailable ({note}); connections are configured, not proven live." if note else ""))
 
 def _md_preamble(shared):
     verdict = shared.get("shape_verdict")

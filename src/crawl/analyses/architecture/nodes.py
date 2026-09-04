@@ -39,7 +39,8 @@ class BuildBundle(Node):
         shared["codebase"] = bundle
         shared["arch_stats"] = stats
         print(f"  Bundle: {stats['config_files']} config files, {stats['env_vars']} env vars, "
-              f"{stats['deps']} deps, {stats['integrations']} integrations, {stats['sdk_lines']} SDK imports")
+              f"{stats['deps']} deps, {stats['integrations']} integrations, {stats['sdk_lines']} SDK imports"
+              + (f" (SDK imports unavailable: {stats['sdk_unavailable']})" if stats.get("sdk_unavailable") else ""))
 
 
 class Inventory(Node):
