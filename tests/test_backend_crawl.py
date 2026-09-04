@@ -23,22 +23,44 @@ from crawl.analyses.backend import backend_crawl as bc
     ("app/serializers/user.py", "response"),
     # Go (coderay-5wu.11): net/http services register routes in server.go or
     # router.go, keep handlers in *_api.go or *_handler.go, and the data layer
-    # in db.go or a store; cmd/*/main.go is where a request's process starts.
+    # in db.go or a store; cmd/*/main.go is where a server's process starts.
+    # One row per rule, so a single dropped name fails a test.
     ("pkg/hub/server.go", "route"),
     ("internal/http/router.go", "route"),
     ("internal/http/routes.go", "route"),
+    ("pkg/hub/mux.go", "route"),
     ("cmd/claw-bridge/main.go", "route"),
-    ("main.go", "route"),
     ("pkg/hub/workspace_api.go", "handler"),
     ("pkg/hub/secrets_handler.go", "handler"),
+    ("pkg/hub/secrets_handlers.go", "handler"),
+    ("internal/api/handler.go", "handler"),
     ("internal/api/handlers.go", "handler"),
+    ("internal/handlers/user.go", "handler"),
     ("pkg/hub/middleware.go", "middleware"),
     ("pkg/hub/billing_service.go", "service"),
     ("internal/billing/service.go", "service"),
+    ("internal/service/billing.go", "service"),
+    ("internal/services/billing.go", "service"),
     ("pkg/hub/db.go", "database"),
+    ("pkg/hub/database.go", "database"),
+    ("pkg/hub/queries.go", "database"),
     ("pkg/hub/artifact/store.go", "database"),
+    ("pkg/hub/user_store.go", "database"),
+    ("pkg/hub/user_repository.go", "database"),
     ("internal/db/queries.sql.go", "database"),
+    ("internal/db/user.go", "database"),
     ("pkg/store/users.go", "database"),
+    ("internal/repository/user.go", "database"),
+    ("internal/sqlc/user.go", "database"),
+    ("internal/api/response.go", "response"),
+    ("internal/api/user_response.go", "response"),
+    ("internal/dto/user.go", "response"),
+    # The language-neutral directory rules still apply to Go.
+    ("internal/models/user.go", "database"),
+    ("internal/routes/health.go", "route"),
+    ("internal/controllers/user.go", "handler"),
+    ("pkg/domain/order.go", "service"),
+    ("api/latest/server.go", "route"),
 ])
 def test_classify_maps_a_path_to_its_layer(rel, layer):
     assert bc.classify(rel) == layer
@@ -47,9 +69,15 @@ def test_classify_maps_a_path_to_its_layer(rel, layer):
 @pytest.mark.parametrize("rel", [
     "README.md", "app/style.css", "app/views/message.test.py",
     "app/views/user.spec.ts", "app/util.py",
-    # Go: a test file, a plain package file, and a name that only contains a layer word
+    # Go: a test file, a plain package file, a name that only contains a layer
+    # word, and files under fixture directories
     "pkg/hub/db_test.go", "pkg/types/convert.go", "pkg/hub/repository_globs.go",
-    "pkg/hub/model_defaults.go", "pkg/hub/factorytest/server.go",
+    "pkg/hub/model_defaults.go", "pkg/hub/factorytest/server.go", "pkg/hub/testdata/server.go",
+    "internal/testutil/handlers.go",
+    # a client SDK's api.go and a lone models.go are not a handler or a data layer
+    "pkg/client/api.go", "internal/api/models.go",
+    # main.go outside cmd/ is a tool's entry, not a route
+    "tools/gen/main.go",
 ])
 def test_classify_returns_none_for_a_non_layer_file(rel):
     assert bc.classify(rel) is None
@@ -330,10 +358,11 @@ def test_build_bundle_share_flows_past_a_layer_whose_files_are_empty(tmp_path):
 
 
 def test_build_bundle_reads_a_go_service_into_its_layers(tmp_path):
-    """coderay-5wu.11. A Go net/http service laid out the way elasticclaw is
-    (cmd/ entry points, pkg/hub/server.go, *_api.go handlers, db.go) fills the
-    route, handler and database layers instead of yielding an empty bundle."""
-    files = {
+    """coderay-5wu.11. A Go net/http service (cmd/<name>/main.go entry points,
+    pkg/<svc>/server.go, *_api.go handlers, middleware.go, db.go) fills the
+    route, handler, middleware and database layers; a test file and a plain
+    package file stay out."""
+    repo = _repo(tmp_path, {
         "cmd/hub/main.go": "package main\n",
         "pkg/hub/server.go": "package hub\nfunc routes() {}\n",
         "pkg/hub/workspace_api.go": "package hub\nfunc handleWorkspace() {}\n",
@@ -342,12 +371,9 @@ def test_build_bundle_reads_a_go_service_into_its_layers(tmp_path):
         "pkg/hub/db.go": "package hub\nfunc open() {}\n",
         "pkg/hub/db_test.go": "package hub\n",
         "pkg/types/thing.go": "package types\n",
-    }
-    for rel, text in files.items():
-        p = tmp_path / rel; p.parent.mkdir(parents=True, exist_ok=True); p.write_text(text)
-    bundle, stats = bc.build_bundle(str(tmp_path))
-    counts = stats["counts"]
-    assert counts["route"] == 2 and counts["handler"] == 2
-    assert counts["middleware"] == 1 and counts["database"] == 1
+    })
+    bundle, stats = bc.build_bundle(repo)
+    assert stats["counts"] == {"route": 2, "handler": 2, "middleware": 1, "database": 1}
     assert "LAYER ROUTE: pkg/hub/server.go" in bundle and "LAYER DATABASE: pkg/hub/db.go" in bundle
+    assert bundle.index("LAYER ROUTE: pkg/hub/server.go") < bundle.index("LAYER ROUTE: cmd/hub/main.go")
     assert "db_test.go" not in bundle and "thing.go" not in bundle

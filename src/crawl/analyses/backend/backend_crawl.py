@@ -34,23 +34,42 @@ CORE_HINTS = ('message', 'send', 'booking', 'book', 'order', 'checkout', 'create
               'post', 'auth', 'user', 'session', 'event')
 
 
+# Go has no framework layout, so its layers come from the names a net/http
+# service gives its files; these sit beside the directory conventions every
+# language shares (coderay-5wu.11).
+GO_ROUTE_NAMES = ('server.go', 'router.go', 'routes.go', 'mux.go')
+GO_HANDLER_SUFFIXES = ('_api.go', '_handler.go', '_handlers.go')
+GO_HANDLER_NAMES = ('handler.go', 'handlers.go')
+GO_SERVICE_SUFFIXES = ('_service.go',)
+GO_DATABASE_NAMES = ('db.go', 'database.go', 'store.go', 'queries.go')
+GO_DATABASE_SUFFIXES = ('_store.go', '.sql.go', '_repository.go')
+GO_RESPONSE_SUFFIXES = ('_response.go',)
+# Go directories that hold fixtures and mocks rather than request-path code.
+GO_TEST_DIRS = frozenset({'testdata', 'testutil', 'testutils', 'httptest', 'factorytest'})
+
+
 def classify(rel):
     """Return the layer a file belongs to, or None.
 
     The directory conventions below are matched with their surrounding slashes,
     so the path carries a leading one: a repo that keeps `pages/api/` or
-    `routes/` at its root reads the same as one that nests them under `src/`."""
+    `routes/` at its root reads the same as one that nests them under `src/`.
+    Framework file names (Django, Rails, Node, Go) sit beside them; a Go
+    `main.go` counts as the route layer only under `cmd/`, where a server's
+    process starts, since a `main.go` elsewhere is a tool."""
     p = '/' + rel.replace(os.sep, '/').lower().lstrip('/')
     base = os.path.basename(p)
     if not p.endswith(SRC_EXT):
         return None
     if any(m in base for m in ('.test.', '.spec.', '_test.', '.stories.')) or base.endswith('_spec.rb'):
         return None
-    if p.endswith('.go'):
-        return _classify_go(p, base)
+    is_go = p.endswith('.go')
+    if is_go and any(seg in GO_TEST_DIRS for seg in p.split('/')[1:-1]):
+        return None
     # Route
     if (base in ('urls.py', 'routes.rb', 'routes.ts', 'router.ts', 'routes.js', 'router.js')
-            or base.endswith('_router.ts') or '/pages/api/' in p or '/routes/' in p or '/urls/' in p):
+            or base.endswith('_router.ts') or '/pages/api/' in p or '/routes/' in p or '/urls/' in p
+            or (is_go and (base in GO_ROUTE_NAMES or (base == 'main.go' and '/cmd/' in p)))):
         return 'route'
     # Middleware (incl. decorators and the settings file that lists MIDDLEWARE)
     if ('middleware' in p or base.endswith(('decorator.py', 'decorators.py'))
@@ -58,41 +77,22 @@ def classify(rel):
         return 'middleware'
     # Handler
     if ('/views/' in p or '/controllers/' in p or '/handlers/' in p
-            or base == 'views.py' or base.endswith(('view.py', '_views.py', 'controller.rb'))):
+            or base == 'views.py' or base.endswith(('view.py', '_views.py', 'controller.rb'))
+            or (is_go and (base in GO_HANDLER_NAMES or base.endswith(GO_HANDLER_SUFFIXES)))):
         return 'handler'
     # Service (business logic)
-    if '/actions/' in p or '/services/' in p or '/domain/' in p or '/use' in p and 'case' in p:
+    if ('/actions/' in p or '/services/' in p or '/domain/' in p or '/use' in p and 'case' in p
+            or (is_go and (base == 'service.go' or base.endswith(GO_SERVICE_SUFFIXES) or '/service/' in p))):
         return 'service'
     # Database
-    if '/models/' in p or base in ('models.py', 'schema.rb') or '/repositories/' in p or '/repository/' in p:
+    if ('/models/' in p or base in ('models.py', 'schema.rb') or '/repositories/' in p or '/repository/' in p
+            or (is_go and (base in GO_DATABASE_NAMES or base.endswith(GO_DATABASE_SUFFIXES)
+                           or '/store/' in p or '/db/' in p or '/sqlc/' in p))):
         return 'database'
     # Response
-    if 'serializer' in p or '/serializers/' in p or (base.startswith('response') and base.endswith('.py')):
+    if ('serializer' in p or '/serializers/' in p or (base.startswith('response') and base.endswith('.py'))
+            or (is_go and (base == 'response.go' or base.endswith(GO_RESPONSE_SUFFIXES) or '/dto/' in p))):
         return 'response'
-    return None
-
-
-def _classify_go(p, base):
-    """Go has no framework layout to key on, so the layers come from the names
-    a net/http service gives its files: routes are registered in server.go,
-    router.go or routes.go and a process starts in main.go; handlers are
-    *_api.go, *_handler.go or handler(s).go; the data layer is db.go, a store,
-    a queries file or sqlc output. A directory whose name ends in test holds
-    fixtures and mocks, not request-path code."""
-    if any(seg.endswith(('test', 'tests')) for seg in p.split('/')[1:-1]):
-        return None
-    if base in ('server.go', 'router.go', 'routes.go', 'mux.go', 'main.go'):
-        return 'route'
-    if 'middleware' in p:
-        return 'middleware'
-    if base in ('handler.go', 'handlers.go', 'api.go') or base.endswith(('_api.go', '_handler.go', '_handlers.go')) or '/handlers/' in p:
-        return 'handler'
-    if base == 'service.go' or base.endswith('_service.go') or '/services/' in p or '/service/' in p:
-        return 'service'
-    if (base in ('db.go', 'database.go', 'store.go', 'queries.go', 'models.go')
-            or base.endswith(('_store.go', '.sql.go', '_repository.go'))
-            or '/store/' in p or '/db/' in p or '/repository/' in p or '/repositories/' in p or '/sqlc/' in p):
-        return 'database'
     return None
 
 
@@ -125,7 +125,10 @@ def build_bundle(repo, max_chars=650_000, per_layer_sample=18):
     # undecodable file does not use up a sample slot.
     queues, limit = {}, {}
     for layer in ('route', 'middleware', 'response'):
-        queues[layer] = sorted(files_by_layer[layer])
+        # A Go cmd/*/main.go is a thin entry point; the files that register
+        # routes come first so a many-binary repo does not fill the route
+        # share with them.
+        queues[layer] = sorted(files_by_layer[layer], key=lambda r: (r.endswith('main.go'), r))
     for layer in ('handler', 'service', 'database'):
         queues[layer] = sorted(files_by_layer[layer], key=lambda r: (_priority(r), r))
         limit[layer] = per_layer_sample
