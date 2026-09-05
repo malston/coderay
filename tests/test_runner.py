@@ -254,3 +254,18 @@ def test_run_analysis_writes_partial_state_when_the_report_write_fails(tmp_path,
     state = json.loads((out / "run_state.json").read_text(encoding="utf-8"))
     assert state == {"body_md": "### A\ntext"}
     assert f"Wrote partial run state to {out / 'run_state.json'}" in capsys.readouterr().err
+
+
+def test_an_interrupt_keeps_the_results_and_still_propagates(capsys):
+    """coderay-5wu.2 (Mark's call): Ctrl-C on chapter 9 of 10 has paid for
+    eight chapters. Dump them, say so, and re-raise so the exit stays 130."""
+    from crawl.core.runner import keeping_results
+
+    def step():
+        raise KeyboardInterrupt
+
+    dumped = {}
+    with pytest.raises(KeyboardInterrupt):
+        keeping_results(step, {"x": 1}, "/tmp", lambda s, o: dumped.setdefault("s", s) and "/tmp/x")
+    assert dumped == {"s": {"x": 1}}
+    assert "Run interrupted. Wrote partial run state to /tmp/x" in capsys.readouterr().err

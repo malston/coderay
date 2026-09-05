@@ -13,9 +13,10 @@ def run_flow(flow, shared, out_dir, dump_state):
 
 
 def keeping_results(step, shared, out_dir, dump_state):
-    """Call `step()`. On an unhandled exception, call `dump_state(shared,
-    out_dir)` to write whatever results `shared` holds, say where they landed
-    on stderr beside the traceback, and re-raise. A dump that fails is
+    """Call `step()`. On an unhandled exception, or Ctrl-C, call
+    `dump_state(shared, out_dir)` to write whatever results `shared` holds,
+    say where they landed on stderr beside the traceback, and re-raise (an
+    interrupt keeps its exit status). A dump that fails is
     reported the same way and the step's own error is still the one that
     propagates; a dump that returns None had nothing to write and says
     nothing. Covers the report write as well as the flow: once the flow has
@@ -23,15 +24,16 @@ def keeping_results(step, shared, out_dir, dump_state):
     them just as a failed node would (coderay-5wu.4)."""
     try:
         step()
-    except (Exception, SystemExit):
+    except (Exception, SystemExit, KeyboardInterrupt) as why:
+        what = "Run interrupted" if isinstance(why, KeyboardInterrupt) else "Run failed"
         try:
             state_path = dump_state(shared, out_dir)
         except Exception as e:  # the dump's own error is printed here; the step's is what propagates
-            print(f"\nRun failed, and the partial run state could not be written to {out_dir}: {type(e).__name__}: {e}",
+            print(f"\n{what}, and the partial run state could not be written to {out_dir}: {type(e).__name__}: {e}",
                   file=sys.stderr)
         else:
             if state_path:
-                print(f"\nRun failed. Wrote partial run state to {state_path}", file=sys.stderr)
+                print(f"\n{what}. Wrote partial run state to {state_path}", file=sys.stderr)
         raise
 
 def write_run_state(shared, out_dir, skip=frozenset()):
