@@ -7,11 +7,21 @@ on:
 jobs:
   pytest:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The declared floor (pyproject.toml's requires-python) and a recent
+        # release, so a 3.12+-only feature landing in src/ is caught before
+        # it ships in a wheel whose Requires-Python still says 3.11
+        # (coderay-5wu.25). Complements test_package_skeleton's floor test,
+        # which only stops the floor itself from being lowered by accident.
+        python-version: ["3.11", "3.13"]
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
+          python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: uv sync --locked
       - name: Run tests
