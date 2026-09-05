@@ -134,41 +134,38 @@ def is_test_file(filename):
             or (base.endswith('.go') and base.startswith(_GO_TEST_PREFIXES)))
 
 
-def within_repo(repo, path):
-    """True if `path` resolves inside `repo`, symlinks followed.
-
-    Every crawler reads files it discovered by walking the target repo, and the
-    target repo is untrusted: a checked-in `urls.py` or `docker-compose.yml`
-    that is a symlink to /etc/passwd or ~/.aws/credentials is read like any
-    other file and its contents go into a prompt sent to a third-party LLM.
-    os.walk does not follow directory symlinks, but open() follows file ones.
-
-    Discovery-time containment, the counterpart to the check interfaces already
-    applies to LLM-named paths (coderay-q2r.16 / coderay-q2r.28).
-    """
-    root = os.path.realpath(repo)
-    target = os.path.realpath(path)
+def _contained(root, target):
+    """True if resolved `target` is resolved `root` or lies under it. The one
+    containment predicate, so the walk and the read-time check cannot drift."""
     return target == root or target.startswith(root + os.sep)
 
 
 def readable(repo, path, *, credential_names=False):
     """True if a file a crawler discovered in `repo` may be read into a prompt.
 
-    `within_repo` alone lets `app/urls.py -> ../.env` through: the target is
-    inside the repo, it is only credential-named. So the target's own name has
+    The target repo is untrusted, and its contents go into a prompt sent to a
+    third-party LLM, so two checks run on the one resolved target. Containment:
+    a checked-in `urls.py` or `docker-compose.yml` that is a symlink to
+    /etc/passwd or ~/.aws/credentials is refused (os.walk does not follow
+    directory symlinks, but open() follows file ones; coderay-q2r.16,
+    coderay-q2r.28). Name: containment alone lets `app/urls.py -> ../.env`
+    through, since the target is inside the repo, so the target's own name has
     to clear the credential skip as well, the rule list_files already applies
     at walk time (coderay-q2r.52), and a model-named `.env` is refused the
-    same way (coderay-q2r.56).
+    same way (coderay-q2r.56). One function for reads, on the one containment
+    predicate the walk uses too, so no crawler reaches for a weaker half
+    (coderay-q2r.63).
 
     `credential_names=True` lets a crawler read a credential-named file it
     walked to itself (the architecture crawler reads a real `.env` for variable
     names); a symlink to one is still refused.
     """
-    if not within_repo(repo, path):
+    target = os.path.realpath(path)
+    if not _contained(os.path.realpath(repo), target):
         return False
     if credential_names and not os.path.islink(path):
         return True
-    return not credential_named(os.path.basename(os.path.realpath(path)))
+    return not credential_named(os.path.basename(target))
 
 
 def credential_named(filename):
@@ -237,7 +234,7 @@ def list_files(root, *, keep_ext=DEFAULT_KEEP_EXT, skip_dirs=DEFAULT_SKIP_DIR,
                 continue
             path = os.path.join(dirpath, f)
             real = os.path.realpath(path)
-            if not real.startswith(real_root + os.sep):
+            if not _contained(real_root, real):
                 continue  # symlink resolving outside the repo root
             # coderay-q2r.52: a symlink can rename a skipped file into a
             # source-looking one (src/config.py -> ../.env), so the target's

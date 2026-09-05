@@ -32,7 +32,6 @@ from .files import (  # noqa: F401
     is_test_file,
     credential_named,
     readable,
-    within_repo,
 )
 from .env import env_defaults  # noqa: F401
 from .nodes import OverviewNode  # noqa: F401

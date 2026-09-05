@@ -153,7 +153,7 @@ def test_crawl_routes_refuses_a_route_file_symlinked_out_of_the_repo(tmp_path):
 
 
 def test_crawl_routes_refuses_a_route_file_symlinked_to_an_in_repo_credential_file(tmp_path):
-    """coderay-q2r.56. within_repo follows the link and finds the target inside
+    """coderay-q2r.56. Containment follows the link and finds the target inside
     the repo, so `app/urls.py -> ../.env` passed and the .env body reached the
     prompt. The target's own name has to pass the credential skip too, the way
     list_files already demands (coderay-q2r.52)."""
