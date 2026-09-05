@@ -48,10 +48,10 @@ def add_arguments(parser) -> None:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
         "--codebase-budget", type=_budget,
-        default=os.environ.get("CODEBASE_BUDGET", str(CODEBASE_BUDGET)),
+        default=os.environ.get("CODEBASE_BUDGET") or str(CODEBASE_BUDGET),
         help="characters of selected source sent to the model; caps how many whole "
-             "files are included, never how much of each. Overrides the CODEBASE_BUDGET "
-             f"environment variable. Default: {CODEBASE_BUDGET:,}")
+             "files are included, never how much of each. Default: the CODEBASE_BUDGET "
+             f"environment variable, else {CODEBASE_BUDGET:,}")
 
 # A chapter can run past the 16384-token default on a large abstraction
 # (coderay-q2r.46); backend raises its cap the same way.

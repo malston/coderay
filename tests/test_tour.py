@@ -33,12 +33,45 @@ def test_codebase_budget_defaults_to_the_constant(monkeypatch):
     assert init_shared(args)["codebase_budget"] == CODEBASE_BUDGET
 
 
+def test_an_empty_codebase_budget_env_var_means_unset(monkeypatch):
+    """.env.example ships `CODEBASE_BUDGET=`; sourcing it exports the empty string,
+    which the rest of the project reads as unset."""
+    from crawl.analyses.tour.nodes import CODEBASE_BUDGET
+    assert _parse([], monkeypatch, env="").codebase_budget == CODEBASE_BUDGET
+
+
 def test_codebase_budget_env_var_applies_when_the_flag_is_absent(monkeypatch):
     assert _parse([], monkeypatch, env="2000000").codebase_budget == 2_000_000
 
 
 def test_codebase_budget_flag_wins_over_the_env_var(monkeypatch):
-    assert _parse(["--codebase-budget", "300"], monkeypatch, env="2000000").codebase_budget == 300
+    from crawl.analyses.tour import init_shared
+    args = _parse(["--codebase-budget", "300"], monkeypatch, env="2000000")
+    assert args.codebase_budget == 300
+    assert init_shared(args)["codebase_budget"] == 300
+
+
+def test_run_hands_the_parsed_budget_to_the_flow(tmp_path, monkeypatch):
+    """The dry run reporting a budget is not the same as the real run using it."""
+    import crawl.analyses.tour as tour
+
+    class Stop(Exception):
+        pass
+
+    seen = {}
+
+    def fake_run_flow(flow, shared, out, dump):
+        seen.update(shared)
+        raise Stop
+
+    monkeypatch.setattr(tour, "resolve_provider_and_model", lambda: ("anthropic", "m"))
+    monkeypatch.setattr(tour, "ensure_priced", lambda p, m: None)
+    monkeypatch.setattr(tour, "run_flow", fake_run_flow)
+    args = argparse.Namespace(repo_path=str(tmp_path), out=str(tmp_path / "o"),
+                              instructions="beginner-tutorial", dry_run=False, codebase_budget=4242)
+    with pytest.raises(Stop):
+        run(args)
+    assert seen["codebase_budget"] == 4242
 
 
 @pytest.mark.parametrize("bad", ["abc", "1.5", "0", "-7"])
