@@ -310,6 +310,23 @@ def show_diff(repo_path, commit_hash, max_chars=4000, stat=True):
     return raw
 
 
+def is_pure_rename(repo_path, commit_hash):
+    """True if this commit's changes are entirely renames: with rename
+    detection forced on, git pairs up every removed path with an added one
+    and no true deletion remains.
+
+    `bulk_changes` runs with `--no-renames` so a directory move is visible as
+    a bulk deletion (coderay-q2r.44) -- but a move isn't a killed feature,
+    and the graveyard must not write one a eulogy for having been renamed.
+    """
+    raw = subprocess.check_output(
+        ["git", "-C", repo_path, "show", "-M", "--diff-filter=D", "--name-only",
+         "--pretty=format:", "--end-of-options", f"{commit_hash}^{{commit}}"],
+        text=True, errors="replace",
+    )
+    return not raw.strip()
+
+
 def repo_root(repo_path):
     """The repository root, or SystemExit if `repo_path` is not it.
 

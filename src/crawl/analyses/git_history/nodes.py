@@ -211,16 +211,20 @@ class Graveyard(Node):
     def prep(self, shared):
         min_files = shared.get("grave_min_files", 8)
         max_graves = shared.get("max_graves", 6)
+        repo_path = shared["repo_path"]
         candidates = sorted(
             (c for c in shared["bulk_dels"]
-             if c["count"] >= min_files and not _is_noise_deletion(c)),
+             if c["count"] >= min_files and not _is_noise_deletion(c)
+             # bulk_changes runs with --no-renames so a directory move shows up
+             # here as a plain deletion (coderay-q2r.44); a move isn't a killed
+             # feature, so it must not get a eulogy written for it.
+             and not gl.is_pure_rename(repo_path, c["hash"])),
             key=lambda c: c["count"], reverse=True,
         )
         # Keep the graves distinct: at most one per source area so we don't
         # return six variants of one deletion. `scope` is already the shared
         # prefix capped at two path components (gitlog.scope_of), so it IS
-        # the area; re-splitting it here was dead code that only ever
-        # reproduced its input (coderay-q2r.44).
+        # the area.
         graves, seen_areas = [], set()
         for c in candidates:
             if len(graves) >= max_graves:  # coderay-q2r.40: checked first, so 0 means none

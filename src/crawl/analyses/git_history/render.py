@@ -58,30 +58,32 @@ def _esc(s):
     return _html.escape(str(s).strip())
 
 
-def _pct(v):
-    """A bar's fill percentage. A model sometimes writes the number with its
-    own trailing '%' (`"45%"`), which `float()` rejects outright; stripping
-    it here is what keeps that bar from silently reading as 0 (coderay-q2r.43)."""
+def _pct_num(v):
+    """Parse a percent value the model may have written with its own '%'
+    already appended (`"45%"`), which `float()` otherwise rejects outright.
+    None on anything unparseable."""
+    if isinstance(v, str):
+        v = v.strip().rstrip("%")
     try:
-        if isinstance(v, str):
-            v = v.strip().rstrip("%")
-        return max(0, min(100, float(v)))
+        return float(v)
     except (TypeError, ValueError):
-        return 0
+        return None
+
+
+def _pct(v):
+    """A bar's fill percentage, clamped to [0, 100]; 0 when unparseable."""
+    n = _pct_num(v)
+    return 0 if n is None else max(0, min(100, n))
 
 
 def _pct_label(v):
     """The markdown `(NN%)` figure for a cast/mood entry: `?` when the model
-    left `pct` out, otherwise the number with any '%' it already added
-    stripped first, or a value like "45%" prints as "45%%" (coderay-q2r.43)."""
+    left `pct` out or it doesn't parse as a number, otherwise the number
+    formatted without repeating a '%' the model already appended."""
     if v is None:
         return "?"
-    if isinstance(v, str):
-        v = v.strip().rstrip("%")
-    try:
-        return f"{float(v):g}"
-    except (TypeError, ValueError):
-        return "?"
+    n = _pct_num(v)
+    return "?" if n is None else f"{n:g}"
 
 
 def _profiles_by_era(shared):

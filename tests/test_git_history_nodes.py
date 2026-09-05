@@ -162,6 +162,39 @@ def test_graveyard_honours_max_graves(monkeypatch, tmp_path):
     assert len(shared["graves"]) == 2
 
 
+def test_graveyard_skips_a_directory_move_disguised_as_a_bulk_deletion(monkeypatch, tmp_path):
+    """coderay-q2r.44 review. bulk_dels sees a directory move as a plain
+    deletion (bulk_changes runs with --no-renames), but it isn't a killed
+    feature; Graveyard must not write a moved-intact directory a eulogy."""
+    old = {f"old/f{i}.py": f"x{i}\n" for i in range(10)}
+    new = {f"new/f{i}.py": f"x{i}\n" for i in range(10)}
+    repo = _repo(tmp_path, [("add", old, []), ("move the directory", new, list(old))])
+    from crawl.analyses.git_history import gitlog as gl
+    _fake_llm(monkeypatch, lambda p: "entry")
+    shared = {"repo_path": repo, "eras": ERAS,
+              "bulk_dels": gl.bulk_changes(repo, "D", min_files=5),
+              "grave_min_files": 8, "max_graves": 6}
+    n.Graveyard().run(shared)
+    assert shared["graves"] == []
+
+
+def test_graveyard_still_digs_up_a_real_deletion_alongside_a_move(monkeypatch, tmp_path):
+    """A commit that both moves one directory and truly deletes another still
+    has a real killed feature in it once the move is filtered out."""
+    old = {f"old/f{i}.py": f"x{i}\n" for i in range(10)}
+    new = {f"new/f{i}.py": f"x{i}\n" for i in range(10)}
+    killed = {f"core/feature/f{i}.py": "x\n" for i in range(10)}
+    repo = _repo(tmp_path, [("add", {**old, **killed}, []),
+                            ("move and kill", new, list(old) + list(killed))])
+    from crawl.analyses.git_history import gitlog as gl
+    _fake_llm(monkeypatch, lambda p: "entry")
+    shared = {"repo_path": repo, "eras": ERAS,
+              "bulk_dels": gl.bulk_changes(repo, "D", min_files=5),
+              "grave_min_files": 8, "max_graves": 6}
+    n.Graveyard().run(shared)
+    assert len(shared["graves"]) == 1
+
+
 def test_is_noise_deletion_checks_skip_dirs_by_forward_slash_not_os_sep(monkeypatch):
     """coderay-q2r.44. Git paths are always forward-slash; splitting on the
     platform's `os.sep` mis-detects the skip-list on Windows (backslash).

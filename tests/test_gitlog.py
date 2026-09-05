@@ -167,6 +167,48 @@ def test_bulk_changes_counts_a_directory_rename_as_an_addition_of_the_new_paths(
     assert sorted(move["files"]) == sorted(new)
 
 
+def test_is_pure_rename_true_for_a_directory_move(tmp_path):
+    """coderay-q2r.44 review. bulk_changes(status='D') sees a directory move as
+    a plain deletion (--no-renames), but it isn't a killed feature; the
+    graveyard needs a way to tell the two apart."""
+    old = {f"old/f{i}.py": f"x{i}\n" for i in range(6)}
+    new = {f"new/f{i}.py": f"x{i}\n" for i in range(6)}
+    repo = _repo(tmp_path, [("add", old, []), ("move the directory", new, list(old))])
+    dels = gl.bulk_changes(repo, "D", min_files=5)
+    assert gl.is_pure_rename(repo, dels[0]["hash"]) is True
+
+
+def test_is_pure_rename_false_for_a_real_deletion(tmp_path):
+    repo = _repo(tmp_path, [("add", {f"f{i}.py": "x\n" for i in range(6)}, []),
+                            ("drop it", {}, [f"f{i}.py" for i in range(6)])])
+    dels = gl.bulk_changes(repo, "D", min_files=5)
+    assert gl.is_pure_rename(repo, dels[0]["hash"]) is False
+
+
+def test_is_pure_rename_forces_detection_on_regardless_of_the_repos_config(tmp_path):
+    """A user (or CI image) with diff.renames=false in their git config would
+    otherwise see every move as a real deletion again; -M must force
+    detection on rather than trust the ambient config."""
+    old = {f"old/f{i}.py": f"x{i}\n" for i in range(6)}
+    new = {f"new/f{i}.py": f"x{i}\n" for i in range(6)}
+    repo = _repo(tmp_path, [("add", old, []), ("move the directory", new, list(old))])
+    subprocess.run(["git", "-C", repo, "config", "diff.renames", "false"], check=True)
+    dels = gl.bulk_changes(repo, "D", min_files=5)
+    assert gl.is_pure_rename(repo, dels[0]["hash"]) is True
+
+
+def test_is_pure_rename_false_for_a_mixed_move_and_delete(tmp_path):
+    """A commit that moves some files and truly deletes others still leaves a
+    real deletion behind once the renames are paired off."""
+    old = {f"old/f{i}.py": f"x{i}\n" for i in range(6)}
+    new = {f"new/f{i}.py": f"x{i}\n" for i in range(6)}
+    unrelated = {f"gone{i}.py": f"y{i}\n" for i in range(6)}
+    repo = _repo(tmp_path, [("add", {**old, **unrelated}, []),
+                            ("move and delete", new, list(old) + list(unrelated))])
+    dels = gl.bulk_changes(repo, "D", min_files=5)
+    assert gl.is_pure_rename(repo, dels[0]["hash"]) is False
+
+
 def test_scope_of_splits_and_joins_on_forward_slash_not_the_platform_separator(monkeypatch):
     """git paths are always POSIX; scope_of must not depend on `os.sep`/`os.path`
     reading as ntpath on Windows, or the depth cap silently stops applying."""
