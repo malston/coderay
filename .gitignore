@@ -4,6 +4,7 @@ __pycache__/
 .mypy_cache/
 output/
 .env
+.envrc
 .full-review/
 
 # Beads / Dolt files (added by bd init)
