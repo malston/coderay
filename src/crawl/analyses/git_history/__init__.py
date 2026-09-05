@@ -25,6 +25,12 @@ def add_arguments(parser):
     parser.add_argument("--grave-min-files", type=int, default=8,
                         help="a deletion counts as a killed feature at this "
                              "many files (default 8)")
+    parser.add_argument("--profile-max-commits", type=int, default=400,
+                        help="cap on commits sampled into one era's profile "
+                             "prompt (default 400)")
+    parser.add_argument("--profile-diff-chars", type=int, default=2500,
+                        help="cap on characters per landmark diff in a "
+                             "profile prompt (default 2500)")
 
 def sent(shared):
     """What left the machine: no files here. The whole log is summarised for the
@@ -45,6 +51,8 @@ def init_shared(args):
         "repo_path": args.repo_path,
         "max_graves": getattr(args, "max_graves", 6),
         "grave_min_files": getattr(args, "grave_min_files", 8),
+        "profile_max_commits": getattr(args, "profile_max_commits", 400),
+        "profile_diff_chars": getattr(args, "profile_diff_chars", 2500),
     }
 
 def build_flow():

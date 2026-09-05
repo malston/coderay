@@ -51,9 +51,12 @@ def test_add_arguments_adds_the_graveyard_flags():
     parser.add_argument("repo_path")
     parser.add_argument("--out", default=None)
     git_history.add_arguments(parser)
-    args = parser.parse_args(["/tmp/repo", "--max-graves", "3", "--grave-min-files", "20"])
+    args = parser.parse_args(["/tmp/repo", "--max-graves", "3", "--grave-min-files", "20",
+                              "--profile-max-commits", "100", "--profile-diff-chars", "500"])
     assert args.max_graves == 3
     assert args.grave_min_files == 20
+    assert args.profile_max_commits == 100
+    assert args.profile_diff_chars == 500
 
 
 def test_add_arguments_defaults_match_what_the_nodes_expect():
@@ -65,13 +68,17 @@ def test_add_arguments_defaults_match_what_the_nodes_expect():
     args = parser.parse_args(["/tmp/repo"])
     assert args.max_graves == 6
     assert args.grave_min_files == 8
+    assert args.profile_max_commits == 400
+    assert args.profile_diff_chars == 2500
 
 
 def test_init_shared_carries_the_repo_path_and_the_flags():
     args = argparse.Namespace(repo_path="/tmp/toy_repo", out=None,
-                              max_graves=3, grave_min_files=20)
+                              max_graves=3, grave_min_files=20,
+                              profile_max_commits=100, profile_diff_chars=500)
     assert git_history.init_shared(args) == {
-        "repo_path": "/tmp/toy_repo", "max_graves": 3, "grave_min_files": 20}
+        "repo_path": "/tmp/toy_repo", "max_graves": 3, "grave_min_files": 20,
+        "profile_max_commits": 100, "profile_diff_chars": 500}
 
 
 def test_init_shared_tolerates_an_args_without_the_flags():
@@ -80,6 +87,8 @@ def test_init_shared_tolerates_an_args_without_the_flags():
     shared = git_history.init_shared(args)
     assert shared["max_graves"] == 6
     assert shared["grave_min_files"] == 8
+    assert shared["profile_max_commits"] == 400
+    assert shared["profile_diff_chars"] == 2500
 
 
 def test_build_flow_starts_at_fetch_history():
