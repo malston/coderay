@@ -583,3 +583,19 @@ def test_the_no_routes_message_names_go_among_the_frameworks(tmp_path):
     with pytest.raises(AssertionError) as e:
         n.FindRoutes().run({"repo_path": str(tmp_path)})
     assert "Go" in str(e.value) and "Rails" in str(e.value)
+
+
+def test_the_sequence_summary_line_strips_control_characters_from_the_endpoint(tmp_path, monkeypatch, capsys):
+    """coderay-q2r.55. The endpoint is model text printed to the terminal."""
+    repo = _repo(tmp_path, {"pages/api/a.ts": "export const a = 1;\n"})
+
+    def reply(prompt):
+        if "sequence diagram" in prompt:
+            return '```yaml\nendpoint: "POST /api/a\x1b[2K\rFAKE"\nfiles:\n  - pages/api/a.ts\n```'
+        return "```mermaid\nsequenceDiagram\n  a->>b: hi\n```"
+
+    _fake_llm(monkeypatch, reply)
+    shared = {"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "", "route_files": ["pages/api/a.ts"]}
+    _sequence_node().run(shared)
+    out = capsys.readouterr().out
+    assert "\x1b" not in out and "\r" not in out.replace("\r\n", "\n")

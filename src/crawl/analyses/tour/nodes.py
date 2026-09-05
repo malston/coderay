@@ -28,6 +28,7 @@ from typing import TypedDict
 from pocketflow import Node, BatchNode
 
 from crawl.core import ResponseTruncated, call_llm, fill, list_files, read_prompt, safe_read, yaml_call
+from crawl.core.render import printable
 from crawl.analyses.tour.graph.languages import REGISTRY
 
 PROMPTS_DIR = resources.files("crawl.analyses.tour") / "prompts"
@@ -331,7 +332,7 @@ class WriteChapters(Node):
         total = len(ctx["order"])
         window = ctx["context_window"]
         for i, name in enumerate(ctx["order"]):
-            print(f"  Chapter {i+1}/{total}: {name}")
+            print(f"  Chapter {i+1}/{total}: {printable(name, 80)}")
             recent = prev_chapters[-window:] if window else prev_chapters
             prev = "\n\n---\n\n".join(recent) if recent else "(This is the first chapter.)"
             prompt = fill(

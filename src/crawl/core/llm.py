@@ -9,6 +9,7 @@ from importlib import resources
 import yaml
 
 from .call_llm import call_llm
+from .text import printable
 
 HOUSE_STYLE_SLOT = "{house_style}"
 
@@ -87,14 +88,14 @@ def parse_json(text):
                 return obj
             except ValueError:
                 continue
-    raise AssertionError(f"No JSON found in LLM response. Got:\n{text[:500]}")
+    raise AssertionError(f"No JSON found in LLM response. Got:\n{printable(text, 500)}")
 
 
 def parse_yaml(text):
     """Extract and parse a ```yaml fenced block. Raises so a bad reply retries."""
     m = re.search(r"```yaml\s*\n(.*?)```", text, re.DOTALL)
     if not m:
-        raise ValueError(f"LLM response missing ```yaml fence. Got:\n{text[:500]}")
+        raise ValueError(f"LLM response missing ```yaml fence. Got:\n{printable(text, 500)}")
     return yaml.safe_load(m.group(1))
 
 

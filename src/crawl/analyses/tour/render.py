@@ -7,6 +7,8 @@ from datetime import date
 
 from markdown_it import MarkdownIt
 
+from crawl.core.render import markdown_parser
+
 from crawl.core import (
     cost_for, fill, list_files, max_output_tokens,
     read_prompt, safe_read,
@@ -22,7 +24,7 @@ from crawl.analyses.tour.nodes import (
 
 # CommonMark parser. Unlike python-markdown's fenced_code extension, this
 # correctly handles fenced code blocks indented inside list items.
-_MD = MarkdownIt("commonmark", {"html": False, "linkify": True, "breaks": False}).enable(["table", "strikethrough"])
+_MD = markdown_parser("strikethrough", image=True)
 
 
 def md_to_html(md_text):

