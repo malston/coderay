@@ -530,6 +530,6 @@ def build_bundle(repo, max_chars=500_000):
         "integrations": len(isubs),
         "sdk_lines": sdk.count("\n") + 1 if sdk else 0,
         "sdk_unavailable": sdk_unavailable,
-        "files": files,
+        "files": sorted(files),  # the walk order differs by platform; the manifest should not
     }
     return bundle, stats

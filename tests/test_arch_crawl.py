@@ -403,8 +403,8 @@ def test_build_bundle_overlays_the_four_sources_and_counts_them(tmp_path):
     assert stats == {"config_files": 4, "config_files_found": 4, "truncated": False,
                      "env_vars": 2, "deps": 2, "integrations": 0, "sdk_lines": 0,
                      "sdk_unavailable": "not a git repository",
-                     "files": ["package.json", ".env.example", "docker-compose.yml", "deploy/k8s/api.yaml",
-                               "Procfile", "infra/main.tf"]}
+                     "files": [".env.example", "Procfile", "deploy/k8s/api.yaml", "docker-compose.yml",
+                               "infra/main.tf", "package.json"]}
     assert "PROCESS DECLARATION (compose / k8s): docker-compose.yml" in bundle
     assert "KUBERNETES MANIFESTS: deploy/k8s/api.yaml" in bundle
     assert "GATEWAY / PLATFORM CONFIG: Procfile" in bundle
