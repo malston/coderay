@@ -8,7 +8,7 @@ The protocol itself lives in `.claude/commands/epic-loop.md`, which Claude Code 
 
 - **The epic exists and its children are real work.** `bd show <epic-id>` should list the beads you want done. Anything that is a keep-or-delete call or an open design question can stay in the list; the loop investigates it, writes a recommendation into the bead, tags it `human` (`bd tag <id> human`, listed by `bd human list`), and moves on without deciding.
 - **`main` is green** (`make test`) and `gh auth status` works, since the loop pushes, opens PRs and merges. Your own checkout can be on any branch with any uncommitted work: the loop never touches it.
-- **You are fine with Claude merging.** Every PR gets a `/code-review` and a `/pr-review-toolkit:review-pr` pass, and the Critical and Important findings are fixed before the merge, but no human reads the diff first. If you want to read them, remove the `gh pr merge` line from step 7 of the command file and merge by hand; the cleanup and the bead close stay.
+- **You are fine with Claude merging.** Every PR gets a `/code-review` pass, and a PR for a bead of priority P3 or higher gets the `/pr-review-toolkit:review-pr` agents as well; the Critical and Important findings are fixed before the merge, but no human reads the diff first. If you want to read them, remove the `gh pr merge` line from step 7 of the command file and merge by hand; the cleanup and the bead close stay.
 
 Optional: put the protocol into the epic's DESIGN field as well (`bd update <epic-id> --design "..."`). `/epic-loop` checks there first and lets it override the command file, and `bd show` brings it back after a context compaction.
 
@@ -29,7 +29,7 @@ The first line loads the protocol and starts the first bead. The second sets the
 2. Claims the bead and re-reads it, trimming anything an earlier PR already fixed.
 3. Writes the failing test, watches it fail, makes the smallest fix, mutates the guard, runs the suite. Every commit is gated on a green suite in the same command.
 4. Pushes, opens the PR with a body that states what changed, what was left for you to decide, the red and green test counts, and what was verified by hand. Waits for CI.
-5. Runs `/code-review <PR#> medium` and the applicable `review-pr` agents against the PR's own diff.
+5. Runs `/code-review <PR#> medium` against the PR's own diff, plus the applicable `review-pr` agents when the bead is P3 or higher. A P4 is small enough that the second pass costs more than it finds.
 6. Fixes what is labelled Critical, Important or HIGH in one review commit and adds a "Review round" section to the PR body. Everything else becomes a P3 or P4 bead under the epic. Findings outside the bead's scope are filed, never fixed in that PR.
 7. Merges with a merge commit, fetches, and once `origin/main` contains the branch removes the worktree and the local branch (the remote branch stays), closes the bead with a reason that names the PR, and starts the next one. Your local `main` catches up on your next `git pull`.
 
