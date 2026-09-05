@@ -366,6 +366,7 @@ openai = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "packaging" },
     { name = "pytest" },
 ]
 
@@ -387,7 +388,10 @@ requires-dist = [
 provides-extras = ["openai", "gemini"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=9.1.1,<10" }]
+dev = [
+    { name = "packaging", specifier = ">=24" },
+    { name = "pytest", specifier = ">=9.1.1,<10" },
+]
 
 [[package]]
 name = "cryptography"
