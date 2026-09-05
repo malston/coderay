@@ -23,7 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 openai = ["openai>=3.3.1,<4"]
-gemini = ["google-genai>=2.19.0,<3"]
+gemini = ["google-genai>=2.21.0,<3"]
 
 [dependency-groups]
 dev = ["pytest>=9.1.1,<10", "packaging>=24"]  # packaging: tests parse the dependency ranges
