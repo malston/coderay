@@ -62,7 +62,7 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 ## Build & Test
 
-`make install`, `make test`, `make build`, and `make clean` cover the common dev loop via `uv`, matching CI (see `Makefile`). Equivalent raw commands, if you don't have `make`:
+Requires Python 3.11 or newer (`requires-python` in `pyproject.toml`). `make install`, `make test`, `make build`, and `make clean` cover the common dev loop via `uv`, matching CI (see `Makefile`). Equivalent raw commands, if you don't have `make`:
 
 ```bash
 pip install -e .              # install this package (src/crawl/) in editable mode
