@@ -193,8 +193,10 @@ def crawl_routes(repo, max_chars=900_000):
 
 
 def _within(repo, full):
-    """True if `full` resolves inside `repo`, symlinks followed, and a symlink
-    does not rename a credential file (coderay-q2r.56).
+    """True if `full` resolves inside `repo`, symlinks followed, and the
+    resolved target's own name is not credential-bearing -- whether the model
+    named `.env` outright or a symlink inside the repo resolves to one
+    (coderay-q2r.56).
 
     Delegates to crawl.core.readable, which all three crawlers share; this
     module keeps the name because read_files reads better with it. The
