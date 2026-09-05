@@ -41,6 +41,12 @@ class Section:
       "omit"      drop the section entirely (the interfaces tour)
       "skip-note" render the head with skip_note() as its note, no rail
                   (schema migration acts)
+
+    prefix() and cards() reach only render_html: prefix() returns HTML that
+    render_markdown never calls, and cards() is a body builder returning HTML
+    markup. md_note(), when set, returns a markdown-safe string render_markdown
+    prepends to the section body -- the markdown-side counterpart a section
+    needs when the same note has to reach both pages (coderay-5wu.10).
     """
     number: str
     label: str
@@ -53,6 +59,7 @@ class Section:
     md_skip_note: Optional[Callable] = None
     prefix: Optional[Callable] = None
     cards: Optional[Callable] = None
+    md_note: Optional[Callable] = None
 
 @dataclass(frozen=True)
 class Theme:
@@ -392,9 +399,11 @@ def _render_card_markdown(analysis, name, shared):
         if not body and spec.md_skip_note:
             parts.append(spec.md_skip_note(shared))
         else:
+            note = spec.md_note(shared) if spec.md_note else ""
             # Matches the tour's chapter files, which append body.strip() + "\n"
             # unconditionally: an absent key still emits a blank line.
-            parts.append(body.strip() + "\n")
+            text = f"{note}\n\n{body.strip()}" if note else body.strip()
+            parts.append(text + "\n")
     return "\n".join(parts)
 
 def render_html(analysis, name, shared):
