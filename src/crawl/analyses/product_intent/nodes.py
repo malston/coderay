@@ -20,6 +20,7 @@ from importlib import resources
 from pocketflow import Node
 
 from crawl.core import call_llm, fill, list_files, read_prompt, safe_read, yaml_call
+from crawl.core.render import printable
 
 PROMPTS_DIR = resources.files("crawl.analyses.product_intent") / "prompts"
 
@@ -113,7 +114,7 @@ class VariantSentence(Node):
 
     def post(self, shared, prep_res, exec_res):
         shared["variant"] = exec_res
-        print(f"  Variant sentence: {exec_res[:80]}...")
+        print(f"  Variant sentence: {printable(exec_res, 80)}...")
 
 
 class CompetitivePositioning(Node):

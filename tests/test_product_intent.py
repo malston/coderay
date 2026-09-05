@@ -69,3 +69,24 @@ def test_run_rejects_a_path_that_is_not_a_directory(tmp_path):
     f.write_text("x", encoding="utf-8")
     with pytest.raises(SystemExit, match="is not a directory"):
         product_intent.run(argparse.Namespace(repo_path=str(f), out=None))
+
+
+def test_render_markdown_escapes_pipes_and_newlines_in_the_positioning_table_and_headlines():
+    """coderay-q2r.55. A pipe or newline in a model-written cell breaks the
+    table for every reader; a newline in a headline lets the next line pose as
+    a heading of its own."""
+    import json, pathlib
+    from crawl.analyses.product_intent import render
+    shared = json.loads((pathlib.Path(__file__).parent / "fixtures" / "golden" / "product-intent" / "shared.json").read_text())
+    shared["positioning"]["dimensions"][0]["name"] = "Speed | Cost"
+    comp = shared["positioning"]["competitors"][0]
+    comp["name"] = "Acme|Corp"
+    comp["cells"][0].update({"verdict": "Weak\nspot", "detail": "a | b"})
+    shared["surprises"]["present"][0]["headline"] = "Fast\n# fake"
+    shared["surprises"]["absent"][0]["headline"] = "None\nhere"
+    md = render.render_markdown("repo", shared)
+    table = [l for l in md.splitlines() if l.startswith("|")]
+    pipes = [l.count("|") - l.count("\\|") for l in table]
+    assert len(set(pipes)) == 1 and pipes[0] >= 3, table
+    assert "### Fast # fake" in md and "\n# fake" not in md
+    assert "### None here" in md

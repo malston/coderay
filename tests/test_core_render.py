@@ -128,3 +128,32 @@ def test_card_engine_and_tour_agree_on_mermaid_security():
     for path in (root / "core" / "render.py", root / "analyses" / "tour" / "render.py"):
         found |= set(_re.findall(r"securityLevel: '(\w+)'", path.read_text(encoding="utf-8")))
     assert found == {"strict"}, found
+
+
+# coderay-q2r.55: LLM text reaches markdown tables, headings and the terminal.
+def test_md_cell_keeps_a_pipe_table_intact():
+    from crawl.core.render import md_cell
+    assert md_cell("a | b\nc") == "a \\| b c"
+    assert md_cell(None) == ""
+
+
+def test_md_heading_is_one_line_and_cannot_close_or_open_a_heading():
+    from crawl.core.render import md_heading
+    assert md_heading("Fast\n# not a heading\nline") == "Fast # not a heading line"
+
+
+def test_printable_strips_control_characters_and_cuts_to_length():
+    from crawl.core.render import printable
+    assert printable("ok\x1b[31m red\x00\r\n more", 12) == "ok[31m red m"
+    assert printable("short", 80) == "short"
+
+
+def test_markdown_renderers_do_not_linkify():
+    """linkify was set with no linkify plugin installed, a no-op that would turn
+    `engine.py` into a link the day a dependency pulled the plugin in."""
+    import crawl.core.render as core
+    import crawl.analyses.tour.render as tour
+    import crawl.analyses.git_history.render as gh
+    import crawl.analyses.product_intent.render as pi
+    for mod in (core, tour, gh, pi):
+        assert mod._MD.options["linkify"] is False, mod.__name__

