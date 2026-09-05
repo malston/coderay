@@ -24,7 +24,9 @@ pass `include` and `exclude` as lists of .gitignore-style patterns:
 Patterns are matched against the path relative to `root`. Both lists default
 to empty (no path filtering). Patterns follow the same rules as `.gitignore`.
 """
+import contextlib
 import os
+import tempfile
 
 import pathspec
 
@@ -261,8 +263,7 @@ def safe_read(path, max_chars=None):
     """Read a file, skip per-file decode and OS errors (permission denied,
     broken symlink, vanished file).
 
-    The only legitimate try/except in this module: one bad file should not
-    kill a walk over 10,000 files.
+    One bad file should not kill a walk over 10,000 files.
 
     max_chars, if given, reads only that many characters instead of the whole
     file -- use this when the caller only needs a preview.
@@ -272,3 +273,32 @@ def safe_read(path, max_chars=None):
             return f.read(max_chars) if max_chars is not None else f.read()
     except (UnicodeDecodeError, OSError):
         return None
+
+
+def _umask_mode():
+    """The mode a plain open(path, "w") would give a new file."""
+    current = os.umask(0)
+    os.umask(current)
+    return 0o666 & ~current
+
+
+def write_text_atomic(path, text, mode=None):
+    """Write `text` to `path` whole or not at all: into a temporary file beside
+    it, named after it, then one rename over the target. A process crash or a
+    Ctrl-C part way leaves the old file (or none), never a truncated one
+    passing for a record (coderay-5wu.23). The file gets the mode a plain
+    open() would give it unless `mode` says otherwise; the response cache asks
+    for owner-only, since it holds repo content. Returns `path`."""
+    tmp_path = None
+    try:
+        fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path), prefix=os.path.basename(path) + ".")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.chmod(tmp_path, _umask_mode() if mode is None else mode)
+        os.replace(tmp_path, path)
+    except BaseException:
+        if tmp_path is not None:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp_path)
+        raise
+    return path

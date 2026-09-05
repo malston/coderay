@@ -28,9 +28,9 @@ Smoke test:
 import hashlib
 import json
 import os
-import tempfile
 import time
 
+from .files import write_text_atomic
 from .text import positive_int
 
 CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "crawl")
@@ -146,15 +146,8 @@ def _cache_put(provider, model, max_out, prompt, response):
         return
     os.makedirs(CACHE_DIR, mode=0o700, exist_ok=True)
     os.chmod(CACHE_DIR, 0o700)
-    path = _cache_path(provider, model, max_out, prompt)
-    fd, tmp_path = tempfile.mkstemp(dir=CACHE_DIR)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump({"provider": provider, "model": model, "response": response}, f)
-        os.replace(tmp_path, path)
-    except BaseException:
-        os.unlink(tmp_path)
-        raise
+    write_text_atomic(_cache_path(provider, model, max_out, prompt),
+                      json.dumps({"provider": provider, "model": model, "response": response}), mode=0o600)
 
 
 def call_llm(prompt: str) -> str:

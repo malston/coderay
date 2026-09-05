@@ -356,3 +356,24 @@ def test_the_manifest_separates_live_calls_from_cache_hits(tmp_path):
     run_analysis(analysis, _Args(str(tmp_path), out=str(out)))
     manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["llm"] == [] and manifest["cached_calls"] == 2
+
+
+def test_an_interrupt_inside_the_dump_write_leaves_no_state_file_and_no_temporary(tmp_path, monkeypatch, capsys):
+    """coderay-5wu.23, the bead's own scene: a second Ctrl-C lands while the
+    state is being written. The write is atomic, so nothing partial remains;
+    the second interrupt propagates over the first and no notice prints."""
+    import crawl.core.files as files
+
+    class Interrupted:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def write(self, text): raise KeyboardInterrupt
+
+    monkeypatch.setattr(files.os, "fdopen", lambda fd, *a, **k: (files.os.close(fd), Interrupted())[1])
+    out = tmp_path / "out"
+    with pytest.raises(KeyboardInterrupt):
+        run_analysis(_failing_analysis(), _Args(str(tmp_path), out=str(out)))
+    assert not (out / "run_state.json").exists()
+    assert list(out.iterdir()) == []
+    assert "run state" not in capsys.readouterr().err

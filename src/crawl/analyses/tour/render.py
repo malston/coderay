@@ -6,6 +6,7 @@ from datetime import date
 
 from markdown_it import MarkdownIt
 
+from crawl.core.files import write_text_atomic
 from crawl.core.render import markdown_parser
 
 from crawl.core import (
@@ -175,8 +176,7 @@ def available_lenses():
 
 
 def write_text(path, content):
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
+    write_text_atomic(path, content)
 
 
 def build_related_links(chapter_name, relationships, filenames):
