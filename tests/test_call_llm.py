@@ -37,6 +37,12 @@ def isolated_cache(tmp_path, monkeypatch):
     monkeypatch.delenv("LLM_PROVIDER", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    # A developer's shell may export this for interactive `crawl` runs; a
+    # test that hardcodes DEFAULT_MAX_OUTPUT_TOKENS in an expected cache path
+    # must not inherit that value, or it computes a different key than what
+    # call_llm() actually wrote (coderay-d8q). Tests that need a specific
+    # value still set it themselves via monkeypatch.setenv.
+    monkeypatch.delenv("LLM_MAX_OUTPUT_TOKENS", raising=False)
     yield
 
 
