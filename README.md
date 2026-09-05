@@ -88,6 +88,8 @@ Every analysis sends repository content to an LLM provider. Three rules hold acr
 
 ## Quickstart
 
+Requires Python 3.11 or newer.
+
 ```bash
 pip install -e .            # or: pip install -e ".[openai,gemini]" for those providers
 cp .env.example .env        # fill in the one key you need, see .env.example for all options
