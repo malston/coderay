@@ -13,6 +13,8 @@ friendly ```mermaid diagrams and code blocks the prompts produce.
 import html as _html
 import re
 
+from crawl.core.render import md_heading
+
 from markdown_it import MarkdownIt
 
 # coderay-q2r.53: image syntax is off. `![x](https://host/p?leak=...)` became a
@@ -478,7 +480,7 @@ def render_markdown(name, shared):
 
     parts.append("## The eras\n")
     for i, (era, _) in enumerate(paired):
-        parts.append(f"### Era {i+1}: {era['name']} ({era['start']} → {era.get('end') or 'present'})\n")
+        parts.append(f"### Era {i+1}: {md_heading(era['name'])} ({era['start']} → {era.get('end') or 'present'})\n")
         parts.append(era.get("description", "").strip() + "\n")
         if era.get("diagram"):
             parts.append("```mermaid\n" + str(era["diagram"]).strip() + "\n```\n")
@@ -492,7 +494,7 @@ def render_markdown(name, shared):
             continue
         cast = prof["profile"].get("cast", {})
         mood = prof["profile"].get("mood", {})
-        parts.append(f"### Era {i+1}: {era['name']}\n")
+        parts.append(f"### Era {i+1}: {md_heading(era['name'])}\n")
         parts.append("**Cast:**")
         for c in cast.get("contributors", []):
             note = f" — {c['note']}" if c.get("note") else ""

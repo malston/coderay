@@ -457,7 +457,7 @@ def render_html(name, shared):
     present_items = "\n".join(
         f'        <li>'
         f'<div class="head"><span class="num">{i+1}</span>'
-        f'<div class="headline">{md(p["headline"])}</div></div>'
+        f'<div class="headline">{md(md_heading(p["headline"]))}</div></div>'
         f'<div class="where">{md(p["where"])}</div>'
         f'<div class="body">{md(p["bet"])}</div>'
         f'</li>'
@@ -466,7 +466,7 @@ def render_html(name, shared):
     absent_items = "\n".join(
         f'        <li>'
         f'<div class="head"><span class="num">{i+1}</span>'
-        f'<div class="headline">{md(a["headline"])}</div></div>'
+        f'<div class="headline">{md(md_heading(a["headline"]))}</div></div>'
         f'<div class="where">{md(a["evidence"])}</div>'
         f'<div class="body">{md(a["tradeoff"])}</div>'
         f'</li>'

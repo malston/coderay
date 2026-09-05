@@ -17,6 +17,7 @@ from importlib import resources
 from pocketflow import Node
 
 from crawl.core import call_llm, DEFAULT_SKIP_DIR, read_prompt, fill, json_call
+from crawl.core.render import printable
 from . import gitlog as gl
 
 PROMPTS_DIR = resources.files("crawl.analyses.git_history") / "prompts"
@@ -109,7 +110,7 @@ class NameEras(Node):
 
     def post(self, shared, prep_res, exec_res):
         shared["eras"] = exec_res
-        print(f"  Named {len(exec_res)} eras: " + " -> ".join(e["name"] for e in exec_res))
+        print(f"  Named {len(exec_res)} eras: " + " -> ".join(printable(e["name"], 60) for e in exec_res))
 
 
 # Step 3. Profile each era's cast and mood, one era at a time.
@@ -133,10 +134,10 @@ class ProfileEras(Node):
         eras, template = ctx["eras"], ctx["template"]
         profiles, prior_lines = [], []
         for i, era in enumerate(eras):
-            print(f"  Profiling era {i+1}/{len(eras)}: {era['name']}")
+            print(f"  Profiling era {i+1}/{len(eras)}: {printable(era['name'], 80)}")
             window = gl.era_commits(ctx["commits_asc"], era["start"], era["end"])
             if not window:  # coderay-q2r.39
-                print(f"  Era {era['name']!r} ({era['start']}..{era['end']}) matches no "
+                print(f"  Era {printable(era['name'], 80)!r} ({era['start']}..{era['end']}) matches no "
                       "commits; skipping its profile rather than asking the model to invent one")
                 continue
             marks = gl.landmarks(window)
@@ -225,7 +226,7 @@ class Graveyard(Node):
     def exec(self, ctx):
         entries = []
         for c in ctx["graves"]:
-            print(f"  Graveyard: {c['hash'][:7]} ({c['count']} files) {c['subject'][:60]}")
+            print(f"  Graveyard: {c['hash'][:7]} ({c['count']} files) {printable(c['subject'], 60)}")
             era = _era_for(c["month"], ctx["eras"]) or {}
             prompt = fill(
                 ctx["template"],

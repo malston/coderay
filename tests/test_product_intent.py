@@ -90,3 +90,14 @@ def test_render_markdown_escapes_pipes_and_newlines_in_the_positioning_table_and
     assert len(set(pipes)) == 1 and pipes[0] >= 3, table
     assert "### Fast # fake" in md and "\n# fake" not in md
     assert "### None here" in md
+
+
+def test_render_html_keeps_a_headline_inside_its_div(tmp_path):
+    """The HTML twin of the markdown headline: a newline in a model-written
+    headline must not become a heading element planted inside the card."""
+    import json, pathlib
+    from crawl.analyses.product_intent import render
+    shared = json.loads((pathlib.Path(__file__).parent / "fixtures" / "golden" / "product-intent" / "shared.json").read_text())
+    shared["surprises"]["present"][0]["headline"] = "Fast\n# fake"
+    html = render.render_html("repo", shared)
+    assert "<h1>fake</h1>" not in html and "Fast # fake" in html

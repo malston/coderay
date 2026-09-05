@@ -128,3 +128,14 @@ def test_run_refuses_a_subdirectory_of_a_repo(tmp_path):
     with pytest.raises(SystemExit) as e:
         git_history.run(argparse.Namespace(repo_path=os.path.join(repo, "sub"), out=None))
     assert "sub" in str(e.value)
+
+
+def test_render_markdown_keeps_an_era_name_inside_its_heading():
+    """coderay-q2r.55. An era name is model text; a newline in it must not end
+    the heading and let the next line pose as one."""
+    import json, pathlib
+    from crawl.analyses import git_history
+    shared = json.loads((pathlib.Path(__file__).parent / "fixtures" / "golden" / "git-history" / "shared.json").read_text())
+    shared["eras"][0]["name"] = "Dawn\n# fake"
+    md = git_history.render_markdown("repo", shared)
+    assert "\n# fake" not in md and "Dawn # fake" in md

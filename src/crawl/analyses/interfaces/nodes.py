@@ -17,6 +17,7 @@ from importlib import resources
 from pocketflow import Node
 
 from crawl.core import call_llm, read_prompt, fill, yaml_call
+from crawl.core.render import printable
 from . import routes_find as rf
 
 PROMPTS_DIR = resources.files("crawl.analyses.interfaces") / "prompts"
@@ -243,7 +244,7 @@ class EndpointSequence(Node):
         shared["sequence_fallback"] = exec_res["fallback"]
         shared["sequence_dropped"] = exec_res["dropped"]
         dropped = exec_res["dropped"]
-        print(f"  Sequence: {exec_res['endpoint'] or 'endpoint'} "
+        print(f"  Sequence: {printable(exec_res['endpoint'], 80) or 'endpoint'} "
               f"(from {len(exec_res['files'])} source files)"
               + (f"; {len(dropped)} named file{'s' if len(dropped) != 1 else ''} not read ({', '.join(dropped)})"
                  if dropped and not exec_res["fallback"] else "")
