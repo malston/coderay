@@ -95,14 +95,10 @@ def run(args) -> None:
     with env_defaults(ENV_DEFAULTS):
         run_flow(build_flow(), shared, out, dump_run_state)
 
-    wall_seconds = time.perf_counter() - wall_start
-
-    chapters = shared["chapters"]
-    mermaid = build_mermaid(shared["abstractions"], shared["relationships"])
-
-    generated_at = date.today().isoformat()
-
     def write_tour():
+        chapters = shared["chapters"]
+        mermaid = build_mermaid(shared["abstractions"], shared["relationships"])
+        generated_at = date.today().isoformat()
         write_chapter_files(chapters, name, out, shared["relationships"], generated_at)
         write_index_md(chapters, name, args.instructions, shared["summary"], mermaid, out, generated_at)
         write_index_html(
@@ -110,8 +106,10 @@ def run(args) -> None:
             shared["selected_files"], shared["selection_reasoning"], out, generated_at,
         )
 
-    # shared holds every paid result by now; a failed write keeps it as a failed node would.
+    # shared holds every paid result by now; a failed write, or an interrupt,
+    # keeps it as a failed node would.
     keeping_results(write_tour, shared, out, dump_run_state)
+    wall_seconds = time.perf_counter() - wall_start
 
     print(f"\nWrote tour to {out}/")
     print(f"  Open {out}/index.html in a browser")
