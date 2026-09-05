@@ -1,5 +1,6 @@
 """tour: the default analysis. Crawls a repo, extracts a deterministic import
 graph, identifies abstractions, relates them, and writes a multi-chapter tour."""
+import argparse
 import os
 import time
 from datetime import date
@@ -8,7 +9,7 @@ from crawl.core import ensure_priced, get_usage, reset_usage, resolve_provider_a
 from crawl.core.env import env_defaults
 from crawl.core.runner import run_flow
 from crawl.analyses.tour.flow import create_tour_flow
-from crawl.analyses.tour.nodes import PipelineState
+from crawl.analyses.tour.nodes import CODEBASE_BUDGET, PipelineState
 from crawl.analyses.tour.render import (
     available_lenses,
     build_mermaid,
@@ -27,16 +28,38 @@ NAME = "tour"
 def build_flow():
     return create_tour_flow()
 
+def _budget(value):
+    """A positive whole number of characters. argparse runs this over a string
+    default too, so a bad CODEBASE_BUDGET in the environment fails at parse
+    time with the same message as a bad flag."""
+    try:
+        n = int(value)
+    except ValueError:
+        n = 0
+    if n <= 0:
+        raise argparse.ArgumentTypeError(
+            f"{value!r} is not a positive whole number of characters "
+            "(--codebase-budget or the CODEBASE_BUDGET environment variable)")
+    return n
+
+
 def add_arguments(parser) -> None:
     parser.add_argument("--instructions", default="beginner-tutorial", choices=available_lenses())
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--codebase-budget", type=_budget,
+        default=os.environ.get("CODEBASE_BUDGET", str(CODEBASE_BUDGET)),
+        help="characters of selected source sent to the model; caps how many whole "
+             "files are included, never how much of each. Overrides the CODEBASE_BUDGET "
+             f"environment variable. Default: {CODEBASE_BUDGET:,}")
 
 # A chapter can run past the 16384-token default on a large abstraction
 # (coderay-q2r.46); backend raises its cap the same way.
 ENV_DEFAULTS = {"LLM_MAX_OUTPUT_TOKENS": "32768"}
 
 def init_shared(args) -> PipelineState:
-    return {"repo_path": args.repo_path, "instructions": args.instructions}
+    return {"repo_path": args.repo_path, "instructions": args.instructions,
+            "codebase_budget": args.codebase_budget}
 
 def run(args) -> None:
     # Exit code 1, no usage line -- not the same as argparse's ap.error() (code 2,
@@ -50,7 +73,8 @@ def run(args) -> None:
             provider, model = resolve_provider_and_model()
         except RuntimeError:
             provider, model = "anthropic", "claude-sonnet-5"
-        print(format_dry_run_summary(estimate_dry_run_cost(args.repo_path, args.instructions, provider, model)))
+        print(format_dry_run_summary(estimate_dry_run_cost(
+            args.repo_path, args.instructions, provider, model, codebase_budget=args.codebase_budget)))
         return
 
     provider, model = resolve_provider_and_model()

@@ -77,7 +77,7 @@ def test_tour_run_applies_its_env_defaults_around_the_flow(tmp_path, monkeypatch
 
     monkeypatch.setattr(tour, "run_flow", fake_run_flow)
     args = type("A", (), {"repo_path": str(tmp_path), "instructions": "beginner-tutorial",
-                          "dry_run": False, "out": str(tmp_path / "o")})()
+                          "dry_run": False, "out": str(tmp_path / "o"), "codebase_budget": 1_000_000})()
     with pytest.raises(Stop):
         tour.run(args)
     assert seen["cap"] == 32768

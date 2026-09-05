@@ -326,7 +326,8 @@ def _codebase_preview_text(repo_path, budget):
     return "\n\n".join(parts)
 
 
-def estimate_dry_run_cost(repo_path, instructions, provider, model, chapter_guess=DRY_RUN_CHAPTER_GUESS):
+def estimate_dry_run_cost(repo_path, instructions, provider, model, chapter_guess=DRY_RUN_CHAPTER_GUESS,
+                          codebase_budget=CODEBASE_BUDGET):
     """Estimate the cost of a real run without calling any LLM. Input tokens
     use a chars/4 heuristic; output tokens assume every call hits the
     configured max-output cap (a worst-case upper bound, not a typical case)."""
@@ -337,7 +338,7 @@ def estimate_dry_run_cost(repo_path, instructions, provider, model, chapter_gues
     # what that prompt looks like.
     select_prompt, _files, _root = SmartCrawl().prep({"repo_path": repo_path})
 
-    codebase = _codebase_preview_text(repo_path, CODEBASE_BUDGET)
+    codebase = _codebase_preview_text(repo_path, codebase_budget)
     analyze_prompt = fill(
         read_prompt(PROMPTS_DIR, "identify-abstractions.md"),
         codebase=codebase, selected_files="(estimated -- not yet known)",
@@ -364,6 +365,7 @@ def estimate_dry_run_cost(repo_path, instructions, provider, model, chapter_gues
 
     return {
         "provider": provider, "model": model, "chapter_guess": chapter_guess,
+        "codebase_budget": codebase_budget,
         "estimated_input_tokens": estimated_input_tokens,
         "estimated_output_tokens_worst_case": estimated_output_tokens_worst_case,
         "cost_low": cost_for(provider, model, low_usage),
@@ -379,6 +381,7 @@ def format_dry_run_summary(estimate):
     return (
         "Estimated cost (dry run)\n"
         f"Assumes ~{estimate['chapter_guess']} chapters (actual count depends on the repo)\n"
+        f"Codebase budget: {estimate['codebase_budget']:,} chars\n"
         f"Estimated cost:  {cost_line}\n"
         f"Estimated usage: ~{estimate['estimated_input_tokens']} input tokens, "
         f"up to ~{estimate['estimated_output_tokens_worst_case']} output tokens\n"

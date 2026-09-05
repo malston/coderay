@@ -165,6 +165,7 @@ crawl tour path/to/repo --dry-run
 ```text
 Estimated cost (dry run)
 Assumes ~8 chapters (actual count depends on the repo)
+Codebase budget: 1,000,000 chars
 Estimated cost:  $0.0123 - $0.1456
 Estimated usage: ~12345 input tokens, up to ~131072 output tokens
 Note: this estimate does not account for prompt caching -- a real run
@@ -177,6 +178,17 @@ The low end of the range assumes zero output tokens; the high end assumes every 
 The estimate also can't account for prompt caching, since it never makes a real LLM call. A real run reuses the same codebase text across the Analyze, Relate, and WriteChapters calls, so part of what the estimate treats as full-price input ends up billed as cheaper cache reads. On a repo where caching kicks in heavily, the actual cost reported after a real run can come in below this estimate's low end.
 
 A real run (without `--dry-run`) prints a `Session` summary at the end with the actual token counts and cost, based on the usage each LLM call reported.
+
+### Send the model more of the code
+
+The tour sends the model the files it selected, whole, until 1,000,000 characters are spent, and drops the rest. On a large repo the dry run shows that cap in the `Codebase budget` line. Raise it with a flag or an environment variable; the flag wins when both are set:
+
+```bash
+crawl tour path/to/repo --codebase-budget 2000000
+CODEBASE_BUDGET=2000000 crawl tour path/to/repo
+```
+
+The budget caps how many whole files reach the model. It never trims a file part way, so a higher budget means more files in the prompt, and a larger prompt on every call that carries the codebase. Run `--dry-run` with the new value first to see the cost.
 
 ### Pricing overrides
 

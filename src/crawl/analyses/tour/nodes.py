@@ -50,11 +50,12 @@ class PipelineState(TypedDict, total=False):
     Set by the caller before the flow runs:
       repo_path               str   directory to analyze
       instructions             str   instructions/<name>.md lens to use
+      codebase_budget          int   SmartCrawl.post: char budget for the assembled codebase
+                                     (--codebase-budget, CODEBASE_BUDGET env, or the constant)
 
     Optional overrides read via shared.get(...) (all have defaults):
       preview_budget           int   SmartCrawl.prep: char budget for the file preview manifest
       target_files             int   SmartCrawl.prep: target selected-file count
-      codebase_budget          int   SmartCrawl.post: char budget for the assembled codebase
       chapter_context_window   int   WriteChapters.prep: # of prior chapters kept as context
 
     Written by SmartCrawl.post; read by Analyze/Relate/WriteChapters.prep and
