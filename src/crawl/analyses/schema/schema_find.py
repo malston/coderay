@@ -95,15 +95,22 @@ def _read(path, repo=None, limit=None):
     return text
 
 
+def _one_file(kind, repo, path, text):
+    """The result for a schema that is one file: `path` and `files` agree."""
+    rel = os.path.relpath(path, repo)
+    return {"kind": kind, "path": rel, "files": [rel], "text": text}
+
+
 def find_schema(repo, override=None):
-    """Return {kind, path(s), text}. `override` forces a specific file."""
+    """Return {kind, path, files, text}: `path` names the schema for a reader (a
+    sentence for the models and embedded-SQL cases), `files` lists what was
+    read for the manifest. `override` forces a specific file."""
     if override:
         # No containment check: --schema is the user pointing at their own file,
         # and an absolute path is an advertised feature of the flag. Unlike a
         # path the crawl or the model produced, this one is not untrusted input.
         p = override if os.path.isabs(override) else os.path.join(repo, override)
-        return {"kind": "override", "path": os.path.relpath(p, repo),
-                "text": _read(p, limit=SCHEMA_BUDGET)}
+        return _one_file("override", repo, p, _read(p, limit=SCHEMA_BUDGET))
 
     prisma, rails, sql, models, go_files = [], [], [], [], []
     for dirpath, _dirnames, filenames in _walk(repo):
@@ -123,23 +130,20 @@ def find_schema(repo, override=None):
     if prisma:
         # Prefer the largest schema.prisma (the app's, not a package fixture).
         path = max(prisma, key=lambda p: os.path.getsize(p))
-        return {"kind": "prisma", "path": os.path.relpath(path, repo),
-                "text": _read(path, repo, SCHEMA_BUDGET)}
+        return _one_file("prisma", repo, path, _read(path, repo, SCHEMA_BUDGET))
     if rails:
         path = rails[0]
-        return {"kind": "rails", "path": os.path.relpath(path, repo),
-                "text": _read(path, repo, SCHEMA_BUDGET)}
+        return _one_file("rails", repo, path, _read(path, repo, SCHEMA_BUDGET))
     if sql:
         path = max(sql, key=lambda p: os.path.getsize(p))
-        return {"kind": "sql", "path": os.path.relpath(path, repo),
-                "text": _read(path, repo, SCHEMA_BUDGET)}
+        return _one_file("sql", repo, path, _read(path, repo, SCHEMA_BUDGET))
     if models:
         # No single-file schema: concatenate the model files (Django/SQLAlchemy).
         models = sorted(models, key=lambda p: os.path.getsize(p), reverse=True)
         text, kept = _join_within_budget(
             [(os.path.relpath(m, repo), _read(m, repo, SCHEMA_BUDGET)) for m in models], "#")
         note = "" if len(kept) == len(models) else f" of {len(models)} found"
-        return {"kind": "models", "path": f"{len(kept)} models.py files{note}", "text": text}
+        return {"kind": "models", "path": f"{len(kept)} models.py files{note}", "files": kept, "text": text}
 
     # Go, last: a models.py is a convention, DDL inside string literals is a
     # heuristic, and reading every Go file is the costly part, so it only
@@ -166,9 +170,9 @@ def find_schema(repo, override=None):
         note = "" if len(kept) == len(embedded) else f" of {len(embedded)} found"
         return {"kind": "embedded-sql",
                 "path": f"{len(kept)} Go file{'s' if len(kept) != 1 else ''} with embedded SQL ({', '.join(kept)}){note}",
-                "text": text}
+                "files": kept, "text": text}
 
-    return {"kind": None, "path": None, "text": ""}
+    return {"kind": None, "path": None, "files": [], "text": ""}
 
 
 def find_migrations(repo):

@@ -60,7 +60,10 @@ def test_bundle_keeps_whole_files_and_reports_what_the_budget_dropped(tmp_path):
     assert all(block.count("x = ") % 20 == 0 for block in bundle.split("File: ")[1:])
     assert "File: src/f0.py" in bundle
     whole, whole_stats = n.bundle(repo, max_chars=10 ** 6)
-    assert whole_stats == {"included": 10, "dropped": 0, "unreadable": 0}
+    assert whole_stats == {"included": 10, "dropped": 0, "unreadable": 0,
+                           "files": [f"src/f{i}.py" for i in range(10)]}
+    # coderay-3eu: the list is what reached the bundle, headers both ways
+    assert stats["files"] == [b.split("\n", 1)[0] for b in bundle.split("File: ")[1:]]
 
 
 def test_bundle_honours_include_and_exclude_patterns(tmp_path):
@@ -153,14 +156,14 @@ def test_bundle_counts_the_files_it_could_not_read(tmp_path, capsys):
     repo = _tree(tmp_path, {"src/a.py": "a\n"})
     pathlib.Path(repo, "src/b.py").write_bytes(b"\xff\xfe\x00binary")
     bundle, stats = n.bundle(repo)
-    assert stats == {"included": 1, "dropped": 0, "unreadable": 1}
+    assert stats == {"included": 1, "dropped": 0, "unreadable": 1, "files": ["src/a.py"]}
     n.FetchRepo().run({"repo_path": repo, "include": [], "exclude": []})
     assert "1 files could not be read" in capsys.readouterr().out
 
 
 def test_bundle_drop_line_tells_the_user_how_to_steer(tmp_path, capsys, monkeypatch):
     """The budget itself is tested above; this pins the message."""
-    monkeypatch.setattr(n, "bundle", lambda *a, **k: ("File: x\n", {"included": 1, "dropped": 5, "unreadable": 0}))
+    monkeypatch.setattr(n, "bundle", lambda *a, **k: ("File: x\n", {"included": 1, "dropped": 5, "unreadable": 0, "files": ["x"]}))
     n.FetchRepo().run({"repo_path": str(tmp_path), "include": [], "exclude": []})
     out = capsys.readouterr().out
     assert "Dropped 5 files" in out and "--include" in out and "--exclude" in out
@@ -252,3 +255,12 @@ def test_variant_print_strips_control_characters_and_newlines(monkeypatch, capsy
     out = capsys.readouterr().out
     assert "\x1b" not in out and out.count("\n") == 1
     assert "Variant sentence: ok[31m fake line of output..." in out
+
+
+def test_sent_names_the_files_the_bundle_carried(tmp_path):
+    """coderay-3eu: the manifest reads what FetchRepo stored."""
+    from crawl.analyses import product_intent
+    repo = _tree(tmp_path, {"src/a.py": "a\n", "src/b.py": "b\n"})
+    shared = {"repo_path": repo, "include": [], "exclude": []}
+    n.FetchRepo().run(shared)
+    assert product_intent.sent(shared) == {"files": ["src/a.py", "src/b.py"]}

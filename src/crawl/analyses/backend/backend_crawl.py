@@ -143,7 +143,7 @@ def build_bundle(repo, max_chars=650_000, per_layer_sample=18):
     # share (max_chars/4 with four populated layers) is dropped; weight the
     # spine layers if that ever bites.
     populated = [layer for layer in BUNDLE_ORDER if queues[layer]]
-    chosen = {layer: [] for layer in LAYERS}       # (rank, block)
+    chosen = {layer: [] for layer in LAYERS}       # (rank, rel, block)
     set_aside = {layer: [] for layer in LAYERS}    # (rank, rel, size): read again only if chosen
     total = len(header)
     for n, layer in enumerate(populated):
@@ -162,7 +162,7 @@ def build_bundle(repo, max_chars=650_000, per_layer_sample=18):
             if spent + len(block) > share:
                 set_aside[layer].append((rank, rel, len(block)))
                 continue
-            chosen[layer].append((rank, block))
+            chosen[layer].append((rank, rel, block))
             spent += len(block)
         total += spent
     while any(set_aside.values()):
@@ -177,14 +177,15 @@ def build_bundle(repo, max_chars=650_000, per_layer_sample=18):
             text = safe_read(os.path.join(repo, rel))
             if not text or not text.strip():
                 continue
-            chosen[layer].append((rank, _block(layer, rel, text)))
+            chosen[layer].append((rank, rel, _block(layer, rel, text)))
             total += size
-    parts = [header] + [block for layer in BUNDLE_ORDER for _rank, block in sorted(chosen[layer])]
-    kept = len(parts) - 1
+    ordered = [(rel, block) for layer in BUNDLE_ORDER for _rank, rel, block in sorted(chosen[layer])]
+    parts = [header] + [block for _rel, block in ordered]
+    files = [rel for rel, _block in ordered]  # what left the machine (coderay-3eu)
 
-    if not kept:
+    if not files:
         # The counts header alone tells the model nothing it can read a backend
         # from, and a truthy bundle hides "found nothing" from the caller.
-        return "", {"counts": dict(counts), "included": 0}
+        return "", {"counts": dict(counts), "included": 0, "files": []}
 
-    return "".join(parts), {"counts": dict(counts), "included": kept}
+    return "".join(parts), {"counts": dict(counts), "included": len(files), "files": files}

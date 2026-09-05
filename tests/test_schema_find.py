@@ -66,7 +66,7 @@ def test_find_schema_concatenates_model_files_when_there_is_no_single_file(tmp_p
 
 def test_find_schema_returns_nothing_for_a_repo_with_no_schema(tmp_path):
     found = sf.find_schema(_repo(tmp_path, {"README.md": "# hi\n"}))
-    assert found == {"kind": None, "path": None, "text": ""}
+    assert found == {"kind": None, "path": None, "files": [], "text": ""}
 
 
 def test_find_schema_honours_an_explicit_override(tmp_path):
@@ -175,6 +175,10 @@ def test_find_schema_keeps_whole_model_files_and_drops_the_tail(tmp_path):
     assert found["kind"] == "models"
     assert "of 5 found" in found["path"]
     assert "# ===== TRUNCATED" not in found["text"]   # whole files, fewer of them
+    # coderay-3eu: the manifest lists the kept files, not the five found
+    import re
+    assert 0 < len(found["files"]) < 5
+    assert found["files"] == re.findall(r"^# ===== (\S+) =====$", found["text"], re.M)
 
 
 def test_find_schema_refuses_a_schema_symlinked_to_an_in_repo_credential_file(tmp_path):
@@ -371,6 +375,24 @@ def test_embedded_sql_keeps_whole_files_and_drops_the_tail_under_the_budget(tmp_
     files = {f"pkg/m{i}.go": "package a\n_ = `" + ddl % i + "`\n" for i in range(4)}
     found = sf.find_schema(_repo(tmp_path, files))
     assert found["path"].startswith("2 Go files with embedded SQL") and found["path"].endswith(" of 4 found")
+    assert len(found["files"]) == 2 and all(f"===== {f} =====" in found["text"] for f in found["files"])
     monkeypatch.setattr(sf, "SCHEMA_BUDGET", 50)
     found = sf.find_schema(_repo(tmp_path / "one", {"pkg/m.go": files["pkg/m0.go"]}))
     assert "CREATE TABLE IF NOT EXISTS t0" in found["text"] and found["path"].startswith("1 Go file with")
+
+
+def test_find_schema_lists_the_files_it_read(tmp_path):
+    """coderay-3eu: the manifest needs paths, and the models and embedded-SQL
+    branches describe themselves in `path` with a sentence, not a path."""
+    assert sf.find_schema(_repo(tmp_path, {"db/schema.rb": "create_table :users\n"}))["files"] == ["db/schema.rb"]
+
+
+def test_find_schema_lists_every_models_file_it_joined(tmp_path):
+    repo = _repo(tmp_path, {"a/models.py": "class A: pass\n", "b/models.py": "class B: pass\n"})
+    found = sf.find_schema(repo)
+    assert found["kind"] == "models" and sorted(found["files"]) == ["a/models.py", "b/models.py"]
+
+
+def test_find_schema_override_lists_the_override(tmp_path):
+    repo = _repo(tmp_path, {"custom/ddl.sql": "CREATE TABLE t();\n"})
+    assert sf.find_schema(repo, override="custom/ddl.sql")["files"] == ["custom/ddl.sql"]

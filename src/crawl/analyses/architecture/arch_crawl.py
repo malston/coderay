@@ -452,6 +452,7 @@ def build_bundle(repo, max_chars=500_000):
     """Return (bundle_text, stats)."""
     buckets = {k: [] for k in ('compose', 'k8s', 'gateway', 'iac')}
     env_names, deps = set(), {}
+    env_files, package_files = [], []  # what contributed names and dependency lists
     for dirpath, _dn, filenames in _walk(repo):
         for f in filenames:
             rel = os.path.relpath(os.path.join(dirpath, f), repo)
@@ -460,18 +461,26 @@ def build_bundle(repo, max_chars=500_000):
                 continue
             full = os.path.join(dirpath, f)
             if kind == 'env':
-                env_names.update(_env_names(_read(full, 40_000, repo)))
+                names = _env_names(_read(full, 40_000, repo))
+                if names:
+                    env_names.update(names)
+                    env_files.append(rel)
             elif kind == 'package':
                 try:
                     data = json.loads(_read(full, 200_000, repo))
-                    for grp in ('dependencies', 'devDependencies'):
-                        deps.update(data.get(grp, {}))
                 except (ValueError, OSError):
-                    pass
+                    continue
+                if not isinstance(data, dict):
+                    continue  # docs/ and examples/ are walked; a package.json there can hold anything
+                found = {k: v for grp in ('dependencies', 'devDependencies')
+                         if isinstance(data.get(grp), dict) for k, v in data[grp].items()}
+                if found:
+                    deps.update(found)
+                    package_files.append(rel)
             else:
                 buckets[kind].append((rel, _redact(_read(full, repo=repo))))
 
-    parts = []
+    parts = []          # (files this section discloses, text)
     included = 0        # files whose text actually reached the bundle
     for kind, label in (('compose', 'PROCESS DECLARATION (compose / k8s)'),
                         ('k8s', 'KUBERNETES MANIFESTS'),
@@ -479,33 +488,43 @@ def build_bundle(repo, max_chars=500_000):
                         ('iac', 'INFRASTRUCTURE-AS-CODE (Terraform)')):
         for rel, text in buckets[kind]:
             if text.strip():
-                parts.append(f"===== {label}: {rel} =====\n{text}\n")
+                parts.append(([rel], f"===== {label}: {rel} =====\n{text}\n"))
                 included += 1
 
     if env_names:
-        parts.append("===== ENVIRONMENT VARIABLE NAMES (values omitted) =====\n"
-                     + "\n".join(sorted(env_names)) + "\n")
+        parts.append((env_files, "===== ENVIRONMENT VARIABLE NAMES (values omitted) =====\n"
+                      + "\n".join(sorted(env_names)) + "\n"))
     if deps:
-        parts.append("===== PACKAGE DEPENDENCIES (name @ version) =====\n"
-                     + "\n".join(f"{k} @ {v}" for k, v in sorted(deps.items())) + "\n")
+        parts.append((package_files, "===== PACKAGE DEPENDENCIES (name @ version) =====\n"
+                      + "\n".join(f"{k} @ {v}" for k, v in sorted(deps.items())) + "\n"))
 
     idir, isubs = _integration_dirs(repo)
     if isubs:
-        parts.append(f"===== INTEGRATION DIRECTORIES ({idir}, {len(isubs)} total) =====\n"
-                     + ", ".join(isubs) + "\n")
+        parts.append(([], f"===== INTEGRATION DIRECTORIES ({idir}, {len(isubs)} total) =====\n"
+                      + ", ".join(isubs) + "\n"))
 
     sdk, sdk_unavailable = _sdk_grep(repo)
     if sdk:
-        parts.append("===== SDK IMPORTS (git grep — file:line: sdk) =====\n" + sdk + "\n")
+        parts.append(([], "===== SDK IMPORTS (git grep — file:line: sdk) =====\n" + sdk + "\n"))
     elif sdk_unavailable and parts:
         # Only beside real sources: an empty bundle must stay empty so the
         # no-architecture-sources guard still fires. At the top, because the
         # budget cut below takes from the end and the model must read this.
-        parts.insert(0, f"===== SDK IMPORTS unavailable: {sdk_unavailable} =====\n"
-                        "No import evidence could be gathered, so every connection below is "
-                        "configured, not proven live.\n")
+        parts.insert(0, ([], f"===== SDK IMPORTS unavailable: {sdk_unavailable} =====\n"
+                         "No import evidence could be gathered, so every connection below is "
+                         "configured, not proven live.\n"))
 
-    whole = "\n".join(parts)
+    # What left the machine (coderay-3eu): a section whose text starts past the
+    # cut below never reaches the model, so its files are not listed. Sorted,
+    # since the walk order differs by platform.
+    files, offset = [], 0
+    for rels, text in parts:
+        if offset < max_chars:
+            files.extend(rels)
+        offset += len(text) + 1
+    sdk_files = sorted({line.rsplit(":", 2)[0] for line in sdk.splitlines()}) if sdk else []
+
+    whole = "\n".join(text for _rels, text in parts)
     bundle = whole[:max_chars]
     if len(whole) > max_chars:
         # The slice lands mid-line, and without this the model reads a config
@@ -524,5 +543,8 @@ def build_bundle(repo, max_chars=500_000):
         "integrations": len(isubs),
         "sdk_lines": sdk.count("\n") + 1 if sdk else 0,
         "sdk_unavailable": sdk_unavailable,
+        "files": sorted(files),
+        "sdk_import_files": sdk_files,
+        "integration_dirs": isubs,
     }
     return bundle, stats

@@ -47,6 +47,7 @@ class BuildBundle(Node):
             raise SystemExit(why)
         shared["codebase"] = bundle
         shared["layer_counts"] = c
+        shared["bundle_files"] = stats["files"]
         print(f"  Bundle: {stats['included']} files ({len(bundle):,} chars). Layers — "
               + ", ".join(f"{k}:{c.get(k, 0)}" for k in bc.LAYERS))
 

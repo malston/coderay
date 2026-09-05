@@ -37,7 +37,7 @@ def bundle(repo, include=None, exclude=None, max_chars=650_000):
     mid-way reads as a finished one to the model. Files come in list_files
     order, which already refuses symlinks that resolve outside the repo.
     """
-    parts, total, included, dropped, unreadable = [], 0, 0, 0, 0
+    parts, total, files, dropped, unreadable = [], 0, [], 0, 0
     for path in list_files(repo, include=include or None, exclude=exclude or None):
         text = safe_read(path)
         if text is None:
@@ -50,8 +50,8 @@ def bundle(repo, include=None, exclude=None, max_chars=650_000):
             continue
         parts.append(block)
         total += len(block) + 1
-        included += 1
-    return "\n".join(parts), {"included": included, "dropped": dropped, "unreadable": unreadable}
+        files.append(rel)
+    return "\n".join(parts), {"included": len(files), "dropped": dropped, "unreadable": unreadable, "files": files}
 
 
 class FetchRepo(Node):
@@ -75,6 +75,7 @@ class FetchRepo(Node):
                 f"(include={prep_res['include'] or 'all'}, exclude={prep_res['exclude'] or 'none'}). "
                 "Nothing to read a product story from.")
         shared["codebase"] = codebase
+        shared["bundle_files"] = stats["files"]
         print(f"  Crawled {stats['included']} files ({len(codebase):,} chars) from {prep_res['repo_path']}")
         if stats["unreadable"]:
             print(f"  {stats['unreadable']} files could not be read (binary or unreadable) and were skipped")

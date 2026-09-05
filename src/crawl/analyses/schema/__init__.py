@@ -91,6 +91,13 @@ def add_arguments(parser):
                         help="path to the schema file, relative to the repo "
                              "(overrides autodetect)")
 
+def sent(shared):
+    """What left the machine: the schema files read, and the names (not the
+    bodies) of the migrations the acts prompt listed; below MIGRATION_FLOOR
+    that prompt is never built and none go (coderay-3eu)."""
+    return {"files": shared.get("schema_files", []), "migration_names": shared.get("migrations_sent", [])}
+
+
 def init_shared(args):
     return {"repo_path": args.repo_path,
             "schema_override": getattr(args, "schema", None)}

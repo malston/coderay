@@ -135,3 +135,14 @@ def test_the_no_backend_message_names_go_among_the_frameworks(tmp_path):
     with pytest.raises(SystemExit) as e:
         n.BuildBundle().run({"repo_path": str(tmp_path)})
     assert "Go" in str(e.value) and "Django" in str(e.value)
+
+
+def test_sent_names_the_files_the_bundle_carried(tmp_path):
+    """coderay-3eu: the manifest reads what BuildBundle stored."""
+    from crawl.analyses import backend
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "urls.py").write_text("urlpatterns = []\n", encoding="utf-8")
+    (tmp_path / "app" / "models.py").write_text("class User: pass\n", encoding="utf-8")
+    shared = {"repo_path": str(tmp_path)}
+    n.BuildBundle().run(shared)
+    assert sorted(backend.sent(shared)["files"]) == ["app/models.py", "app/urls.py"]

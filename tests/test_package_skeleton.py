@@ -73,3 +73,14 @@ def test_the_python_floor_is_at_least_the_release_that_ships_tomllib():
     floors = [s for s in SpecifierSet(_pyproject()["project"]["requires-python"]) if s.operator == ">="]
     assert len(floors) == 1, floors
     assert Version(floors[0].version) >= Version("3.11")
+
+
+def test_every_analysis_says_what_it_sent():
+    """manifest.json records which repo content reached the model (coderay-3eu);
+    an analysis without `sent` would write a manifest that says nothing."""
+    import json
+    from crawl.analyses import ANALYSES
+    for name, analysis in ANALYSES.items():
+        described = analysis.sent({})
+        assert isinstance(described, dict) and described, name
+        json.dumps(described)

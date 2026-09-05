@@ -61,6 +61,7 @@ def _fake_analysis(env_defaults_dict=None, record=None):
             md_preamble=lambda sh: "")
         init_shared = staticmethod(lambda args: {"repo_path": args.repo_path})
         build_flow = staticmethod(Flow)
+        sent = staticmethod(lambda shared: {"files": []})
 
     Analysis.INPUT_KEYS = frozenset()
     if env_defaults_dict:
@@ -135,6 +136,7 @@ def test_run_analysis_writes_utf8_output_under_the_c_locale(tmp_path):
                 md_preamble=lambda sh: "")
             init_shared = staticmethod(lambda args: {{"repo_path": args.repo_path}})
             build_flow = staticmethod(Flow)
+            sent = staticmethod(lambda shared: {{"files": []}})
 
         class Args:
             repo_path = {str(tmp_path)!r}
@@ -283,3 +285,74 @@ def test_an_interrupt_whose_dump_fails_still_propagates_and_says_the_state_was_l
         run_analysis(_failing_analysis(fail=KeyboardInterrupt()), _Args(str(tmp_path), out=str(out)))
     assert not (out / "run_state.json").exists()
     assert "Run interrupted, and the partial run state could not be written" in capsys.readouterr().err
+
+
+# coderay-3eu: a successful run records what left the machine.
+def test_run_analysis_writes_a_manifest_of_what_was_sent(tmp_path):
+    analysis = _fake_analysis()
+    analysis.sent = staticmethod(lambda shared: {"files": ["a.py", "b.py"]})
+    out = tmp_path / "out"
+    run_analysis(analysis, _Args(str(tmp_path), out=str(out)))
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["analysis"] == "demo" and manifest["repo"] == tmp_path.name
+    assert manifest["files"] == ["a.py", "b.py"]
+    assert manifest["generated_at"].endswith("+00:00")
+    assert manifest["llm"] == []  # no call_llm ran in this fake
+
+
+def test_a_failed_run_writes_no_manifest(tmp_path):
+    out = tmp_path / "out"
+    with pytest.raises(RuntimeError):
+        run_analysis(_failing_analysis(), _Args(str(tmp_path), out=str(out)))
+    assert not (out / "manifest.json").exists()
+
+
+def test_the_manifest_lists_this_runs_provider_and_model_pairs_once_each(tmp_path):
+    import importlib
+    llm = importlib.import_module("crawl.core.call_llm")  # crawl.core re-exports a function of that name
+    llm._record_usage("gemini", "stale-from-an-earlier-run", 1, 1, 0, 0, 0.0, False)
+
+    class Flow:
+        def run(self, shared):
+            shared["body_md"] = "### A\ntext"
+            llm._record_usage("openai", "n", 1, 1, 0, 0, 0.0, False)
+            llm._record_usage("anthropic", "m", 1, 1, 0, 0, 0.0, False)
+            llm._record_usage("anthropic", "m", 1, 1, 0, 0, 0.0, True)
+
+    analysis = _fake_analysis()
+    analysis.build_flow = staticmethod(Flow)
+    out = tmp_path / "out"
+    run_analysis(analysis, _Args(str(tmp_path), out=str(out)))
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["llm"] == [{"provider": "anthropic", "model": "m"}, {"provider": "openai", "model": "n"}]
+
+
+def test_a_rerun_that_fails_leaves_no_earlier_manifest_behind(tmp_path):
+    """The output directory is the same run to run; a manifest from an earlier
+    successful run beside a fresh run_state.json would describe the wrong run."""
+    out = tmp_path / "out"
+    run_analysis(_fake_analysis(), _Args(str(tmp_path), out=str(out)))
+    assert (out / "manifest.json").exists()
+    with pytest.raises(RuntimeError):
+        run_analysis(_failing_analysis(), _Args(str(tmp_path), out=str(out)))
+    assert not (out / "manifest.json").exists()
+
+
+def test_the_manifest_separates_live_calls_from_cache_hits(tmp_path):
+    """A rerun served from the LLM disk cache sends nothing; the manifest must
+    not read like a live run."""
+    import importlib
+    llm = importlib.import_module("crawl.core.call_llm")
+
+    class Flow:
+        def run(self, shared):
+            shared["body_md"] = "### A\ntext"
+            llm._record_usage("anthropic", "m", 0, 0, 0, 0, 0.0, True)
+            llm._record_usage("anthropic", "m", 0, 0, 0, 0, 0.0, True)
+
+    analysis = _fake_analysis()
+    analysis.build_flow = staticmethod(Flow)
+    out = tmp_path / "out"
+    run_analysis(analysis, _Args(str(tmp_path), out=str(out)))
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["llm"] == [] and manifest["cached_calls"] == 2

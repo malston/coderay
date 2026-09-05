@@ -42,6 +42,9 @@ class BuildBundle(Node):
             "has no service graph to draw.")
         shared["codebase"] = bundle
         shared["arch_stats"] = stats
+        shared["bundle_files"] = stats["files"]
+        shared["sdk_import_files"] = stats["sdk_import_files"]
+        shared["integration_dirs"] = stats["integration_dirs"]
         print(f"  Bundle: {stats['config_files']} config files, {stats['env_vars']} env vars, "
               f"{stats['deps']} deps, {stats['integrations']} integrations, {stats['sdk_lines']} SDK imports"
               + (f" (SDK imports unavailable: {stats['sdk_unavailable']})" if stats.get("sdk_unavailable") else ""))

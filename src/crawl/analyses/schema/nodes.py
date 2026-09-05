@@ -108,6 +108,7 @@ class FindSchema(Node):
         shared["schema"] = schema["text"]
         shared["schema_kind"] = schema["kind"]
         shared["schema_path"] = schema["path"]
+        shared["schema_files"] = schema["files"]
         shared["migration_dir"] = mig_dir
         shared["migration_names"] = mig_names
         print(f"  Schema: {schema['path']} ({schema['kind']}, {len(schema['text']):,} chars); "
@@ -232,6 +233,8 @@ class MigrationActs(Node):
 
     def post(self, shared, prep_res, exec_res):
         shared["migration_md"] = exec_res
+        # Below the floor no prompt carried the names (coderay-3eu).
+        shared["migrations_sent"] = prep_res if exec_res is not None else []
         if exec_res:
             print(f"  Migrations: {exec_res.count(chr(35) + '##')} acts")
         else:
