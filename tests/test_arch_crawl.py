@@ -83,6 +83,15 @@ def test_env_names_keeps_the_names_and_never_the_values():
     assert names == ["STRIPE_SECRET_KEY", "DATABASE_URL"]
 
 
+def _commit_all(repo):
+    """Make `repo` a git checkout with every file committed, so git grep sees it."""
+    import subprocess
+    for cmd in (["init", "-q"], ["add", "-A"]):
+        subprocess.run(["git", "-C", repo] + cmd, check=True)
+    subprocess.run(["git", "-C", repo, "-c", "user.email=a@b.c", "-c", "user.name=t",
+                    "commit", "-qm", "x"], check=True)
+
+
 def _repo(tmp_path, files):
     for rel, text in files.items():
         p = tmp_path / rel
@@ -373,10 +382,7 @@ def test_sdk_grep_with_no_matches_is_not_reported_as_unavailable(tmp_path):
     zero and must not carry the unavailable note."""
     import subprocess
     repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n", "a.ts": "const x = 1;\n"})
-    for cmd in (["init", "-q"], ["add", "-A"]):
-        subprocess.run(["git", "-C", repo] + cmd, check=True)
-    subprocess.run(["git", "-C", repo, "-c", "user.email=a@b.c", "-c", "user.name=t",
-                    "commit", "-qm", "x"], check=True)
+    _commit_all(repo)
     bundle, stats = ac.build_bundle(repo)
     assert stats["sdk_lines"] == 0 and stats["sdk_unavailable"] is None
     assert "SDK IMPORTS unavailable" not in bundle
@@ -531,10 +537,7 @@ def test_sdk_evidence_carries_the_path_and_the_sdk_but_not_the_source(tmp_path):
         "docker-compose.yml": "services: {}\n",
         "pay.ts": 'import Stripe from "stripe";\nconst s = new Stripe("sk_live_HARDCODED");\n',
     })
-    for cmd in (["init", "-q"], ["add", "-A"]):
-        subprocess.run(["git", "-C", repo] + cmd, check=True)
-    subprocess.run(["git", "-C", repo, "-c", "user.email=a@b.c", "-c", "user.name=t",
-                    "commit", "-qm", "x"], check=True)
+    _commit_all(repo)
 
     bundle, stats = ac.build_bundle(repo)
     assert "sk_live_HARDCODED" not in bundle
@@ -593,3 +596,81 @@ def test_build_bundle_refuses_a_credential_named_manifest_it_walked_to(tmp_path)
     assert "HUNTER2" not in bundle
     assert stats["env_vars"] == 1                 # .env is still read for names
     assert "region" in bundle and "hunter2" not in bundle   # .tfvars still read, redacted
+
+
+def test_sdk_evidence_reads_go_import_paths(tmp_path):
+    """coderay-5wu.14. A Go import is a module path, not a package name, so it
+    needs its own pattern; the evidence is the client's name, drawn from the
+    path (the repo segment, or the owner when the repo is a generic sdk-go)."""
+    import subprocess
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services: {}\n",
+        "store.go": ('package hub\n\nimport (\n\t"database/sql"\n\t"modernc.org/sqlite"\n'
+                     '\t"github.com/stripe/stripe-go/v79"\n\t"github.com/acme/clients/sdk-go/pkg/x"\n'
+                     '\tredis "github.com/redis/go-redis/v9"\n\t"cloud.google.com/go/storage"\n'
+                     '\t"google.golang.org/grpc"\n\t"github.com/google/uuid"\n'
+                     '\t_ "github.com/lib/pq"\n\t"github.com/aws/aws-sdk-go-v2/service/s3"\n'
+                     '\t"github.com/aws/aws-sdk-go/aws"\n\t"github.com/acme/go-sdk/v3"\n\t"gorm.io/gorm/logger"\n)\n'),
+        "one.go": 'package hub\nimport sq "github.com/mattn/go-sqlite3"\n',
+        "two.go": 'package hub\nimport "entgo.io/ent/dialect"\n',
+        # an opening quote with no closing one, in a file the grep also covers
+        "doc.py": 'DOC = """\n    "modernc.org/sqlite\n"""\n',
+    })
+    _commit_all(repo)
+    bundle, stats = ac.build_bundle(repo)
+    for line in ("store.go:5: sqlite", "store.go:6: stripe-go", "store.go:7: acme",
+                 "store.go:8: go-redis", "store.go:9: storage", "store.go:10: grpc",
+                 "store.go:12: pq", "store.go:13: aws-sdk-go-v2", "store.go:14: aws-sdk-go",
+                 "store.go:15: acme", "store.go:16: gorm", "one.go:2: go-sqlite3", "two.go:2: ent"):
+        assert line in bundle, line
+    assert "uuid" not in bundle and "database/sql" not in bundle
+    assert "doc.py" not in bundle          # an unterminated quote is not evidence and does not crash
+    assert stats["sdk_lines"] == 13
+    assert len(ac._sdk_grep(repo, max_lines=2)[0].splitlines()) == 2
+
+
+@pytest.mark.parametrize("path,name", [
+    ("github.com/stripe/stripe-go/v79", "stripe-go"),
+    ("github.com/aws/aws-sdk-go-v2/service/s3", "aws-sdk-go-v2"),
+    ("github.com/acme/clients/sdk-go/pkg/x", "acme"),
+    ("modernc.org/sqlite", "sqlite"),
+    ("cloud.google.com/go/storage", "storage"),
+    ("google.golang.org/grpc", "grpc"),
+    ("google.golang.org/grpc/credentials/insecure", "grpc"),
+    ("modernc.org/sqlite/lib", "sqlite"),
+    ("gopkg.in/yaml.v3", "yaml"),
+    ("github.com/nats-io/nats.go", "nats.go"),
+    ("gitlab.com/acme/foo-sdk-go/pkg/x", "foo-sdk-go"),
+    ("github.com/acme/foo/go-sdk/pkg", "acme"),
+    ("github.com/acme/clients/sdk-go/pkg/x", "acme"),
+    ("github.com/x/y/v2/pkg/z", "y"),
+])
+def test_go_sdk_name_is_the_client_not_the_host(path, name):
+    assert ac.go_sdk_name(path) == name
+
+
+def test_go_sdk_evidence_names_only_the_module_and_only_from_go_files(tmp_path):
+    """Review of PR #52. A bare `*-sdk-go` import is the case the generic rule
+    exists for; a string glued to a known path is not that path and carries
+    nothing into the bundle (coderay-q2r.31); the repo's own module is not an
+    external connection; a committed vendor tree is the SDK importing itself;
+    mixed-case owners and `sdk-for-go` are real modules; and a Go module path
+    quoted in a Python or TypeScript file is not a Go import."""
+    repo = _repo(tmp_path, {
+        "go.mod": "module github.com/acme/go-sdk\n",
+        "docker-compose.yml": "services: {}\n",
+        "a.go": ('package a\nimport (\n\t"github.com/anthropics/anthropic-sdk-go"\n'
+                 '\tsdk "github.com/other/go-sdk"\n\t"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"\n'
+                 '\t"github.com/Acme/foo-sdk-go/x"\n\t"github.com/acme/go-sdk/client"\n)\n'),
+        "glued.go": ('package a\nvar paths = []string{\n\t"github.com/stripe/stripe-go;key=sk_live_GLUED",\n'
+                     '\t"cloud.google.com/go/storage?token=sk_live_X",\n\t"github.com/hashicorp/vault sk_live_Y",\n}\n'),
+        "vendor/github.com/aws/aws-sdk-go-v2/x.go": 'package x\nimport "github.com/aws/aws-sdk-go-v2/aws"\n',
+        "shapes.py": 'MODULES = [\n    "github.com/stripe/stripe-go",\n]\n',
+        "shapes.ts": 'switch (m) {\n  case "github.com/lib/pq": break;\n}\n',
+    })
+    _commit_all(repo)
+    lines, why = ac._sdk_grep(repo)
+    assert why is None
+    got = sorted(lines.splitlines())
+    assert got == ["a.go:3: anthropic-sdk-go", "a.go:4: other", "a.go:5: azure-sdk-for-go", "a.go:6: foo-sdk-go"], got
+    assert "sk_live" not in lines and "vendor" not in lines and "acme" not in lines

@@ -9,7 +9,7 @@ An architecture never lives in one file; you overlay four sources:
 Feeding a 600k-line repo whole is impossible, so we build a bundle small enough
 for one LLM pass but dense enough to inventory the architecture: the config
 files in full, env var NAMES (never values), the union of package.json
-dependencies (which name every SDK), the integration directories, and the SDK
+dependencies (which name a Node app's SDKs), the integration directories, and the SDK
 `import` lines found by `git grep` (real file paths, proof a connection is live).
 Nothing here calls an LLM.
 """
@@ -19,6 +19,7 @@ import re
 import subprocess
 
 from crawl.core import DEFAULT_SKIP_DIR, readable
+from crawl.core.gosrc import module_path
 
 # The shared noise set, keeping docs/ and examples/ because a compose file
 # there is exactly the kind of process declaration this crawler is after.
@@ -30,12 +31,66 @@ GATEWAY_NAMES = frozenset({
     'render.yaml', 'railway.json', 'Procfile',
 })
 
-# SDK / client imports that name an external node. Kept broad but specific.
+# Node and Python SDK / client imports that name an external node. Kept broad but specific.
 SDK_RE = (r"(stripe|twilio|@?aws-sdk|aws-sdk|googleapis|@google-cloud|ioredis|"
           r"'redis'|\"redis\"|nodemailer|@sendgrid|resend|@slack|slack|openai|"
           r"@sentry|@prisma/client|mongodb|mysql2?|pg|kafkajs|bullmq|amqplib|"
           r"@aws-sdk/client-s3|boto3|sib-api|mailgun|postmark|hubspot|"
           r"@salesforce|algolia|elastic|pusher|ably|firebase)")
+# Go imports name a module path, not a package, so they get their own pattern,
+# run over *.go only: the well-known clients, plus any module whose path says
+# it is an SDK (coderay-5wu.14). Every alternative ends at a segment boundary
+# (a slash or the closing quote), so nothing glued to a known path is part of
+# the match and nothing but the path can reach the bundle (coderay-q2r.31).
+# Written as POSIX extended regex that Python's re also accepts verbatim, since
+# git grep -E runs it and the name extraction re-reads it: capturing groups
+# only, and a literal space-or-tab class instead of \s.
+_GO_END = r"(/|[\"])"
+GO_SDK_RE = (r"((github\.com/aws/aws-sdk-go(-v2)?|cloud\.google\.com/go/[a-z0-9]+|"
+             r"github\.com/(redis/go-redis|go-redis/redis|jackc/pgx|lib/pq|mattn/go-sqlite3|"
+             r"stripe/stripe-go|slack-go/slack|sendgrid/sendgrid-go|twilio/twilio-go|"
+             r"openai/openai-go|sashabaranov/go-openai|minio/minio-go|elastic/go-elasticsearch|"
+             r"segmentio/kafka-go|nats-io/nats\.go|IBM/sarama|Shopify/sarama|rabbitmq/amqp091-go|"
+             r"streadway/amqp|getsentry/sentry-go|aws/aws-lambda-go|hashicorp/vault|"
+             r"go-sql-driver/mysql|jmoiron/sqlx|uptrace/bun|gorm/gorm)|"
+             r"modernc\.org/sqlite|google\.golang\.org/grpc|gorm\.io/gorm|entgo\.io/ent|"
+             r"[A-Za-z0-9.-]+/[A-Za-z0-9-]+/([A-Za-z0-9-]+/)*[A-Za-z0-9-]*(sdk-go|go-sdk|sdk-for-go))" + _GO_END + ")")
+# `import alias "path"` on one line is two identifiers before the quote. A
+# literal tab sits in the class: git grep does no escape processing inside
+# brackets, and gofmt indents imports with tabs.
+_GO_IMPORT_LINE = "^[ \t]*([A-Za-z_][A-Za-z0-9_]*[ \t]+){0,2}\"" + GO_SDK_RE
+_GO_IMPORT_PATH = re.compile(r'"([^"\s]+)"')
+_SDK_NAME_OK = re.compile(r"^[A-Za-z0-9._-]+$")
+_GO_VERSION_SEGMENT = re.compile(r"^v\d+$")
+# Hosts whose modules are one segment deep, so the client is that segment
+# (google.golang.org/grpc/credentials is grpc; gopkg.in/yaml.v3 is yaml).
+_SINGLE_SEGMENT_HOSTS = frozenset({"google.golang.org", "modernc.org", "gorm.io", "entgo.io", "gopkg.in", "golang.org"})
+_GENERIC_REPO_NAMES = frozenset({"clients", "sdk-go", "go-sdk", "sdk"})
+# A subdirectory named like an SDK inside a plain repo (acme/clients/sdk-go);
+# `sdk/` inside a real SDK repo (Azure/azure-sdk-for-go/sdk) is not one.
+_GENERIC_SUBDIR_NAMES = frozenset({"sdk-go", "go-sdk"})
+
+
+def go_sdk_name(path):
+    """The client a Go module path names. A /vN segment anywhere is not a name.
+    For cloud.google.com/go/<service> it is the service. For a host whose
+    modules are one segment deep (google.golang.org, modernc.org, gopkg.in and
+    the like) it is that segment, minus a gopkg.in .vN suffix, so a subpackage
+    import still names the module. For any other host/owner/repo path it is the
+    repo, or the owner when the repo or the segment after it is a generic name
+    (clients, sdk-go, go-sdk). A path with fewer segments gives its last one."""
+    segments = [s for s in path.split("/") if s and not _GO_VERSION_SEGMENT.match(s)]
+    host = segments[0]
+    if host == "cloud.google.com" and len(segments) >= 3:
+        return segments[2]
+    if host in _SINGLE_SEGMENT_HOSTS and len(segments) >= 2:
+        name = segments[1]
+        return name.rsplit(".v", 1)[0] if host == "gopkg.in" else name
+    if len(segments) >= 3:
+        owner, repo, after = segments[1], segments[2], segments[3:4]
+        generic = repo in _GENERIC_REPO_NAMES or (after and after[0] in _GENERIC_SUBDIR_NAMES)
+        return owner if generic else repo
+    return segments[-1]
 
 
 def _walk(root):
@@ -287,6 +342,22 @@ def _classify(rel):
     return None
 
 
+def _git_grep(repo, pattern, pathspecs):
+    """One `git grep -nE` over `pathspecs`. Returns (raw, unavailable): raw is
+    the output (empty on no match), unavailable a fixed phrase when the grep
+    could not run; git's own message never travels."""
+    try:
+        raw = subprocess.check_output(["git", "-C", repo, "grep", "-nE", pattern, "--", *pathspecs],
+                                      text=True, errors="replace", stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        if e.returncode == 1:          # git grep: ran, matched nothing
+            return "", None
+        if "not a git repository" in (e.stderr or ""):
+            return "", "not a git repository"
+        return "", f"git grep exited {e.returncode}"
+    return raw, None
+
+
 def _sdk_grep(repo, max_lines=400):
     """SDK import lines with file:line, via `git grep` (fast). Real proof + paths.
 
@@ -315,19 +386,19 @@ def _sdk_grep(repo, max_lines=400):
         return "", f"git rev-parse exited {e.returncode}"
     if os.path.realpath(top) != os.path.realpath(repo):
         return "", "not a git checkout (inside another repository)"
-    try:
-        raw = subprocess.check_output(
-            ["git", "-C", repo, "grep", "-nE",
-             r"(import .*from ['\"]" + SDK_RE + r"|require\(['\"]" + SDK_RE + r"|new (Stripe|Twilio|Redis|S3Client))",
-             "--", "*.ts", "*.tsx", "*.js", "*.py", "*.go"],
-            text=True, errors="replace", stderr=subprocess.PIPE,
-        )
-    except subprocess.CalledProcessError as e:
-        if e.returncode == 1:          # git grep: ran, matched nothing
-            return "", None
-        if "not a git repository" in (e.stderr or ""):
-            return "", "not a git repository"
-        return "", f"git grep exited {e.returncode}"
+    # Two greps, each language-shaped: the Node/Python pattern over those
+    # files, the Go pattern over *.go alone, so a Go module path quoted in a
+    # Python list is not a Go import. A committed vendor tree is the SDK
+    # importing itself and would fill the cap, so it is excluded here as the
+    # file walk already excludes it.
+    js = _git_grep(repo, r"(import .*from ['\"]" + SDK_RE + r"|require\(['\"]" + SDK_RE
+                   + r"|new (Stripe|Twilio|Redis|S3Client))", ["*.ts", "*.tsx", "*.js", "*.py"])
+    go = _git_grep(repo, _GO_IMPORT_LINE, ["*.go", ":(exclude)vendor/", ":(exclude)*/vendor/"])
+    for raw, why in (js, go):
+        if why:
+            return "", why
+    raw = js[0] + go[0]
+    own = module_path(repo)
     # Emit path:line plus the SDK that matched, never the source line itself.
     # The regex deliberately matches constructors like `new Stripe(...)`, so a
     # hardcoded token in one would otherwise be shipped to the LLM verbatim,
@@ -342,8 +413,19 @@ def _sdk_grep(repo, max_lines=400):
         if len(parts) < 3:
             continue
         path, lineno, content = parts
-        m = re.search(SDK_RE, content) or re.search(r'new\s+(Stripe|Twilio|Redis|S3Client)', content)
-        name = (m.group(1) if m else "sdk").strip("'\"@")
+        if path.endswith(".go"):
+            quoted = _GO_IMPORT_PATH.search(content)
+            if not quoted:
+                continue                   # an unterminated line is not an import
+            module = quoted.group(1)
+            if own and (module == own or module.startswith(own + "/")):
+                continue                   # the repo's own module is not an external connection
+            name = go_sdk_name(module)
+            if not _SDK_NAME_OK.match(name):
+                continue
+        else:
+            m = re.search(SDK_RE, content) or re.search(r'new\s+(Stripe|Twilio|Redis|S3Client)', content)
+            name = (m.group(1) if m else "sdk").strip("'\"@")
         entry = f"{path}:{lineno}: {name}"
         if entry in seen:
             continue
