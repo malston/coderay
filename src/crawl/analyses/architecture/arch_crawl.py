@@ -8,15 +8,18 @@ An architecture never lives in one file; you overlay four sources:
 
 Feeding a 600k-line repo whole is impossible, so we build a bundle small enough
 for one LLM pass but dense enough to inventory the architecture: the config
-files in full, env var NAMES (never values), the union of package.json
-dependencies (which name a Node app's SDKs), the integration directories, and the SDK
-`import` lines found by `git grep` (real file paths, proof a connection is live).
+files in full, env var NAMES (never values), the union of dependencies
+declared in a project's manifests (package.json, go.mod, pyproject.toml,
+requirements.txt -- which name an app's SDKs regardless of language), the
+integration directories, and the SDK `import` lines found by `git grep`
+(real file paths, proof a connection is live).
 Nothing here calls an LLM.
 """
 import json
 import os
 import re
 import subprocess
+import tomllib
 
 from crawl.core import DEFAULT_SKIP_DIR, readable
 from crawl.core.gosrc import module_path
@@ -349,6 +352,12 @@ def _classify(rel):
         return 'gateway'
     if base == 'package.json':
         return 'package'
+    if base == 'go.mod':
+        return 'go_mod'
+    if base == 'pyproject.toml':
+        return 'pyproject'
+    if base.startswith('requirements') and base.endswith('.txt'):
+        return 'requirements'
     if base.endswith(('.yaml', '.yml')) and any(
             seg in p for seg in ('/k8s/', '/kubernetes/', '/manifests/', '/deploy/', '/charts/', '/helm/')):
         return 'k8s'
@@ -478,17 +487,156 @@ def _integration_dirs(repo):
     return None, []
 
 
-PACKAGE_JSON_READ_LIMIT = 200_000   # shared with the truncation check below, so they can't drift apart
+MANIFEST_READ_LIMIT = 200_000   # shared with every manifest's truncation check, so they can't drift apart
+
+_PEP508_NAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*')
+# Lines a requirements.txt parser should never hand to _parse_pep508: option
+# flags and file references, none of which name a PyPI package.
+_REQUIREMENTS_SKIP_PREFIXES = ('-r', '-e', '-c', '--', '.', '/')
+
+
+def _parse_pep508(spec):
+    """One PEP 508-ish dependency spec, as (name, constraint).
+
+    Returns None for a spec this doesn't handle: a VCS/URL/local-path
+    requirement (`git+...`, `./local`, a bare URL) where the name regex
+    would only match a leading path segment, never a package name. Guarded
+    by requiring the character right after the matched name to be one PEP
+    508 actually allows there -- whitespace, `[` (extras), a comparison
+    operator, `;` (environment marker), or end of string; `git+https://...`
+    fails this because `+` is none of those.
+    """
+    spec = spec.strip()
+    m = _PEP508_NAME_RE.match(spec)
+    if not m:
+        return None
+    name = m.group(0)
+    rest = spec[m.end():]
+    if rest[:1] not in ('', ' ', '\t', '[', '<', '>', '=', '!', '~', ';'):
+        return None
+    if rest.startswith('['):
+        close = rest.find(']')
+        if close == -1:
+            return None
+        rest = rest[close + 1:]
+    constraint = rest.split(';', 1)[0].strip()
+    return name, constraint
+
+
+def _parse_package_json(text):
+    data = json.loads(text)   # raises ValueError (json.JSONDecodeError) on malformed input
+    if not isinstance(data, dict):
+        return {}
+    return {k: v for grp in ('dependencies', 'devDependencies')
+             if isinstance(data.get(grp), dict) for k, v in data[grp].items()}
+
+
+# `go mod tidy` splits requires into two blocks -- direct first, then every
+# `// indirect` transitive one -- so both must be scanned (finditer, not
+# search) alongside the single-line `require x y` form outside any block.
+_GO_MOD_REQUIRE_BLOCK_RE = re.compile(r'require\s*\((.*?)\n\)', re.DOTALL)
+_GO_MOD_ENTRY_RE = re.compile(r'^\s*(\S+)\s+(\S+)(\s+//\s*indirect)?\s*$', re.MULTILINE)
+_GO_MOD_SINGLE_RE = re.compile(r'^require\s+(?!\()(\S+)\s+(\S+)(\s+//\s*indirect)?\s*$', re.MULTILINE)
+
+
+def _parse_go_mod(text):
+    """Direct requires only. A `// indirect` entry, block or single-line
+    form, names a transitive dependency the module doesn't call directly --
+    excluded the way package.json's devDependencies is not, since Go has no
+    equivalent of "a real dependency of the project, just not of what it
+    ships"."""
+    deps = {}
+    for block in _GO_MOD_REQUIRE_BLOCK_RE.finditer(text):
+        for entry in _GO_MOD_ENTRY_RE.finditer(block.group(1)):
+            if entry.group(3):
+                continue
+            deps[entry.group(1)] = entry.group(2)
+    for entry in _GO_MOD_SINGLE_RE.finditer(text):
+        if entry.group(3):
+            continue
+        deps[entry.group(1)] = entry.group(2)
+    return deps
+
+
+def _parse_pyproject(text):
+    """PEP 621's `[project.dependencies]` and `[project.optional-dependencies]`
+    only. Poetry's `[tool.poetry.dependencies]` is a different, non-PEP-621
+    shape and is out of scope for this bead."""
+    data = tomllib.loads(text)   # raises tomllib.TOMLDecodeError (a ValueError) on malformed input
+    project = data.get('project')
+    if not isinstance(project, dict):
+        return {}
+    deps = {}
+    for spec in project.get('dependencies') or []:
+        parsed = _parse_pep508(spec)
+        if parsed:
+            deps[parsed[0]] = parsed[1]
+    optional = project.get('optional-dependencies')
+    if isinstance(optional, dict):
+        for group in optional.values():
+            if isinstance(group, list):
+                for spec in group:
+                    parsed = _parse_pep508(spec)
+                    if parsed:
+                        deps[parsed[0]] = parsed[1]
+    return deps
+
+
+def _parse_requirements(text):
+    deps = {}
+    for line in text.splitlines():
+        line = line.split('#', 1)[0].strip()
+        if not line or line.startswith(_REQUIREMENTS_SKIP_PREFIXES):
+            continue
+        parsed = _parse_pep508(line)
+        if parsed:
+            deps[parsed[0]] = parsed[1]
+    return deps
+
+
+# One parser per manifest kind `_classify` can return for a dependency file.
+# Every value here is read and dispatched through `_read_manifest`, so a new
+# manifest kind is just one more `_classify` branch plus one more entry here.
+MANIFEST_PARSERS = {
+    'package': _parse_package_json,
+    'go_mod': _parse_go_mod,
+    'pyproject': _parse_pyproject,
+    'requirements': _parse_requirements,
+}
+
+
+def _read_manifest(full, repo, kind):
+    """Read and parse one dependency manifest. Returns (deps, unreadable, malformed).
+
+    `unreadable` mirrors `_read`'s `ok=False`. `malformed` is True only when
+    the manifest was read in full and its own parser still rejected it --
+    not when MANIFEST_READ_LIMIT cut valid content mid-stream, the same
+    truncation-vs-malformed distinction coderay-5wu.6 drew for package.json,
+    generalized here to every kind whose parser can raise (json.loads and
+    tomllib.loads; go.mod and requirements.txt are regex-based and never
+    raise, so `malformed` is always False for them).
+    """
+    text, ok = _read(full, MANIFEST_READ_LIMIT, repo)
+    if not ok:
+        return None, True, False
+    try:
+        return MANIFEST_PARSERS[kind](text), False, False
+    except ValueError:
+        if len(text) >= MANIFEST_READ_LIMIT:
+            return None, False, False
+        return None, False, True
 
 
 def build_bundle(repo, max_chars=500_000):
     """Return (bundle_text, stats)."""
     buckets = {k: [] for k in ('compose', 'k8s', 'gateway', 'iac')}
     env_names, deps = set(), {}
-    env_files, package_files = [], []  # what contributed names and dependency lists
+    env_files, manifest_files = [], []  # what contributed names and dependency lists
     env_files_unreadable = 0
     package_json_unreadable = 0
     package_json_malformed = 0
+    manifest_unreadable = 0   # go.mod / pyproject.toml / requirements.txt combined
+    manifest_malformed = 0    # pyproject.toml only -- go.mod and requirements.txt never raise
     for dirpath, _dn, filenames in _walk(repo):
         for f in filenames:
             rel = os.path.relpath(os.path.join(dirpath, f), repo)
@@ -505,31 +653,26 @@ def build_bundle(repo, max_chars=500_000):
                 if names:
                     env_names.update(names)
                     env_files.append(rel)
-            elif kind == 'package':
-                text, ok = _read(full, PACKAGE_JSON_READ_LIMIT, repo)
-                if not ok:
-                    package_json_unreadable += 1
+            elif kind in MANIFEST_PARSERS:
+                found, unreadable, malformed = _read_manifest(full, repo, kind)
+                if unreadable:
+                    if kind == 'package':
+                        package_json_unreadable += 1
+                    else:
+                        manifest_unreadable += 1
                     continue
-                try:
-                    data = json.loads(text)
-                except ValueError:
-                    if len(text) >= PACKAGE_JSON_READ_LIMIT:
-                        # _read's own limit cut valid JSON mid-stream; this manifest may
-                        # parse fine in full, so it is not a malformed one (coderay-5wu.6).
-                        continue
-                    # A real file, actually read in full, that still isn't valid JSON --
-                    # distinct from `ok is False` above and from the truncation case just
-                    # above it, both of which silently skip zero dependencies for reasons
-                    # that aren't a malformed manifest (coderay-5wu.6).
-                    package_json_malformed += 1
+                if malformed:
+                    if kind == 'package':
+                        package_json_malformed += 1
+                    else:
+                        manifest_malformed += 1
                     continue
-                if not isinstance(data, dict):
-                    continue  # docs/ and examples/ are walked; a package.json there can hold anything
-                found = {k: v for grp in ('dependencies', 'devDependencies')
-                         if isinstance(data.get(grp), dict) for k, v in data[grp].items()}
+                # A JSON/TOML manifest of the wrong shape (a list, say) parses fine and
+                # simply yields no dependencies -- docs/ and examples/ are walked, and a
+                # package.json there can hold anything.
                 if found:
                     deps.update(found)
-                    package_files.append(rel)
+                    manifest_files.append(rel)
             else:
                 text, _ok = _read(full, repo=repo)
                 buckets[kind].append((rel, _redact(text)))
@@ -549,7 +692,7 @@ def build_bundle(repo, max_chars=500_000):
         parts.append((env_files, "===== ENVIRONMENT VARIABLE NAMES (values omitted) =====\n"
                       + "\n".join(sorted(env_names)) + "\n"))
     if deps:
-        parts.append((package_files, "===== PACKAGE DEPENDENCIES (name @ version) =====\n"
+        parts.append((manifest_files, "===== DEPENDENCY MANIFESTS (name @ version) =====\n"
                       + "\n".join(f"{k} @ {v}" for k, v in sorted(deps.items())) + "\n"))
 
     idir, isubs = _integration_dirs(repo)
@@ -623,6 +766,8 @@ def build_bundle(repo, max_chars=500_000):
         "config_files_found": sum(len(v) for v in buckets.values()),
         "package_json_malformed": package_json_malformed,
         "package_json_unreadable": package_json_unreadable,
+        "manifest_unreadable": manifest_unreadable,
+        "manifest_malformed": manifest_malformed,
         "env_files_unreadable": env_files_unreadable,
         "truncated": len(whole) > max_chars,
         "env_vars": len(env_names),

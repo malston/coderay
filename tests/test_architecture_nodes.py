@@ -54,6 +54,21 @@ def test_build_bundle_prints_when_a_package_json_was_unreadable(tmp_path, capsys
     assert "package.json unreadable" in capsys.readouterr().out
 
 
+def test_build_bundle_prints_when_a_pyproject_toml_was_malformed(tmp_path, capsys):
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n", "pyproject.toml": "not [ valid toml"})
+    n.BuildBundle().run({"repo_path": repo})
+    assert "other manifests malformed" in capsys.readouterr().out
+
+
+def test_build_bundle_prints_when_a_go_mod_was_unreadable(tmp_path, capsys):
+    outside = tmp_path / "outside.mod"
+    outside.write_text("module example.com/app\n\nrequire github.com/x/y v1.0.0\n", encoding="utf-8")
+    repo = _repo(tmp_path / "repo", {"docker-compose.yml": "services: {}\n"})
+    os.symlink(outside, os.path.join(repo, "go.mod"))
+    n.BuildBundle().run({"repo_path": repo})
+    assert "other manifests unreadable" in capsys.readouterr().out
+
+
 def test_build_bundle_prints_when_an_env_file_was_unreadable(tmp_path, capsys):
     outside = tmp_path / "outside.env"
     outside.write_text("STRIPE_SECRET_KEY=sk_live_x\n", encoding="utf-8")

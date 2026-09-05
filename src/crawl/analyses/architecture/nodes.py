@@ -53,6 +53,10 @@ class BuildBundle(Node):
                  if stats.get("package_json_malformed") else "")
               + (f" ({stats['package_json_unreadable']} package.json unreadable)"
                  if stats.get("package_json_unreadable") else "")
+              + (f" ({stats['manifest_malformed']} other manifests malformed)"
+                 if stats.get("manifest_malformed") else "")
+              + (f" ({stats['manifest_unreadable']} other manifests unreadable)"
+                 if stats.get("manifest_unreadable") else "")
               + (f" ({stats['env_files_unreadable']} env files unreadable)"
                  if stats.get("env_files_unreadable") else "")
               + (" (capped, more exist)" if stats.get("sdk_capped") else "")
