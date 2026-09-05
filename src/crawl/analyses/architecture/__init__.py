@@ -46,9 +46,26 @@ def _hero_prefix(shared):
 def _footer(shared):
     stats = shared.get("arch_stats", {})
     note = stats.get("sdk_unavailable")
-    return (f"Overlaid from {stats.get('config_files', 0)} config files, "
+    config_files = stats.get("config_files", 0)
+    found = stats.get("config_files_found", config_files)
+    excluded = found - config_files
+    malformed = stats.get("package_json_malformed", 0)
+    unreadable_package = stats.get("package_json_unreadable", 0)
+    unreadable_env = stats.get("env_files_unreadable", 0)
+    return (f"Overlaid from {config_files} config files, "
             f"{stats.get('deps', 0)} dependencies, "
             f"{stats.get('integrations', 0)} integrations."
+            + (f" {excluded} more config file{'s' if excluded != 1 else ''} "
+               f"{'were' if excluded != 1 else 'was'} found but did not reach the bundle "
+               "(empty, unreadable, or refused)." if excluded > 0 else "")
+            + (f" {malformed} package.json file{'s' if malformed != 1 else ''} could not be parsed as JSON."
+               if malformed else "")
+            + (f" {unreadable_package} package.json file{'s' if unreadable_package != 1 else ''} "
+               f"{'were' if unreadable_package != 1 else 'was'} unreadable or refused."
+               if unreadable_package else "")
+            + (f" {unreadable_env} env file{'s' if unreadable_env != 1 else ''} "
+               f"{'were' if unreadable_env != 1 else 'was'} unreadable or refused."
+               if unreadable_env else "")
             + (f" SDK import evidence unavailable ({esc(note)}); connections are configured, not proven live." if note else "")
             + (" SDK import evidence was capped; more imports may exist than are shown." if stats.get("sdk_capped") else ""))
 

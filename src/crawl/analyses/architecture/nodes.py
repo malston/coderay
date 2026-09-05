@@ -45,8 +45,16 @@ class BuildBundle(Node):
         shared["bundle_files"] = stats["files"]
         shared["sdk_import_files"] = stats["sdk_import_files"]
         shared["integration_dirs"] = stats["integration_dirs"]
+        excluded = stats.get("config_files_found", stats["config_files"]) - stats["config_files"]
         print(f"  Bundle: {stats['config_files']} config files, {stats['env_vars']} env vars, "
               f"{stats['deps']} deps, {stats['integrations']} integrations, {stats['sdk_lines']} SDK imports"
+              + (f" ({excluded} more config files found but not in the bundle)" if excluded > 0 else "")
+              + (f" ({stats['package_json_malformed']} package.json malformed)"
+                 if stats.get("package_json_malformed") else "")
+              + (f" ({stats['package_json_unreadable']} package.json unreadable)"
+                 if stats.get("package_json_unreadable") else "")
+              + (f" ({stats['env_files_unreadable']} env files unreadable)"
+                 if stats.get("env_files_unreadable") else "")
               + (" (capped, more exist)" if stats.get("sdk_capped") else "")
               + (f" (SDK imports unavailable: {stats['sdk_unavailable']})" if stats.get("sdk_unavailable") else ""))
 

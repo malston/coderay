@@ -139,6 +139,46 @@ def test_the_footer_says_when_sdk_import_evidence_was_unavailable():
     assert "unavailable" not in architecture._footer({"arch_stats": {**stats, "sdk_unavailable": None}})
 
 
+def test_the_footer_says_when_config_files_were_found_but_not_included():
+    """coderay-5wu.6. config_files_found already carries the discrepancy in
+    stats, but neither the footer nor the console line showed it."""
+    stats = {"config_files": 1, "config_files_found": 3, "deps": 0, "integrations": 0}
+    footer = architecture._footer({"arch_stats": stats})
+    assert "2 more config files" in footer and "did not reach the bundle" in footer
+    quiet_footer = architecture._footer({"arch_stats": {**stats, "config_files_found": 1}})
+    assert "did not reach the bundle" not in quiet_footer
+
+
+def test_the_footer_says_when_a_package_json_was_malformed():
+    stats = {"config_files": 1, "config_files_found": 1, "deps": 0, "integrations": 0,
+             "package_json_malformed": 2}
+    footer = architecture._footer({"arch_stats": stats})
+    assert "2 package.json files could not be parsed as JSON" in footer
+    quiet_footer = architecture._footer({"arch_stats": {**stats, "package_json_malformed": 0}})
+    assert "could not be parsed" not in quiet_footer
+
+
+def test_the_footer_says_when_a_package_json_was_unreadable():
+    """coderay-5wu.6 review. config_files_found never covers package.json, so
+    a refused/unreadable manifest needs its own note or it has zero
+    visibility anywhere."""
+    stats = {"config_files": 1, "config_files_found": 1, "deps": 0, "integrations": 0,
+             "package_json_unreadable": 1}
+    footer = architecture._footer({"arch_stats": stats})
+    assert "1 package.json file was unreadable or refused" in footer
+    quiet_footer = architecture._footer({"arch_stats": {**stats, "package_json_unreadable": 0}})
+    assert "unreadable or refused" not in quiet_footer
+
+
+def test_the_footer_says_when_an_env_file_was_unreadable():
+    stats = {"config_files": 1, "config_files_found": 1, "deps": 0, "integrations": 0,
+             "env_files_unreadable": 2}
+    footer = architecture._footer({"arch_stats": stats})
+    assert "2 env files were unreadable or refused" in footer
+    quiet_footer = architecture._footer({"arch_stats": {**stats, "env_files_unreadable": 0}})
+    assert "unreadable or refused" not in quiet_footer
+
+
 def test_the_footer_says_when_sdk_import_evidence_was_capped():
     """coderay-5wu.7. sdk_lines == the cap reads as a precise count with
     nothing telling the reader the list was cut."""
