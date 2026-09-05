@@ -108,17 +108,9 @@
   .pain-card .pain-body {
     display: grid; grid-template-columns: 1fr; gap: 16px; align-items: center;
   }
-  .pain-card.has-image .pain-body { grid-template-columns: 1fr 280px; }
-  @media (max-width: 640px) {
-    .pain-card.has-image .pain-body { grid-template-columns: 1fr; }
-  }
   .pain-card p {
     font-size: 1.02rem; line-height: 1.65; color: #334155;
     margin: 0;
-  }
-  .pain-card img.pain-illustration {
-    width: 100%; height: auto; border-radius: 8px;
-    border: 1px solid var(--rule); background: #fff;
   }
 
   /* Two column cards (sacrifices / gains) */
@@ -290,7 +282,6 @@
         <div class="pain-label">↳ Why this exists</div>
         <div class="pain-body">
           <p>You're debugging why signups dropped, but the numbers live in three tabs. Your real competitor is Alt-Tab. &lt;script&gt;alert(1)&lt;/script&gt;</p>
-
         </div>
       </div>
     </section>
@@ -330,7 +321,7 @@
 
     <section class="sec">
       <div class="sec-label">Side by Side</div>
-      <p class="sec-intro">Four dimensions that actually split the field.</p>
+      <p class="sec-intro">Three dimensions that actually split the field.</p>
       <ul class="dim-defs">
         <li><strong>Readable queries</strong>: Can a user see the SQL behind a chart?</li>
         <li><strong>Source &lt;script&gt;alert(1)&lt;/script&gt;</strong>: Is the code public?</li>
