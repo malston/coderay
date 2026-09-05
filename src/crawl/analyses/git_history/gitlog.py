@@ -14,6 +14,7 @@ else here is the compression the three prompts need:
 Everything reads git through `subprocess`; nothing here calls an LLM.
 """
 import os
+import posixpath
 import re
 import subprocess
 from collections import Counter, defaultdict
@@ -77,13 +78,18 @@ def scope_of(files, depth=2):
     `core/server`; one that sprawls across the repo scopes to the top-level dir
     they share (often ``""`` for a repo-wide change). `depth` caps how deep a
     single shared prefix is reported so the label stays readable.
+
+    Git paths are always forward-slash, regardless of the host OS, so the
+    split/join here goes through `posixpath` rather than `os.path`/`os.sep` --
+    on Windows `os.path` is `ntpath` and would both mis-split the shared
+    prefix and rejoin it with backslashes (coderay-q2r.44).
     """
-    dirs = [os.path.dirname(f) for f in files if f]
+    dirs = [posixpath.dirname(f) for f in files if f]
     if not dirs:
         return ""
-    common = os.path.commonpath(dirs) if len(dirs) > 1 else dirs[0]
-    parts = common.split(os.sep)
-    return os.sep.join(parts[:depth])
+    common = posixpath.commonpath(dirs) if len(dirs) > 1 else dirs[0]
+    parts = common.split("/")
+    return "/".join(parts[:depth])
 
 
 def bulk_changes(repo_path, status, min_files=10):
@@ -91,9 +97,17 @@ def bulk_changes(repo_path, status, min_files=10):
 
     `--diff-filter` restricts BOTH which commits appear and which file paths are
     listed, so with `status='D'` the file list is exactly the deleted files.
+
+    `--no-renames`: git's default rename detection reports a directory move as
+    status R, not D or A, so a bulk move of graveyard size was invisible to
+    both `bulk_dels` and `bulk_adds` (coderay-q2r.44). With detection off, a
+    move is exactly the D-old-paths + A-new-paths pair the caller expects --
+    the old paths did stop existing under this history, whatever renamed them
+    in. `show_diff` (used on the commit afterward) keeps rename detection on,
+    so the model still sees `rename from/to` and can tell a move from a kill.
     """
     raw = subprocess.check_output(
-        ["git", "-C", repo_path, "log", f"--diff-filter={status}",
+        ["git", "-C", repo_path, "log", "--no-renames", f"--diff-filter={status}",
          "--name-only", f"--pretty=format:%x00%H|%at|%an|%s"],
         text=True, errors="replace",
     )

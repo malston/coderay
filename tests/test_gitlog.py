@@ -139,6 +139,44 @@ def test_bulk_changes_ignores_a_deletion_below_the_threshold(tmp_path):
     assert gl.bulk_changes(repo, "D", min_files=5) == []
 
 
+def test_bulk_changes_counts_a_directory_rename_as_a_deletion_of_the_old_paths(tmp_path):
+    """coderay-q2r.44. Git's default rename detection reports a directory move
+    as R, not D, so `--diff-filter=D` alone never sees it -- a graveyard-sized
+    move vanished from the graveyard entirely. The old paths are what the
+    graveyard cares about: they stopped existing under this history."""
+    old = {f"old/f{i}.py": f"x{i}\n" for i in range(6)}
+    new = {f"new/f{i}.py": f"x{i}\n" for i in range(6)}
+    repo = _repo(tmp_path, [
+        ("add", old, []),
+        ("move the directory", new, list(old)),
+    ])
+    dels = gl.bulk_changes(repo, "D", min_files=5)
+    assert len(dels) == 1
+    assert sorted(dels[0]["files"]) == sorted(old)
+
+
+def test_bulk_changes_counts_a_directory_rename_as_an_addition_of_the_new_paths(tmp_path):
+    old = {f"old/f{i}.py": f"x{i}\n" for i in range(6)}
+    new = {f"new/f{i}.py": f"x{i}\n" for i in range(6)}
+    repo = _repo(tmp_path, [
+        ("add", old, []),
+        ("move the directory", new, list(old)),
+    ])
+    adds = gl.bulk_changes(repo, "A", min_files=5)
+    move = next(c for c in adds if c["subject"] == "move the directory")
+    assert sorted(move["files"]) == sorted(new)
+
+
+def test_scope_of_splits_and_joins_on_forward_slash_not_the_platform_separator(monkeypatch):
+    """git paths are always POSIX; scope_of must not depend on `os.sep`/`os.path`
+    reading as ntpath on Windows, or the depth cap silently stops applying."""
+    import ntpath
+    import types
+    monkeypatch.setattr(gl, "os", types.SimpleNamespace(path=ntpath, sep="\\"))
+    assert gl.scope_of(["core/server/services/members/a.py",
+                        "core/server/services/members/b.py"]) == "core/server"
+
+
 def test_sample_commits_keeps_the_first_and_last(tmp_path):
     """An evenly sampled slice must still span the era, or the model reads a
     truncated arc as the whole story."""

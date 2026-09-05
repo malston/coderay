@@ -10,7 +10,6 @@ Reliability mirrors the rest of the repo: every LLM node uses
 Node(max_retries=3, wait=2), JSON parsing is strict so bad output retries, and
 gitlog's subprocess reads raise on any git failure rather than reporting no data.
 """
-import os
 import re
 from importlib import resources
 
@@ -33,9 +32,13 @@ def _is_noise_deletion(change):
     Removing `node_modules/` (thousands of files) or a `dist/` build dwarfs every
     real deletion by raw count, so ranking by size alone buries the actual graves.
     A deletion is noise when most of its files sit under a skip-list directory
-    (the same set the crawler prunes: node_modules, vendor, dist, build, tests, …)."""
+    (the same set the crawler prunes: node_modules, vendor, dist, build, tests, …).
+
+    Git always emits forward-slash paths, so the split is on '/' rather than
+    the platform's `os.sep` -- on Windows that would leave every path a single
+    un-split token and this check would never fire (coderay-q2r.44)."""
     files = change["files"]
-    noisy = sum(1 for f in files if set(f.split(os.sep)) & DEFAULT_SKIP_DIR)
+    noisy = sum(1 for f in files if set(f.split("/")) & DEFAULT_SKIP_DIR)
     return noisy > len(files) * 0.5
 
 
@@ -213,13 +216,16 @@ class Graveyard(Node):
              if c["count"] >= min_files and not _is_noise_deletion(c)),
             key=lambda c: c["count"], reverse=True,
         )
-        # Keep the graves distinct: at most one per source area (first two path
-        # components of the scope) so we don't return six variants of one deletion.
+        # Keep the graves distinct: at most one per source area so we don't
+        # return six variants of one deletion. `scope` is already the shared
+        # prefix capped at two path components (gitlog.scope_of), so it IS
+        # the area; re-splitting it here was dead code that only ever
+        # reproduced its input (coderay-q2r.44).
         graves, seen_areas = [], set()
         for c in candidates:
             if len(graves) >= max_graves:  # coderay-q2r.40: checked first, so 0 means none
                 break
-            area = os.sep.join(c["scope"].split(os.sep)[:2])
+            area = c["scope"]
             if area in seen_areas:
                 continue
             seen_areas.add(area)

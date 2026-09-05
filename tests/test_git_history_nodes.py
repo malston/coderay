@@ -1,4 +1,5 @@
 import json
+import os
 import pathlib
 import subprocess
 
@@ -159,6 +160,15 @@ def test_graveyard_honours_max_graves(monkeypatch, tmp_path):
               "grave_min_files": 8, "max_graves": 2}
     n.Graveyard().run(shared)
     assert len(shared["graves"]) == 2
+
+
+def test_is_noise_deletion_checks_skip_dirs_by_forward_slash_not_os_sep(monkeypatch):
+    """coderay-q2r.44. Git paths are always forward-slash; splitting on the
+    platform's `os.sep` mis-detects the skip-list on Windows (backslash).
+    Patching the platform separator must not change the answer."""
+    monkeypatch.setattr(os, "sep", "\\")
+    change = {"files": [f"node_modules/pkg/f{i}.js" for i in range(10)]}
+    assert n._is_noise_deletion(change) is True
 
 
 @pytest.mark.parametrize("name", ["name-eras.md", "profile-era.md", "graveyard-entry.md"])

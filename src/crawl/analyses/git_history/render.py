@@ -59,10 +59,29 @@ def _esc(s):
 
 
 def _pct(v):
+    """A bar's fill percentage. A model sometimes writes the number with its
+    own trailing '%' (`"45%"`), which `float()` rejects outright; stripping
+    it here is what keeps that bar from silently reading as 0 (coderay-q2r.43)."""
     try:
+        if isinstance(v, str):
+            v = v.strip().rstrip("%")
         return max(0, min(100, float(v)))
     except (TypeError, ValueError):
         return 0
+
+
+def _pct_label(v):
+    """The markdown `(NN%)` figure for a cast/mood entry: `?` when the model
+    left `pct` out, otherwise the number with any '%' it already added
+    stripped first, or a value like "45%" prints as "45%%" (coderay-q2r.43)."""
+    if v is None:
+        return "?"
+    if isinstance(v, str):
+        v = v.strip().rstrip("%")
+    try:
+        return f"{float(v):g}"
+    except (TypeError, ValueError):
+        return "?"
 
 
 def _profiles_by_era(shared):
@@ -463,9 +482,28 @@ def render_html(name, shared):
         eras_html="\n".join(era_blocks),
         profiles_html="\n".join(profile_blocks)
         or '      <li class="card profile"><div class="cm">No profiles.</div></li>',
-        graves_html="\n".join(grave_blocks)
-        or '      <li class="card grave"><div class="grave-body">No bulk deletions found.</div></li>',
+        graves_html="\n".join(grave_blocks) or _no_graves_placeholder(shared),
         n_commits=f"{n_commits:,}",
+    )
+
+
+def _no_graves_placeholder(shared):
+    """What the graveyard card says when no grave made the page.
+
+    `bulk_dels` is every deletion `grave_min_files` or larger, before the
+    Graveyard node's noise filter, area dedup and `max_graves` cap; an empty
+    `graves` list with a non-empty `bulk_dels` means candidates existed and
+    were all filtered out, not that the repo never had a bulk deletion
+    (coderay-q2r.43) -- the two read very differently on the page.
+    """
+    n = len(shared.get("bulk_dels") or [])
+    if not n:
+        return '      <li class="card grave"><div class="grave-body">No bulk deletions found.</div></li>'
+    plural = "" if n == 1 else "s"
+    return (
+        '      <li class="card grave"><div class="grave-body">'
+        f'{n} bulk deletion{plural} found, but none qualified as a killed feature '
+        '(below the size threshold, or flagged as vendor/build noise).</div></li>'
     )
 
 
@@ -498,13 +536,13 @@ def render_markdown(name, shared):
         parts.append("**Cast:**")
         for c in cast.get("contributors", []):
             note = f" — {c['note']}" if c.get("note") else ""
-            parts.append(f"- {c.get('name','')} ({c.get('pct','?')}%){note}")
+            parts.append(f"- {c.get('name','')} ({_pct_label(c.get('pct'))}%){note}")
         if cast.get("narrative"):
             parts.append(f"\n_{cast['narrative'].strip()}_")
         parts.append("\n**Mood:**")
         for p in mood.get("patterns", []):
             note = f" — {p['note']}" if p.get("note") else ""
-            parts.append(f"- {p.get('label','')} ({p.get('pct','?')}%){note}")
+            parts.append(f"- {p.get('label','')} ({_pct_label(p.get('pct'))}%){note}")
         if mood.get("narrative"):
             parts.append(f"\n_{mood['narrative'].strip()}_")
         parts.append("")
