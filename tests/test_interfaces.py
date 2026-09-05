@@ -42,8 +42,9 @@ def test_the_sequence_section_builds_its_own_card_and_prefix():
 
 def test_the_sequence_markdown_note_reaches_the_page():
     """coderay-5wu.10. render_markdown never calls `cards`, so the q2r.25
-    ungrounded note and the 5wu.1 fallback note previously reached the HTML
-    page only; a reader of index.md saw a diagram with no marker at all."""
+    ungrounded note and the 5wu.1 fallback note reach only the HTML page
+    without this hook, leaving a reader of index.md a diagram with no
+    marker at all."""
     from crawl.core.render import render_markdown
 
     ungrounded = {"sequence_grounded": False, "sequence_endpoint": "POST /x",
