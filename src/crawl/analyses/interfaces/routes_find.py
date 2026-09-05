@@ -20,6 +20,7 @@ import os
 import re
 
 from crawl.core import DEFAULT_MAX_FILE_BYTES, DEFAULT_SKIP_DIR, is_test_file, readable
+from crawl.core.gosrc import without_comments
 
 SKIP_DIRS = DEFAULT_SKIP_DIR | {'.storybook'}
 _ROUTE_BASENAMES = frozenset({
@@ -44,9 +45,6 @@ _GO_REGISTRATION = re.compile(
     + r'|\bRegister\w+Server\(|\.Path\(\s*"/'
     + r'|\.(?:Get|Post|Put|Delete|Patch|Options|Head|Any|GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD'
     + r'|Handle|Route|Mount|Group)\(\s*"(?:[A-Z]+ )?/')
-# Block comments, then line comments that are not the `//` of a URL literal.
-_GO_BLOCK_COMMENT = re.compile(r'/\*.*?\*/', re.S)
-_GO_LINE_COMMENT = re.compile(r'(?<!:)//.*')
 # What a serving entry point mentions when the heuristic above finds none of
 # its registrations: the listener it starts.
 _GO_SERVES = re.compile(r'"net/http"|ListenAndServe|grpc\.NewServer|\.Serve\(|\.Run\(')
@@ -57,9 +55,9 @@ _GO_MANIFEST_MIN = 5
 
 def go_route_registrations(text):
     """Count of registration-shaped calls in a Go source file (see
-    _GO_REGISTRATION), with comments stripped so a commented-out example does
-    not count."""
-    return len(_GO_REGISTRATION.findall(_GO_LINE_COMMENT.sub("", _GO_BLOCK_COMMENT.sub("", text))))
+    _GO_REGISTRATION), with comments removed by the shared Go scanner so a
+    commented-out example does not count and a URL's // is not a comment."""
+    return len(_GO_REGISTRATION.findall(without_comments(text)))
 
 
 def _go_manifest(text, weight):

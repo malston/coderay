@@ -94,14 +94,14 @@ def test_find_migrations_returns_the_names_oldest_first(tmp_path):
     ("0001_initial.py", "0001_initial"),                    # Django: four digits
     ("20210605225044_init", "20210605225044_init"),          # Prisma: fourteen
     ("20210101120000_create_users.rb", "20210101120000_create_users"),  # Rails
+    ("00001_init.sql", "00001_init"),                                    # goose
+    ("000001_init.up.sql", "000001_init"),                               # golang-migrate
 ])
 def test_find_migrations_reads_every_framework_numbering(tmp_path, name, expected):
-    """Was coderay-q2r.21: the pattern demanded six leading digits.
-
-    Prisma and Rails both use fourteen, so only Django's four-digit numbering
-    was dropped -- and dropped silently, as 'history squashed'. Django is the
-    distinguishing input; the other two passed before the fix and must still.
-    """
+    """TIMESTAMP_RE accepts four or more leading digits, so Django (four), goose
+    (five), golang-migrate (six) and Prisma or Rails (fourteen) all pass; a
+    six-digit minimum drops every Django history silently, as "squashed"
+    (coderay-q2r.21)."""
     repo = _repo(tmp_path, {f"app/migrations/{name}": "x\n"})
     _reldir, names = sf.find_migrations(repo)
     assert names == [expected]
@@ -200,3 +200,177 @@ def test_find_schema_skips_a_virtualenv_named_env(tmp_path):
     })
     assert "ignored" not in sf.find_schema(repo)["text"]
     assert sf.find_migrations(repo)[0] == "app/migrations"
+
+
+# coderay-5wu.13. A Go service often keeps its schema as CREATE TABLE statements
+# inside Go string literals, migrating in code; there is no schema file to find.
+GO_DB = '''package hub
+
+import "database/sql"
+
+func migrate(db *sql.DB) error {
+	if db == nil {
+		return fmt.Errorf("open db: %w", errNil)
+	}
+	_, _ = db.Exec(`ALTER TABLE claws ADD COLUMN provider TEXT NOT NULL DEFAULT ''`)
+	_, _ = db.Exec("create table sessions (id TEXT PRIMARY KEY)")
+	_, _ = db.Exec(`CREATE UNIQUE INDEX idx_claws_tenant ON claws(tenant_id)`)
+	_, err := db.Exec(`
+	CREATE TABLE IF NOT EXISTS tenants (
+		id TEXT PRIMARY KEY
+	);
+
+	CREATE TABLE IF NOT EXISTS claws (
+		id TEXT PRIMARY KEY,
+		tenant_id TEXT NOT NULL REFERENCES tenants(id)
+	);
+	`)
+	return err
+}
+'''
+
+
+def test_find_schema_reads_create_table_statements_embedded_in_go(tmp_path):
+    repo = _repo(tmp_path, {"pkg/hub/db.go": GO_DB, "pkg/hub/server.go": "package hub\n"})
+    found = sf.find_schema(repo)
+    assert found["kind"] == "embedded-sql"
+    assert "pkg/hub/db.go" in found["path"]
+    assert "CREATE TABLE IF NOT EXISTS claws" in found["text"]
+    assert "ALTER TABLE claws ADD COLUMN provider" in found["text"]
+    assert "create table sessions" in found["text"]            # interpreted string, lowercase
+    assert "CREATE UNIQUE INDEX idx_claws_tenant" in found["text"]
+    assert "func migrate" not in found["text"] and "db.Exec" not in found["text"]
+    assert "database/sql" not in found["text"] and "open db" not in found["text"]
+
+
+def test_embedded_sql_files_are_ordered_by_how_many_tables_they_create(tmp_path):
+    """The file with most of the schema leads; a file that creates one table
+    for a feature follows; a .go file with no SQL, a test file and a fixture
+    directory are not part of the schema."""
+    one = 'package a\n_ = `CREATE TABLE IF NOT EXISTS analytics (id TEXT)`\n'
+    repo = _repo(tmp_path, {
+        "pkg/hub/analytics_api.go": one,
+        "pkg/hub/db.go": GO_DB,
+        "pkg/hub/db_test.go": GO_DB,
+        "pkg/hub/factorytest/fixture.go": GO_DB,
+        "pkg/hub/server.go": "package hub\n",
+    })
+    found = sf.find_schema(repo)
+    assert found["path"] == "2 Go files with embedded SQL (pkg/hub/db.go, pkg/hub/analytics_api.go)"
+    assert found["text"].index("db.go") < found["text"].index("analytics_api.go")
+    assert "fixture" not in found["text"] and "db_test" not in found["text"]
+
+
+def test_find_schema_prefers_a_schema_file_over_embedded_sql(tmp_path):
+    repo = _repo(tmp_path, {"schema.sql": "CREATE TABLE x (id int);\n", "pkg/hub/db.go": GO_DB})
+    assert sf.find_schema(repo)["kind"] == "sql"
+
+
+def test_find_schema_prefers_model_files_over_embedded_sql(tmp_path):
+    """A models.py is a schema by convention; DDL inside Go strings is a
+    heuristic. A Django repo with a Go sidecar keeps its models."""
+    repo = _repo(tmp_path, {"app/models.py": "class A: pass\n", "pkg/hub/db.go": GO_DB})
+    assert sf.find_schema(repo)["kind"] == "models"
+
+
+def test_embedded_sql_keeps_only_literals_that_are_statements(tmp_path):
+    """An error message that mentions creating a table is prose, not schema;
+    a literal counts when it begins with a DDL statement."""
+    prose = 'package a\n_ = fmt.Errorf("failed to create table %s: %w", name, err)\nlog.Printf("create table %q failed", n)\n'
+    repo = _repo(tmp_path, {"pkg/hub/errors.go": prose})
+    assert sf.find_schema(repo)["kind"] is None
+    assert sf.embedded_sql(prose) == ""
+
+
+def test_embedded_sql_ignores_comments_and_rune_literals(tmp_path):
+    """A backtick in a comment or a rune literal must not pair with a raw
+    string's opening backtick; the scanner walks comments and runes as Go does."""
+    text = ("package a\n// the ` rune starts a raw string\nr := '`'\nq := '\"'\n"
+            "func migrate(db *sql.DB) {\n\tdb.Exec(`CREATE TABLE t (id int)`)\n}\n"
+            "/* db.Exec(`CREATE TABLE old (id int)`) */\n")
+    ddl = sf.embedded_sql(text)
+    assert ddl == "CREATE TABLE t (id int)"
+
+
+def test_embedded_sql_unescapes_interpreted_strings_and_keeps_inner_quotes(tmp_path):
+    text = 'a := "CREATE TABLE \\"users\\" (id int)"\nb := `ALTER TABLE t RENAME TO "new_t"`\n'
+    ddl = sf.embedded_sql(text)
+    assert 'CREATE TABLE "users" (id int)' in ddl and 'RENAME TO "new_t"' in ddl
+    from crawl.analyses.schema.nodes import schema_table_names
+    assert schema_table_names(ddl) == {"users"}
+
+
+def test_a_file_with_only_alter_table_statements_joins_the_schema(tmp_path):
+    """Migrating in code often splits the CREATEs and the ALTERs across files;
+    the columns added later belong to the schema."""
+    repo = _repo(tmp_path, {
+        "pkg/hub/schema.go": GO_DB,
+        "pkg/hub/migrations.go": "package hub\n_ = `ALTER TABLE claws ADD COLUMN nix INTEGER NOT NULL DEFAULT 0`\n",
+    })
+    found = sf.find_schema(repo)
+    assert "ADD COLUMN nix" in found["text"]
+    assert found["text"].index("schema.go") < found["text"].index("migrations.go")
+
+
+def test_go_files_are_not_read_when_a_schema_file_wins(tmp_path, monkeypatch):
+    """The Go scan reads every candidate file whole; a repo that has a schema
+    file must not pay for it, and a generated .go file over the per-file cap is
+    never read at all."""
+    from crawl.core import DEFAULT_MAX_FILE_BYTES
+    repo = _repo(tmp_path, {"schema.prisma": "model User {}\n", "pkg/gen/big.go": "x" * (DEFAULT_MAX_FILE_BYTES + 1)})
+    opened = []
+    real = sf._read
+    monkeypatch.setattr(sf, "_read", lambda path, *a, **k: opened.append(path) or real(path, *a, **k))
+    assert sf.find_schema(repo)["kind"] == "prisma"
+    assert not any(p.endswith(".go") for p in opened)
+    repo2 = _repo(tmp_path / "two", {"pkg/gen/big.go": "x" * (DEFAULT_MAX_FILE_BYTES + 1), "pkg/hub/db.go": GO_DB})
+    opened.clear()
+    assert sf.find_schema(repo2)["kind"] == "embedded-sql"
+    assert not any(p.endswith("big.go") for p in opened)
+
+
+def test_find_migrations_counts_a_golang_migrate_pair_once(tmp_path):
+    repo = _repo(tmp_path, {"db/migrations/000001_init.up.sql": "x\n", "db/migrations/000001_init.down.sql": "x\n",
+                            "db/migrations/000002_users.up.sql": "x\n", "db/migrations/000002_users.down.sql": "x\n"})
+    _reldir, names = sf.find_migrations(repo)
+    assert names == ["000001_init", "000002_users"]
+
+
+def test_embedded_sql_is_refused_from_a_go_file_symlinked_out_of_the_repo(tmp_path):
+    import os
+    outside = tmp_path / "outside.go"
+    outside.write_text(GO_DB.replace("tenants", "LEAKED_TABLE"), encoding="utf-8")
+    repo = _repo(tmp_path / "repo", {"README.md": "x\n"})
+    os.makedirs(os.path.join(repo, "pkg"), exist_ok=True)
+    os.symlink(outside, os.path.join(repo, "pkg", "db.go"))
+    found = sf.find_schema(repo)
+    assert found["kind"] is None and "LEAKED_TABLE" not in found["text"]
+
+
+def test_embedded_sql_table_names_reach_the_filter(tmp_path):
+    """SchemaTour filters the model's ER diagram against the tables actually
+    declared; the extracted SQL must carry the CREATE TABLE lines whole."""
+    from crawl.analyses.schema.nodes import schema_table_names
+    repo = _repo(tmp_path, {"pkg/hub/db.go": GO_DB})
+    assert schema_table_names(sf.find_schema(repo)["text"]) == {"tenants", "claws", "sessions"}
+
+
+def test_embedded_sql_ties_break_alphabetically_and_only_go_files_are_candidates(tmp_path):
+    one = 'package a\n_ = `CREATE TABLE IF NOT EXISTS t (id TEXT)`\n'
+    repo = _repo(tmp_path, {"pkg/b.go": one, "pkg/a.go": one, "pkg/c.sql.txt": one, "pkg/d.go.bak": one})
+    found = sf.find_schema(repo)
+    assert found["path"] == "2 Go files with embedded SQL (pkg/a.go, pkg/b.go)"
+
+
+def test_embedded_sql_keeps_whole_files_and_drops_the_tail_under_the_budget(tmp_path, monkeypatch):
+    """Same rule as the model files: whole blocks, fewer of them, and the path
+    says how many were found. The first block is kept even when it alone
+    exceeds the budget, so a single large schema is never silently empty."""
+    monkeypatch.setattr(sf, "SCHEMA_BUDGET", 600)
+    ddl = "CREATE TABLE IF NOT EXISTS t%d (\n" + "  c TEXT,\n" * 20 + "  id TEXT\n)"
+    files = {f"pkg/m{i}.go": "package a\n_ = `" + ddl % i + "`\n" for i in range(4)}
+    found = sf.find_schema(_repo(tmp_path, files))
+    assert found["path"].startswith("2 Go files with embedded SQL") and found["path"].endswith(" of 4 found")
+    monkeypatch.setattr(sf, "SCHEMA_BUDGET", 50)
+    found = sf.find_schema(_repo(tmp_path / "one", {"pkg/m.go": files["pkg/m0.go"]}))
+    assert "CREATE TABLE IF NOT EXISTS t0" in found["text"] and found["path"].startswith("1 Go file with")
