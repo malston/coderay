@@ -1,30 +1,28 @@
-"""coderay-q2r.50. The pre-flight guard in each analysis stops the run before
-its first paid call when the crawl found nothing. `python -O` strips assert
-statements, so a guard written as one vanishes and the run pays for prompts
-over nothing; each guard is a SystemExit, which -O leaves alone."""
+"""coderay-5wu.19 (Mark's call, 2026-09-04). The package relies on assert
+statements: the shape checks in every normalize() raise AssertionError, which
+drives the json_call and yaml_call retries, and the post-call output checks
+do the same. `python -O` strips all of them, so a wrong-shaped model reply
+would pass straight through instead of retrying. Rather than convert about
+fifty asserts by hand, the package refuses to import under -O. The four
+pre-flight guards stay SystemExit (coderay-q2r.50), which needs no -O test
+now that the interpreter never gets that far."""
 import subprocess
 import sys
 
-import pytest
 
-CASES = {
-    "backend": ("from crawl.analyses.backend.nodes import BuildBundle as N", "No backend source found"),
-    "architecture": ("from crawl.analyses.architecture.nodes import BuildBundle as N", "No architecture sources found"),
-    "interfaces": ("from crawl.analyses.interfaces.nodes import FindRoutes as N", "No route/surface files found"),
-    "schema": ("from crawl.analyses.schema.nodes import FindSchema as N", "No schema file found"),
-}
+def _run(*flags):
+    return subprocess.run([sys.executable, *flags, "-c", "import crawl; print('imported')"],
+                          capture_output=True, text=True)
 
 
-@pytest.mark.parametrize("name,case", sorted(CASES.items()))
-def test_the_preflight_guard_survives_python_dash_O(tmp_path, name, case):
-    """The guard's own message, and no traceback: an uncaught SystemExit(str)
-    prints only the string, while a crash before the guard (an import error, a
-    missing file) prints a traceback and would otherwise pass for a fired guard."""
-    imp, message = case
-    (tmp_path / "README.md").write_text("nothing here\n")
-    code = (f"{imp}\nif __debug__: print('NOT OPTIMIZED')\n"
-            f"N().run({{'repo_path': {str(tmp_path)!r}}})\nprint('GUARD DID NOT FIRE')")
-    proc = subprocess.run([sys.executable, "-O", "-c", code], capture_output=True, text=True)
-    assert "NOT OPTIMIZED" not in proc.stdout and "GUARD DID NOT FIRE" not in proc.stdout, name
-    assert proc.returncode == 1, (name, proc.stderr[-300:])
-    assert message in proc.stderr and "Traceback" not in proc.stderr, (name, proc.stderr[-300:])
+def test_the_package_refuses_to_import_under_python_dash_O():
+    proc = _run("-O")
+    assert "imported" not in proc.stdout
+    assert proc.returncode == 1, proc.stderr[-300:]
+    assert "python -O" in proc.stderr and "assert" in proc.stderr, proc.stderr[-300:]
+    assert "Traceback" not in proc.stderr, proc.stderr[-300:]
+
+
+def test_the_package_imports_normally_without_dash_O():
+    proc = _run()
+    assert proc.returncode == 0 and "imported" in proc.stdout, proc.stderr[-300:]
