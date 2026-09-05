@@ -37,6 +37,26 @@ def test_the_sequence_section_builds_its_own_card_and_prefix():
     seq = next(s for s in interfaces.SECTIONS if s.key == "sequence_md")
     assert seq.prefix is interfaces._sequence_prefix
     assert seq.cards is interfaces._sequence_cards
+    assert seq.md_note is interfaces._sequence_note
+
+
+def test_the_sequence_markdown_note_reaches_the_page():
+    """coderay-5wu.10. render_markdown never calls `cards`, so the q2r.25
+    ungrounded note and the 5wu.1 fallback note reach only the HTML page
+    without this hook, leaving a reader of index.md a diagram with no
+    marker at all."""
+    from crawl.core.render import render_markdown
+
+    ungrounded = {"sequence_grounded": False, "sequence_endpoint": "POST /x",
+                  "sequence_md": "```mermaid\nsequenceDiagram\n  a->>b: x\n```"}
+    out = render_markdown(interfaces, "repo", ungrounded)
+    assert "No handler source was read" in out
+
+    fallback = {"sequence_grounded": True, "sequence_endpoint": "POST /x",
+                "sequence_fallback": "app/urls.py", "sequence_dropped": [],
+                "sequence_md": "```mermaid\nsequenceDiagram\n  a->>b: x\n```"}
+    out = render_markdown(interfaces, "repo", fallback)
+    assert "The model named no source files" in out
 
 
 def test_interfaces_raises_more_output_tokens():
@@ -209,6 +229,16 @@ def test_the_sequence_card_says_when_some_named_files_were_not_read():
     assert "1 of the files the model named was not read" in html
     assert "pages/api/missing.ts" in html
     assert "not found" not in html and "do not exist" not in html
+
+
+def test_the_sequence_card_says_when_several_named_files_were_not_read():
+    """The plural arm of the not-read note: two or more dropped files, no
+    fallback (from the /code-review of PR 45, noted on coderay-5wu.10)."""
+    shared = {"sequence_endpoint": "POST /api/a", "sequence_grounded": True,
+              "sequence_fallback": None, "sequence_dropped": ["pages/api/a.ts", "pages/api/b.ts"]}
+    html = interfaces._sequence_cards(shared, "Body.")
+    assert "2 of the files the model named were not read" in html
+    assert "pages/api/a.ts" in html and "pages/api/b.ts" in html
 
 
 def test_the_sequence_card_says_when_the_model_named_no_source_files():

@@ -63,6 +63,16 @@ def _source_note(shared):
     return ""
 
 
+def _sequence_note(shared):
+    """Which note, if any, belongs beside the sequence diagram: the q2r.25
+    ungrounded warning takes precedence, then the 5wu.1 fallback-source note.
+    Shared between the HTML card and the markdown section's md_note hook so
+    both pages say the same thing (coderay-5wu.10)."""
+    if not shared.get("sequence_grounded", True):
+        return UNGROUNDED_NOTE
+    return _source_note(shared)
+
+
 def _sequence_cards(shared, body_md):
     """One hand-built card holding the sequence body, with the fence removed.
 
@@ -73,7 +83,7 @@ def _sequence_cards(shared, body_md):
     nothing else leaves an empty body; the card still renders when there is a
     note to carry, and is omitted only when there is nothing to say."""
     body = strip_mermaid(body_md)
-    note = UNGROUNDED_NOTE if not shared.get("sequence_grounded", True) else _source_note(shared)
+    note = _sequence_note(shared)
     if not body and not note:
         return ""
     if note:
@@ -93,7 +103,7 @@ SECTIONS = [
     Section("04", "Endpoint sequence",
             "one endpoint, every message inside it",
             "seq", 560, "sequence_md",
-            prefix=_sequence_prefix, cards=_sequence_cards),
+            prefix=_sequence_prefix, cards=_sequence_cards, md_note=_sequence_note),
 ]
 
 def _subtitle(shared):

@@ -71,6 +71,18 @@ def test_render_markdown_emits_a_heading_per_section():
     assert out.startswith("# repo: demo\n")
     assert "## Only" in out
 
+def test_md_note_prepends_to_the_markdown_section_body():
+    """coderay-5wu.10. `prefix` reaches only render_html; a section that needs
+    the same note on the markdown page (interfaces' sequence card) needs its
+    own hook there, since render_markdown never calls `cards` or `prefix`."""
+    class A(_Analysis):
+        SECTIONS = [Section("01", "Only", "note", "rail", 400, "body_md",
+                            md_note=lambda sh: "**A note.**")]
+    out = render_markdown(A, "repo", {"body_md": "### A\ntext"})
+    assert "**A note.**" in out
+    assert out.index("**A note.**") < out.index("### A")
+
+
 def test_when_empty_omit_drops_the_section():
     class A(_Analysis):
         SECTIONS = [Section("01", "Gone", "n", "r", 400, "missing", when_empty="omit")]

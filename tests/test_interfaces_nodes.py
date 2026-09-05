@@ -151,6 +151,8 @@ def test_endpoint_sequence_reads_the_files_the_model_picks(tmp_path, monkeypatch
     assert shared["sequence_files"] == ["pages/api/book.ts"]
     # The handler source reached the diagram prompt, which is the point of step 1.
     assert "export default function book" in prompts[1]
+    # A clean pick -- the model's own file was read -- has no fallback and drops nothing.
+    assert shared["sequence_fallback"] is None and shared["sequence_dropped"] == []
 
 
 def test_endpoint_sequence_falls_back_to_the_largest_handler_when_the_pick_is_unusable(
@@ -519,21 +521,6 @@ def test_the_node_and_the_card_agree_on_the_fallback(tmp_path, monkeypatch):
     _sequence_node().run(shared)
     html = interfaces._sequence_cards(shared, shared["sequence_md"])
     assert "Drawn from <code>pages/api/zzz.ts</code>" in html and "nope/none.py" in html
-
-
-def test_a_clean_pick_records_no_fallback_and_nothing_dropped(tmp_path, monkeypatch):
-    repo = _repo(tmp_path, {"pages/api/a.ts": "export const a = 1;\n"})
-
-    def reply(prompt):
-        if "sequence diagram" in prompt:
-            return '```yaml\nendpoint: "POST /api/a"\nfiles:\n  - pages/api/a.ts\n```'
-        return "```mermaid\nsequenceDiagram\n  a->>b: hi\n```"
-
-    _fake_llm(monkeypatch, reply)
-    shared = {"repo_path": repo, "routes": "r", "menu_md": "m", "flows_md": "",
-              "route_files": ["pages/api/a.ts"]}
-    _sequence_node().run(shared)
-    assert shared["sequence_fallback"] is None and shared["sequence_dropped"] == []
 
 
 def test_the_sequence_fallback_uses_a_non_nextjs_route_file(tmp_path, monkeypatch):
