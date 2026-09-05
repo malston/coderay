@@ -327,6 +327,37 @@ def test_sdk_unavailable_reason_finds_the_phrase_behind_a_warning_line(tmp_path,
     assert stats["sdk_unavailable"] == "not a git repository"
 
 
+def test_sdk_unavailable_reason_when_git_rev_parse_times_out(tmp_path, monkeypatch):
+    """coderay-5wu.8. Neither subprocess call in _sdk_grep had a timeout, so a
+    slow network mount (or a git hook that hangs) would hang the whole run
+    with no message at all."""
+    import subprocess
+
+    def run(cmd, **kw):
+        assert kw.get("timeout") == ac.SDK_GREP_TIMEOUT   # the fix, not just the handler
+        raise subprocess.TimeoutExpired(cmd, kw.get("timeout"))
+    monkeypatch.setattr(ac.subprocess, "check_output", run)
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n"})
+    bundle, stats = ac.build_bundle(repo)
+    assert stats["sdk_unavailable"] == "git rev-parse timed out"
+    assert "SDK IMPORTS unavailable" in bundle
+
+
+def test_sdk_unavailable_reason_when_git_grep_times_out(tmp_path, monkeypatch):
+    import subprocess
+
+    def run(cmd, **kw):
+        if "rev-parse" in cmd:
+            return str(tmp_path) + "\n"
+        assert kw.get("timeout") == ac.SDK_GREP_TIMEOUT
+        raise subprocess.TimeoutExpired(cmd, kw.get("timeout"))
+    monkeypatch.setattr(ac.subprocess, "check_output", run)
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n"})
+    bundle, stats = ac.build_bundle(repo)
+    assert stats["sdk_unavailable"] == "git grep timed out"
+    assert "SDK IMPORTS unavailable" in bundle
+
+
 def test_sdk_unavailable_section_survives_bundle_truncation(tmp_path):
     """The note the model must read sits at the top of the bundle, since the
     budget cut takes from the end."""
@@ -388,6 +419,24 @@ def test_sdk_grep_with_no_matches_is_not_reported_as_unavailable(tmp_path):
     assert "SDK IMPORTS unavailable" not in bundle
 
 
+def test_sdk_grep_reports_when_the_line_cap_was_hit(tmp_path):
+    """coderay-5wu.7. `_sdk_grep` caps at `max_lines` in git-grep path order, so
+    a repo with more real imports than the cap silently drops whatever sorts
+    last -- an entire directory's worth of evidence can vanish with no sign
+    of it. A third return value says whether the cap actually cut anything,
+    so a caller can tell "these are all the imports" from "there are more"."""
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services: {}\n",
+        **{f"svc{i}.ts": f'import Stripe from "stripe";\nconst s{i} = new Stripe("k");\n' for i in range(4)},
+    })
+    _commit_all(repo)
+    _lines, _why, capped = ac._sdk_grep(repo, max_lines=8)
+    assert capped is False   # exactly at the cap, nothing was cut
+    lines, _why, capped = ac._sdk_grep(repo, max_lines=2)
+    assert capped is True
+    assert len(lines.splitlines()) == 2
+
+
 def test_build_bundle_overlays_the_four_sources_and_counts_them(tmp_path):
     repo = _repo(tmp_path, {
         "docker-compose.yml": "services:\n  api:\n    image: api\n",
@@ -402,7 +451,7 @@ def test_build_bundle_overlays_the_four_sources_and_counts_them(tmp_path):
 
     assert stats == {"config_files": 4, "config_files_found": 4, "truncated": False,
                      "env_vars": 2, "deps": 2, "integrations": 0, "sdk_lines": 0,
-                     "sdk_unavailable": "not a git repository",
+                     "sdk_unavailable": "not a git repository", "sdk_capped": False,
                      "files": [".env.example", "Procfile", "deploy/k8s/api.yaml", "docker-compose.yml",
                                "infra/main.tf", "package.json"],
                      "sdk_import_files": [], "integration_dirs": []}
@@ -482,6 +531,88 @@ def test_build_bundle_caps_the_total_size_and_says_it_truncated(tmp_path):
     assert "BUNDLE TRUNCATED" in bundle
     assert stats["truncated"] is True
     assert len(bundle) > 1_000        # the marker is appended after the slice
+
+
+def test_build_bundle_notes_sdk_capped_in_the_header_and_the_stats(tmp_path, monkeypatch):
+    """coderay-5wu.7. sdk_lines == max_lines reads as an exact count with
+    nothing in the bundle or footer saying the list was cut."""
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n"})
+    monkeypatch.setattr(ac, "_sdk_grep", lambda repo, max_lines=ac.SDK_GREP_MAX_LINES:
+                         ("a.ts:1: stripe\nb.ts:1: stripe", None, True))
+    bundle, stats = ac.build_bundle(repo)
+    assert stats["sdk_capped"] is True
+    assert "capped" in bundle and str(ac.SDK_GREP_MAX_LINES) in bundle
+
+
+def test_build_bundle_does_not_mention_capping_when_the_cap_was_not_hit(tmp_path, monkeypatch):
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n"})
+    monkeypatch.setattr(ac, "_sdk_grep", lambda repo, max_lines=ac.SDK_GREP_MAX_LINES:
+                         ("a.ts:1: stripe", None, False))
+    bundle, stats = ac.build_bundle(repo)
+    assert stats["sdk_capped"] is False
+    assert "capped" not in bundle
+
+
+def test_sdk_lines_reflects_only_what_survived_the_budget_slice(tmp_path):
+    """coderay-5wu.8. The SDK section is appended last and `sdk_lines` was
+    computed from the full grep output before the budget slice, so a bundle
+    at budget could report N imports when the slice cut some or all of them
+    off before the model ever saw them."""
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "s" * 5_000,   # pushes the SDK section past the budget
+        "pay.ts": 'import Stripe from "stripe";\nconst s = new Stripe("k");\n',
+    })
+    _commit_all(repo)
+    full_bundle, full_stats = ac.build_bundle(repo)
+    assert full_stats["sdk_lines"] == 2   # sanity: ungated, both lines are real
+
+    cut_bundle, cut_stats = ac.build_bundle(repo, max_chars=5_000)
+    assert cut_stats["truncated"] is True
+    assert "pay.ts" not in cut_bundle
+    assert cut_stats["sdk_lines"] == 0
+    assert cut_stats["sdk_import_files"] == []
+
+
+def test_sdk_lines_drops_a_partial_line_the_budget_slice_cuts_mid_entry(tmp_path, monkeypatch):
+    """PR #70 review. The budget slice is by character, so max_chars landing
+    inside an SDK entry left a truncated fragment counted as a whole import
+    and its cut filename in sdk_import_files -- a file that was never fully
+    disclosed, and never even a real path in the target repo."""
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n"})
+    monkeypatch.setattr(ac, "_sdk_grep", lambda repo, max_lines=ac.SDK_GREP_MAX_LINES:
+                         ("a.ts:1: stripe\nb.ts:2: stripe", None, False))
+    full_bundle, _full_stats = ac.build_bundle(repo)
+    mid_first_line = full_bundle.index("a.ts:1: stripe") + 3   # inside "a.ts"
+    _bundle, stats = ac.build_bundle(repo, max_chars=mid_first_line)
+    assert stats["sdk_lines"] == 0
+    assert stats["sdk_import_files"] == []
+
+
+def test_sdk_lines_keeps_only_whole_lines_up_to_a_clean_cut(tmp_path, monkeypatch):
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n"})
+    monkeypatch.setattr(ac, "_sdk_grep", lambda repo, max_lines=ac.SDK_GREP_MAX_LINES:
+                         ("a.ts:1: stripe\nb.ts:2: stripe", None, False))
+    full_bundle, _full_stats = ac.build_bundle(repo)
+    right_before_second_line = full_bundle.index("b.ts:2: stripe")
+    _bundle, stats = ac.build_bundle(repo, max_chars=right_before_second_line)
+    assert stats["sdk_lines"] == 1
+    assert stats["sdk_import_files"] == ["a.ts"]
+
+
+def test_build_bundle_flags_sdk_capped_and_the_budget_slice_together(tmp_path, monkeypatch):
+    """The capped header is longer than the plain one, so the offset the
+    budget-slice math uses must reflect whichever header was actually chosen
+    -- not the plain header's length regardless of capping."""
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n"})
+    monkeypatch.setattr(ac, "_sdk_grep", lambda repo, max_lines=ac.SDK_GREP_MAX_LINES:
+                         ("a.ts:1: stripe\nb.ts:2: stripe", None, True))
+    full_bundle, full_stats = ac.build_bundle(repo)
+    assert full_stats["sdk_capped"] is True
+    right_before_second_line = full_bundle.index("b.ts:2: stripe")
+    _bundle, stats = ac.build_bundle(repo, max_chars=right_before_second_line)
+    assert stats["sdk_capped"] is True
+    assert stats["sdk_lines"] == 1
+    assert stats["sdk_import_files"] == ["a.ts"]
 
 
 def test_build_bundle_counts_only_files_whose_text_reached_the_bundle(tmp_path):
@@ -674,8 +805,9 @@ def test_go_sdk_evidence_names_only_the_module_and_only_from_go_files(tmp_path):
         "shapes.ts": 'switch (m) {\n  case "github.com/lib/pq": break;\n}\n',
     })
     _commit_all(repo)
-    lines, why = ac._sdk_grep(repo)
+    lines, why, capped = ac._sdk_grep(repo)
     assert why is None
+    assert capped is False   # 4 real matches, far under the 400-line cap
     got = sorted(lines.splitlines())
     assert got == ["a.go:3: anthropic-sdk-go", "a.go:4: other", "a.go:5: azure-sdk-for-go", "a.go:6: foo-sdk-go"], got
     assert "sk_live" not in lines and "vendor" not in lines and "acme" not in lines

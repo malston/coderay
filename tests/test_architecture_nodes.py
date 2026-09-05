@@ -28,6 +28,17 @@ def test_build_bundle_prints_why_sdk_imports_were_unavailable(tmp_path, capsys):
     assert "SDK imports unavailable: not a git repository" in capsys.readouterr().out
 
 
+def test_build_bundle_prints_when_sdk_imports_were_capped(tmp_path, capsys, monkeypatch):
+    """coderay-5wu.7. The console line reports an exact count with no sign
+    the git-grep line cap actually cut real evidence."""
+    from crawl.analyses.architecture import arch_crawl as ac
+    repo = _repo(tmp_path, {"docker-compose.yml": "services:\n  api:\n    image: api\n"})
+    monkeypatch.setattr(ac, "_sdk_grep", lambda repo, max_lines=ac.SDK_GREP_MAX_LINES:
+                         ("a.ts:1: stripe", None, True))
+    n.BuildBundle().run({"repo_path": repo})
+    assert "capped" in capsys.readouterr().out
+
+
 def test_build_bundle_refuses_a_repo_with_no_architecture_sources(tmp_path):
     """arch_crawl prepends no header, so an ordinary single-binary repo really
     does produce an empty bundle and the assertion stops the run before it

@@ -47,6 +47,7 @@ class BuildBundle(Node):
         shared["integration_dirs"] = stats["integration_dirs"]
         print(f"  Bundle: {stats['config_files']} config files, {stats['env_vars']} env vars, "
               f"{stats['deps']} deps, {stats['integrations']} integrations, {stats['sdk_lines']} SDK imports"
+              + (" (capped, more exist)" if stats.get("sdk_capped") else "")
               + (f" (SDK imports unavailable: {stats['sdk_unavailable']})" if stats.get("sdk_unavailable") else ""))
 
 

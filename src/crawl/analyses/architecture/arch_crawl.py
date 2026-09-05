@@ -31,6 +31,9 @@ GATEWAY_NAMES = frozenset({
     'render.yaml', 'railway.json', 'Procfile',
 })
 
+SDK_GREP_MAX_LINES = 400   # _sdk_grep's line cap; referenced again where a cap note is written
+SDK_GREP_TIMEOUT = 30      # seconds; a slow network mount must not hang the run with no message
+
 # Node and Python SDK / client imports that name an external node. Kept broad but specific.
 SDK_RE = (r"(stripe|twilio|@?aws-sdk|aws-sdk|googleapis|@google-cloud|ioredis|"
           r"'redis'|\"redis\"|nodemailer|@sendgrid|resend|@slack|slack|openai|"
@@ -348,7 +351,10 @@ def _git_grep(repo, pattern, pathspecs):
     could not run; git's own message never travels."""
     try:
         raw = subprocess.check_output(["git", "-C", repo, "grep", "-nE", pattern, "--", *pathspecs],
-                                      text=True, errors="replace", stderr=subprocess.PIPE)
+                                      text=True, errors="replace", stderr=subprocess.PIPE,
+                                      timeout=SDK_GREP_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return "", "git grep timed out"
     except subprocess.CalledProcessError as e:
         if e.returncode == 1:          # git grep: ran, matched nothing
             return "", None
@@ -358,34 +364,43 @@ def _git_grep(repo, pattern, pathspecs):
     return raw, None
 
 
-def _sdk_grep(repo, max_lines=400):
+def _sdk_grep(repo, max_lines=SDK_GREP_MAX_LINES):
     """SDK import lines with file:line, via `git grep` (fast). Real proof + paths.
 
-    Returns (lines, unavailable): `unavailable` is None when the grep ran, even
-    with no matches, and otherwise says why it could not: `git is not
-    installed`, `git could not be run (<error type>)`, `not a git repository`,
-    `not a git checkout (inside another repository)`, or `git grep exited N`. The toplevel must be the target
-    itself: `git -C` walks up to an enclosing repository, whose index does not
-    hold a tarball extracted inside it, and the grep would exit 1. Without that
-    second value a tarball export reads as a repo with no SDK imports and the
-    report is built on configuration alone (coderay-q2r.15). git's own message
-    never travels: it can quote the target repo's .git/config, and the reason
-    lands in the HTML footer and the LLM bundle."""
+    Returns (lines, unavailable, capped). `unavailable` is None when the grep
+    ran, even with no matches, and otherwise says why it could not: `git is
+    not installed`, `git could not be run (<error type>)`, `not a git
+    repository`, `not a git checkout (inside another repository)`, `git grep
+    timed out`, `git rev-parse timed out`, or `git grep exited N`. The
+    toplevel must be the target itself: `git -C` walks up to an enclosing
+    repository, whose index does not hold a tarball extracted inside it, and
+    the grep would exit 1. Without that second value a tarball export reads
+    as a repo with no SDK imports and the report is built on configuration
+    alone (coderay-q2r.15). git's own message never travels: it can quote the
+    target repo's .git/config, and the reason lands in the HTML footer and
+    the LLM bundle.
+
+    `capped` is True when `max_lines` actually cut real matches, so a caller
+    can tell "these are all the imports" from "there are more, not shown"
+    (coderay-5wu.7)."""
     try:
         top = subprocess.check_output(["git", "-C", repo, "rev-parse", "--show-toplevel"],
-                                      text=True, errors="replace", stderr=subprocess.PIPE).strip()
+                                      text=True, errors="replace", stderr=subprocess.PIPE,
+                                      timeout=SDK_GREP_TIMEOUT).strip()
     except FileNotFoundError:
-        return "", "git is not installed"
+        return "", "git is not installed", False
     except OSError as e:
         # A `git` on PATH that cannot be executed, say. The type name travels,
         # not the message, which names paths on the user's machine.
-        return "", f"git could not be run ({type(e).__name__})"
+        return "", f"git could not be run ({type(e).__name__})", False
+    except subprocess.TimeoutExpired:
+        return "", "git rev-parse timed out", False
     except subprocess.CalledProcessError as e:
         if "not a git repository" in (e.stderr or ""):
-            return "", "not a git repository"
-        return "", f"git rev-parse exited {e.returncode}"
+            return "", "not a git repository", False
+        return "", f"git rev-parse exited {e.returncode}", False
     if os.path.realpath(top) != os.path.realpath(repo):
-        return "", "not a git checkout (inside another repository)"
+        return "", "not a git checkout (inside another repository)", False
     # Two greps, each language-shaped: the Node/Python pattern over those
     # files, the Go pattern over *.go alone, so a Go module path quoted in a
     # Python list is not a Go import. A committed vendor tree is the SDK
@@ -396,7 +411,7 @@ def _sdk_grep(repo, max_lines=400):
     go = _git_grep(repo, _GO_IMPORT_LINE, ["*.go", ":(exclude)vendor/", ":(exclude)*/vendor/"])
     for raw, why in (js, go):
         if why:
-            return "", why
+            return "", why, False
     raw = js[0] + go[0]
     own = module_path(repo)
     # Emit path:line plus the SDK that matched, never the source line itself.
@@ -406,6 +421,7 @@ def _sdk_grep(repo, max_lines=400):
     # (coderay-q2r.31). The evidence this section exists to give is "this file
     # talks to this service", which the path and the name carry on their own.
     out, seen = [], set()
+    capped = False
     for line in raw.splitlines():
         if not line.strip():
             continue
@@ -430,10 +446,14 @@ def _sdk_grep(repo, max_lines=400):
         if entry in seen:
             continue
         seen.add(entry)
-        out.append(entry)
         if len(out) >= max_lines:
+            # A real, distinct match beyond the cap: the list was cut, not
+            # just exactly full (which would fall through to the natural
+            # end of the loop with capped still False).
+            capped = True
             break
-    return "\n".join(out), None
+        out.append(entry)
+    return "\n".join(out), None, capped
 
 
 def _integration_dirs(repo):
@@ -503,9 +523,17 @@ def build_bundle(repo, max_chars=500_000):
         parts.append(([], f"===== INTEGRATION DIRECTORIES ({idir}, {len(isubs)} total) =====\n"
                       + ", ".join(isubs) + "\n"))
 
-    sdk, sdk_unavailable = _sdk_grep(repo)
+    # Offset of the SDK section's own text within `whole` (see the files/offset
+    # loop below for the same "+1" convention): needed to tell how much of it,
+    # if any, survives the budget slice (coderay-5wu.8).
+    sdk_offset = sum(len(text) + 1 for _rels, text in parts)
+    sdk, sdk_unavailable, sdk_capped = _sdk_grep(repo)
+    sdk_header = "===== SDK IMPORTS (git grep — file:line: sdk) =====\n"
+    if sdk_capped:
+        sdk_header = (f"===== SDK IMPORTS (git grep — file:line: sdk; capped at "
+                      f"{SDK_GREP_MAX_LINES} lines, more may exist and are not shown) =====\n")
     if sdk:
-        parts.append(([], "===== SDK IMPORTS (git grep — file:line: sdk) =====\n" + sdk + "\n"))
+        parts.append(([], sdk_header + sdk + "\n"))
     elif sdk_unavailable and parts:
         # Only beside real sources: an empty bundle must stay empty so the
         # no-architecture-sources guard still fires. At the top, because the
@@ -522,7 +550,6 @@ def build_bundle(repo, max_chars=500_000):
         if offset < max_chars:
             files.extend(rels)
         offset += len(text) + 1
-    sdk_files = sorted({line.rsplit(":", 2)[0] for line in sdk.splitlines()}) if sdk else []
 
     whole = "\n".join(text for _rels, text in parts)
     bundle = whole[:max_chars]
@@ -531,6 +558,29 @@ def build_bundle(repo, max_chars=500_000):
         # file that simply stops as a complete one (coderay-q2r.27).
         bundle += (f"\n\n===== BUNDLE TRUNCATED at {max_chars:,} of "
                    f"{len(whole):,} chars -- the sources above are incomplete =====\n")
+
+    # sdk_lines/sdk_import_files must count only the SDK evidence that actually
+    # reached the model. The SDK section is appended last (after config, env,
+    # deps, integrations), so on a bundle at budget the slice above can land
+    # inside it, or before it starts entirely; without this, the stats line
+    # claims imports the LLM never saw (coderay-5wu.8). A character slice can
+    # also land mid-entry, so only whole lines that fit entirely within budget
+    # are kept -- a cut filename is not real evidence (PR #70 review).
+    if sdk:
+        sdk_text_start = sdk_offset + len(sdk_header)
+        budget = max_chars - sdk_text_start
+        kept, used = [], 0
+        for line in sdk.split("\n"):
+            grows_by = len(line) + (1 if kept else 0)   # a "\n" before every line but the first
+            if used + grows_by > budget:
+                break
+            kept.append(line)
+            used += grows_by
+        sdk_in_bundle = "\n".join(kept)
+    else:
+        sdk_in_bundle = ""
+    sdk_files = sorted({line.rsplit(":", 2)[0] for line in sdk_in_bundle.splitlines()}) if sdk_in_bundle else []
+
     stats = {
         # What reached the bundle, not what was classified: an empty or
         # unreadable config file is skipped above and must not be counted
@@ -541,8 +591,9 @@ def build_bundle(repo, max_chars=500_000):
         "env_vars": len(env_names),
         "deps": len(deps),
         "integrations": len(isubs),
-        "sdk_lines": sdk.count("\n") + 1 if sdk else 0,
+        "sdk_lines": sdk_in_bundle.count("\n") + 1 if sdk_in_bundle else 0,
         "sdk_unavailable": sdk_unavailable,
+        "sdk_capped": sdk_capped,
         "files": sorted(files),
         "sdk_import_files": sdk_files,
         "integration_dirs": isubs,
