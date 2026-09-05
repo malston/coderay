@@ -334,6 +334,7 @@ def test_sdk_unavailable_reason_when_git_rev_parse_times_out(tmp_path, monkeypat
     import subprocess
 
     def run(cmd, **kw):
+        assert kw.get("timeout") == ac.SDK_GREP_TIMEOUT   # the fix, not just the handler
         raise subprocess.TimeoutExpired(cmd, kw.get("timeout"))
     monkeypatch.setattr(ac.subprocess, "check_output", run)
     repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n"})
@@ -348,6 +349,7 @@ def test_sdk_unavailable_reason_when_git_grep_times_out(tmp_path, monkeypatch):
     def run(cmd, **kw):
         if "rev-parse" in cmd:
             return str(tmp_path) + "\n"
+        assert kw.get("timeout") == ac.SDK_GREP_TIMEOUT
         raise subprocess.TimeoutExpired(cmd, kw.get("timeout"))
     monkeypatch.setattr(ac.subprocess, "check_output", run)
     repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n"})
@@ -571,6 +573,48 @@ def test_sdk_lines_reflects_only_what_survived_the_budget_slice(tmp_path):
     assert cut_stats["sdk_import_files"] == []
 
 
+def test_sdk_lines_drops_a_partial_line_the_budget_slice_cuts_mid_entry(tmp_path, monkeypatch):
+    """PR #70 review. The budget slice is by character, so max_chars landing
+    inside an SDK entry left a truncated fragment counted as a whole import
+    and its cut filename in sdk_import_files -- a file that was never fully
+    disclosed, and never even a real path in the target repo."""
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n"})
+    monkeypatch.setattr(ac, "_sdk_grep", lambda repo, max_lines=ac.SDK_GREP_MAX_LINES:
+                         ("a.ts:1: stripe\nb.ts:2: stripe", None, False))
+    full_bundle, _full_stats = ac.build_bundle(repo)
+    mid_first_line = full_bundle.index("a.ts:1: stripe") + 3   # inside "a.ts"
+    _bundle, stats = ac.build_bundle(repo, max_chars=mid_first_line)
+    assert stats["sdk_lines"] == 0
+    assert stats["sdk_import_files"] == []
+
+
+def test_sdk_lines_keeps_only_whole_lines_up_to_a_clean_cut(tmp_path, monkeypatch):
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n"})
+    monkeypatch.setattr(ac, "_sdk_grep", lambda repo, max_lines=ac.SDK_GREP_MAX_LINES:
+                         ("a.ts:1: stripe\nb.ts:2: stripe", None, False))
+    full_bundle, _full_stats = ac.build_bundle(repo)
+    right_before_second_line = full_bundle.index("b.ts:2: stripe")
+    _bundle, stats = ac.build_bundle(repo, max_chars=right_before_second_line)
+    assert stats["sdk_lines"] == 1
+    assert stats["sdk_import_files"] == ["a.ts"]
+
+
+def test_build_bundle_flags_sdk_capped_and_the_budget_slice_together(tmp_path, monkeypatch):
+    """The capped header is longer than the plain one, so the offset the
+    budget-slice math uses must reflect whichever header was actually chosen
+    -- not the plain header's length regardless of capping."""
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n"})
+    monkeypatch.setattr(ac, "_sdk_grep", lambda repo, max_lines=ac.SDK_GREP_MAX_LINES:
+                         ("a.ts:1: stripe\nb.ts:2: stripe", None, True))
+    full_bundle, full_stats = ac.build_bundle(repo)
+    assert full_stats["sdk_capped"] is True
+    right_before_second_line = full_bundle.index("b.ts:2: stripe")
+    _bundle, stats = ac.build_bundle(repo, max_chars=right_before_second_line)
+    assert stats["sdk_capped"] is True
+    assert stats["sdk_lines"] == 1
+    assert stats["sdk_import_files"] == ["a.ts"]
+
+
 def test_build_bundle_counts_only_files_whose_text_reached_the_bundle(tmp_path):
     """An empty or unreadable config file is classified, then skipped by the
     parts loop. Counting it makes the footer claim coverage that is not there
@@ -761,8 +805,9 @@ def test_go_sdk_evidence_names_only_the_module_and_only_from_go_files(tmp_path):
         "shapes.ts": 'switch (m) {\n  case "github.com/lib/pq": break;\n}\n',
     })
     _commit_all(repo)
-    lines, why, _capped = ac._sdk_grep(repo)
+    lines, why, capped = ac._sdk_grep(repo)
     assert why is None
+    assert capped is False   # 4 real matches, far under the 400-line cap
     got = sorted(lines.splitlines())
     assert got == ["a.go:3: anthropic-sdk-go", "a.go:4: other", "a.go:5: azure-sdk-for-go", "a.go:6: foo-sdk-go"], got
     assert "sk_live" not in lines and "vendor" not in lines and "acme" not in lines

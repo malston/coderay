@@ -562,12 +562,21 @@ def build_bundle(repo, max_chars=500_000):
     # sdk_lines/sdk_import_files must count only the SDK evidence that actually
     # reached the model. The SDK section is appended last (after config, env,
     # deps, integrations), so on a bundle at budget the slice above can land
-    # inside it, or before it starts entirely -- counting the full grep output
-    # regardless made the stats line claim imports the LLM never saw
-    # (coderay-5wu.8).
+    # inside it, or before it starts entirely; without this, the stats line
+    # claims imports the LLM never saw (coderay-5wu.8). A character slice can
+    # also land mid-entry, so only whole lines that fit entirely within budget
+    # are kept -- a cut filename is not real evidence (PR #70 review).
     if sdk:
         sdk_text_start = sdk_offset + len(sdk_header)
-        sdk_in_bundle = sdk[:max(0, min(len(sdk), max_chars - sdk_text_start))]
+        budget = max_chars - sdk_text_start
+        kept, used = [], 0
+        for line in sdk.split("\n"):
+            grows_by = len(line) + (1 if kept else 0)   # a "\n" before every line but the first
+            if used + grows_by > budget:
+                break
+            kept.append(line)
+            used += grows_by
+        sdk_in_bundle = "\n".join(kept)
     else:
         sdk_in_bundle = ""
     sdk_files = sorted({line.rsplit(":", 2)[0] for line in sdk_in_bundle.splitlines()}) if sdk_in_bundle else []
