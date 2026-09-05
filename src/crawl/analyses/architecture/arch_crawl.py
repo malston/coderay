@@ -103,21 +103,31 @@ def _walk(root):
 
 
 def _read(path, limit=200_000, repo=None):
-    # A config file in the target repo may be a symlink pointing out of it, and
-    # the contents go into a prompt sent to a third-party LLM (coderay-q2r.28).
-    # A symlink to an in-repo credential file is refused by its target name.
-    # The only credential-named files this crawler reads on purpose are a real
-    # `.env*` (variable names only) and `.tfvars` (redacted); every other
-    # DEFAULT_SKIP_NAMES entry it walks to, `deploy/credentials.yaml` say, is
-    # refused like anywhere else (coderay-q2r.56).
+    """Read a file's text, redaction-bound for a prompt.
+
+    Returns (text, ok). `ok` is False when the read failed -- refused by
+    `readable()` (a symlink out of the repo, or credential-named) or an
+    OSError (permission denied, a broken symlink, and the like) -- and True
+    otherwise, including a file that is legitimately empty. Without this a
+    caller cannot tell "nothing was there" from "something was there and
+    could not be read" (coderay-5wu.6).
+
+    A config file in the target repo may be a symlink pointing out of it, and
+    the contents go into a prompt sent to a third-party LLM (coderay-q2r.28).
+    A symlink to an in-repo credential file is refused by its target name.
+    The only credential-named files this crawler reads on purpose are a real
+    `.env*` (variable names only) and `.tfvars` (redacted); every other
+    DEFAULT_SKIP_NAMES entry it walks to, `deploy/credentials.yaml` say, is
+    refused like anywhere else (coderay-q2r.56).
+    """
     base = os.path.basename(path).lower()
     wanted_anyway = base.startswith('.env') or base.endswith('.tfvars')
     if repo is not None and not readable(repo, path, credential_names=wanted_anyway):
-        return ""
+        return "", False
     try:
-        return open(path, encoding='utf-8', errors='replace').read()[:limit]
+        return open(path, encoding='utf-8', errors='replace').read()[:limit], True
     except OSError:
-        return ""
+        return "", False
 
 
 def _env_names(text):
@@ -473,6 +483,7 @@ def build_bundle(repo, max_chars=500_000):
     buckets = {k: [] for k in ('compose', 'k8s', 'gateway', 'iac')}
     env_names, deps = set(), {}
     env_files, package_files = [], []  # what contributed names and dependency lists
+    package_json_malformed = 0
     for dirpath, _dn, filenames in _walk(repo):
         for f in filenames:
             rel = os.path.relpath(os.path.join(dirpath, f), repo)
@@ -481,14 +492,23 @@ def build_bundle(repo, max_chars=500_000):
                 continue
             full = os.path.join(dirpath, f)
             if kind == 'env':
-                names = _env_names(_read(full, 40_000, repo))
+                text, _ok = _read(full, 40_000, repo)
+                names = _env_names(text)
                 if names:
                     env_names.update(names)
                     env_files.append(rel)
             elif kind == 'package':
+                text, ok = _read(full, 200_000, repo)
+                if not ok:
+                    continue   # refused or unreadable; config_files_found covers this class
                 try:
-                    data = json.loads(_read(full, 200_000, repo))
-                except (ValueError, OSError):
+                    data = json.loads(text)
+                except ValueError:
+                    # A real file, actually read, that isn't valid JSON -- distinct from
+                    # `ok is False` above, and from the docs/examples branch below, which
+                    # both silently skip zero dependencies for reasons that aren't a
+                    # malformed manifest (coderay-5wu.6).
+                    package_json_malformed += 1
                     continue
                 if not isinstance(data, dict):
                     continue  # docs/ and examples/ are walked; a package.json there can hold anything
@@ -498,7 +518,8 @@ def build_bundle(repo, max_chars=500_000):
                     deps.update(found)
                     package_files.append(rel)
             else:
-                buckets[kind].append((rel, _redact(_read(full, repo=repo))))
+                text, _ok = _read(full, repo=repo)
+                buckets[kind].append((rel, _redact(text)))
 
     parts = []          # (files this section discloses, text)
     included = 0        # files whose text actually reached the bundle
@@ -587,6 +608,7 @@ def build_bundle(repo, max_chars=500_000):
         # (coderay-q2r.27).
         "config_files": included,
         "config_files_found": sum(len(v) for v in buckets.values()),
+        "package_json_malformed": package_json_malformed,
         "truncated": len(whole) > max_chars,
         "env_vars": len(env_names),
         "deps": len(deps),

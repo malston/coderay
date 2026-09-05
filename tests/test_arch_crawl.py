@@ -449,7 +449,8 @@ def test_build_bundle_overlays_the_four_sources_and_counts_them(tmp_path):
     })
     bundle, stats = ac.build_bundle(repo)
 
-    assert stats == {"config_files": 4, "config_files_found": 4, "truncated": False,
+    assert stats == {"config_files": 4, "config_files_found": 4, "package_json_malformed": 0,
+                     "truncated": False,
                      "env_vars": 2, "deps": 2, "integrations": 0, "sdk_lines": 0,
                      "sdk_unavailable": "not a git repository", "sdk_capped": False,
                      "files": [".env.example", "Procfile", "deploy/k8s/api.yaml", "docker-compose.yml",
@@ -500,12 +501,28 @@ def test_build_bundle_unions_dependencies_from_every_package_json(tmp_path):
 
 
 def test_build_bundle_tolerates_a_malformed_package_json(tmp_path):
+    """coderay-5wu.6. A malformed manifest previously read as zero
+    dependencies with no note at all -- the same silent collapse as an
+    unreadable one, but a different, worth-flagging cause."""
     repo = _repo(tmp_path, {
         "package.json": "{not json",
         "apps/web/package.json": json.dumps({"dependencies": {"next": "^15"}}),
     })
     _bundle, stats = ac.build_bundle(repo)
     assert stats["deps"] == 1
+    assert stats["package_json_malformed"] == 1
+
+
+def test_build_bundle_does_not_count_an_unreadable_package_json_as_malformed(tmp_path):
+    """Refused/unreadable is a different cause from malformed JSON; conflating
+    them would misreport why a manifest's dependencies never showed up."""
+    outside = tmp_path / "outside.json"
+    outside.write_text(json.dumps({"dependencies": {"left-out": "^1"}}), encoding="utf-8")
+    repo = _repo(tmp_path / "repo", {"README.md": "# hi\n"})
+    os.symlink(outside, os.path.join(repo, "package.json"))
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["deps"] == 0
+    assert stats["package_json_malformed"] == 0
 
 
 def test_build_bundle_lists_the_integration_directories(tmp_path):
