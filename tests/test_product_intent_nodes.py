@@ -244,3 +244,11 @@ def test_surprises_retries_items_that_are_not_objects_or_lists_that_are_empty(mo
     shared = {"codebase": "c"}
     n.SurprisesAndAbsences().run(shared)
     assert len(calls) == 2
+
+
+def test_variant_print_strips_control_characters_and_newlines(monkeypatch, capsys):
+    _fake_llm(monkeypatch, lambda p: "ok\x1b[31m\nfake line of output")
+    n.VariantSentence().run({"codebase": "c"})
+    out = capsys.readouterr().out
+    assert "\x1b" not in out and out.count("\n") == 1
+    assert "Variant sentence: ok[31m fake line of output..." in out

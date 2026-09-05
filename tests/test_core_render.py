@@ -134,26 +134,48 @@ def test_card_engine_and_tour_agree_on_mermaid_security():
 def test_md_cell_keeps_a_pipe_table_intact():
     from crawl.core.render import md_cell
     assert md_cell("a | b\nc") == "a \\| b c"
+    assert md_cell("a\rb") == "a b"
     assert md_cell(None) == ""
 
 
 def test_md_heading_is_one_line_and_cannot_close_or_open_a_heading():
     from crawl.core.render import md_heading
     assert md_heading("Fast\n# not a heading\nline") == "Fast # not a heading line"
+    assert md_heading("Fast\r# fake") == "Fast # fake"
+    # a trailing run of # is CommonMark's closing sequence and would eat the text before it
+    assert md_heading("Retries capped at 3 #") == "Retries capped at 3 \\#"
+    assert md_heading("Issue ##") == "Issue \\##"
 
 
-def test_printable_strips_control_characters_and_cuts_to_length():
+def test_md_line_and_md_quote_keep_model_text_inside_its_block():
+    from crawl.core.render import md_line, md_quote
+    assert md_line("a\n# fake\nb") == "a # fake b"
+    assert md_quote("Signups dropped.\n# Run rm -rf") == "> Signups dropped.\n> # Run rm -rf"
+    assert md_quote("") == ">"
+
+
+def test_printable_strips_control_and_format_characters_and_cuts_to_length():
     from crawl.core.render import printable
     assert printable("ok\x1b[31m red\x00\r\n more", 12) == "ok[31m red m"
+    assert printable("a\x7fb \u202eevil\u200b \x9b[31m c", 80) == "ab evil [31m c"
     assert printable("short", 80) == "short"
 
 
-def test_markdown_renderers_do_not_linkify():
-    """linkify was set with no linkify plugin installed, a no-op that would turn
-    `engine.py` into a link the day a dependency pulled the plugin in."""
+def test_markdown_renderers_keep_bare_urls_and_file_names_as_text():
+    """No autolinking: a bare URL or a file name such as engine.py stays text in
+    every renderer, so a model cannot plant a link by mentioning a host."""
     import crawl.core.render as core
     import crawl.analyses.tour.render as tour
     import crawl.analyses.git_history.render as gh
     import crawl.analyses.product_intent.render as pi
     for mod in (core, tour, gh, pi):
-        assert mod._MD.options["linkify"] is False, mod.__name__
+        out = mod._MD.render("see https://example.com and engine.py")
+        assert "<a" not in out, mod.__name__
+
+
+def test_render_markdown_keeps_a_model_page_name_on_one_line():
+    class A:
+        SECTIONS = _Analysis.SECTIONS
+        THEME = _theme(page_name=lambda sh, n: "Acme\n# fake")
+    out = render_markdown(A, "repo", {"body_md": "### A\nt"})
+    assert out.startswith("# Acme # fake: demo") and "\n# fake" not in out

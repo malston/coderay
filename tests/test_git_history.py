@@ -139,3 +139,14 @@ def test_render_markdown_keeps_an_era_name_inside_its_heading():
     shared["eras"][0]["name"] = "Dawn\n# fake"
     md = git_history.render_markdown("repo", shared)
     assert "\n# fake" not in md and "Dawn # fake" in md
+
+
+def test_render_markdown_keeps_a_commit_subject_inside_its_grave_heading():
+    """git folds a newline in a subject but not a carriage return, which
+    markdown reads as a line ending."""
+    import json, pathlib
+    from crawl.analyses import git_history
+    shared = json.loads((pathlib.Path(__file__).parent / "fixtures" / "golden" / "git-history" / "shared.json").read_text())
+    shared["graves"][0]["commit"]["subject"] = "Remove legacy\r# fake"
+    md = git_history.render_markdown("repo", shared)
+    assert "\r" not in md and "Remove legacy # fake" in md

