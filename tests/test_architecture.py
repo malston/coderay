@@ -139,6 +139,16 @@ def test_the_footer_says_when_sdk_import_evidence_was_unavailable():
     assert "unavailable" not in architecture._footer({"arch_stats": {**stats, "sdk_unavailable": None}})
 
 
+def test_the_footer_says_when_sdk_import_evidence_was_capped():
+    """coderay-5wu.7. sdk_lines == the cap reads as a precise count with
+    nothing telling the reader the list was cut."""
+    stats = {"config_files": 9, "deps": 42, "integrations": 6, "sdk_lines": 400,
+             "sdk_capped": True}
+    footer = architecture._footer({"arch_stats": stats})
+    assert "capped" in footer
+    assert "capped" not in architecture._footer({"arch_stats": {**stats, "sdk_capped": False}})
+
+
 def test_the_footer_escapes_the_unavailable_note():
     """Defence in depth: the crawler never passes git text through, and the
     footer escapes what it is handed anyway, since it lands in HTML."""

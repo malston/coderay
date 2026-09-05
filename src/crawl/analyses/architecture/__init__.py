@@ -49,7 +49,8 @@ def _footer(shared):
     return (f"Overlaid from {stats.get('config_files', 0)} config files, "
             f"{stats.get('deps', 0)} dependencies, "
             f"{stats.get('integrations', 0)} integrations."
-            + (f" SDK import evidence unavailable ({esc(note)}); connections are configured, not proven live." if note else ""))
+            + (f" SDK import evidence unavailable ({esc(note)}); connections are configured, not proven live." if note else "")
+            + (" SDK import evidence was capped; more imports may exist than are shown." if stats.get("sdk_capped") else ""))
 
 def _md_preamble(shared):
     verdict = shared.get("shape_verdict")
