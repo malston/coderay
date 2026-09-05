@@ -364,7 +364,7 @@ def test_format_dry_run_summary_shows_the_chapter_assumption_and_cost_range():
     estimate = {
         "provider": "anthropic", "model": "claude-sonnet-5", "chapter_guess": 8,
         "estimated_input_tokens": 1000, "estimated_output_tokens_worst_case": 5000,
-        "cost_low": 0.01, "cost_high": 0.05,
+        "cost_low": 0.01, "cost_high": 0.05, "codebase_budget": 1_000_000,
     }
     out = format_dry_run_summary(estimate)
     assert "Estimated cost (dry run)" in out
@@ -379,21 +379,33 @@ def test_format_dry_run_summary_shows_unknown_for_an_unpriced_model():
     estimate = {
         "provider": "openai", "model": "gpt-6-mystery", "chapter_guess": 8,
         "estimated_input_tokens": 1000, "estimated_output_tokens_worst_case": 5000,
-        "cost_low": None, "cost_high": None,
+        "cost_low": None, "cost_high": None, "codebase_budget": 1_000_000,
     }
     out = format_dry_run_summary(estimate)
     assert "unknown" in out
 
 
-def test_dry_run_flag_estimates_without_creating_the_output_directory(tmp_path, monkeypatch):
+def _dry_run_env(tmp_path, **extra):
+    """A subprocess environment with every knob this project reads cleared, so a
+    developer's shell cannot leak into the run, plus any values the test sets."""
+    env = dict(os.environ, XDG_CONFIG_HOME=str(tmp_path / "config"))
+    for var in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "LLM_PROVIDER", "CODEBASE_BUDGET"):
+        env.pop(var, None)
+    env.update(extra)
+    return env
+
+
+def _one_file_repo(tmp_path):
     repo = tmp_path / "sample_repo"
     repo.mkdir()
     (repo / "main.py").write_text("print('hello')\n", encoding="utf-8")
-    out_dir = tmp_path / "out"
+    return repo
 
-    env = dict(os.environ, ANTHROPIC_API_KEY="test-key", XDG_CONFIG_HOME=str(tmp_path / "config"))
-    for var in ("OPENAI_API_KEY", "GEMINI_API_KEY", "LLM_PROVIDER"):
-        env.pop(var, None)
+
+def test_dry_run_flag_estimates_without_creating_the_output_directory(tmp_path, monkeypatch):
+    repo = _one_file_repo(tmp_path)
+    out_dir = tmp_path / "out"
+    env = _dry_run_env(tmp_path, ANTHROPIC_API_KEY="test-key")
 
     result = subprocess.run(
         [sys.executable, "-m", "crawl.cli", "tour", str(repo), "--dry-run", "--out", str(out_dir)],
@@ -407,13 +419,8 @@ def test_dry_run_flag_estimates_without_creating_the_output_directory(tmp_path, 
 def test_dry_run_flag_works_with_no_llm_key_configured(tmp_path):
     # The spec requires --dry-run to need no API key at all -- it falls back
     # to the anthropic default when resolve_provider_and_model() can't find one.
-    repo = tmp_path / "sample_repo"
-    repo.mkdir()
-    (repo / "main.py").write_text("print('hello')\n", encoding="utf-8")
-
-    env = dict(os.environ, XDG_CONFIG_HOME=str(tmp_path / "config"))
-    for var in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "LLM_PROVIDER"):
-        env.pop(var, None)
+    repo = _one_file_repo(tmp_path)
+    env = _dry_run_env(tmp_path)
 
     result = subprocess.run(
         [sys.executable, "-m", "crawl.cli", "tour", str(repo), "--dry-run"],
@@ -422,3 +429,35 @@ def test_dry_run_flag_works_with_no_llm_key_configured(tmp_path):
 
     assert result.returncode == 0
     assert "Estimated cost (dry run)" in result.stdout
+
+
+# coderay-5wu.15: the dry run sizes the codebase with the budget it is handed
+# and reports it, so a user can see what --codebase-budget would change.
+def test_estimate_dry_run_cost_honours_the_codebase_budget(tmp_path):
+    _make_repo_files(tmp_path, count=5, size=500)
+    small = estimate_dry_run_cost(str(tmp_path), "beginner-tutorial", "anthropic", "claude-sonnet-5",
+                                  codebase_budget=100)
+    large = estimate_dry_run_cost(str(tmp_path), "beginner-tutorial", "anthropic", "claude-sonnet-5",
+                                  codebase_budget=100_000)
+    assert small["codebase_budget"] == 100 and large["codebase_budget"] == 100_000
+    assert small["estimated_input_tokens"] < large["estimated_input_tokens"]
+
+
+def test_format_dry_run_summary_reports_the_codebase_budget():
+    estimate = {
+        "provider": "anthropic", "model": "claude-sonnet-5", "chapter_guess": 8,
+        "estimated_input_tokens": 1000, "estimated_output_tokens_worst_case": 5000,
+        "cost_low": 0.01, "cost_high": 0.05, "codebase_budget": 2_000_000,
+    }
+    assert "Codebase budget: 2,000,000 chars" in format_dry_run_summary(estimate)
+
+
+def test_dry_run_flag_reports_the_codebase_budget_it_would_use(tmp_path):
+    repo = _one_file_repo(tmp_path)
+    env = _dry_run_env(tmp_path)
+    result = subprocess.run(
+        [sys.executable, "-m", "crawl.cli", "tour", str(repo), "--dry-run", "--codebase-budget", "2000000"],
+        capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Codebase budget: 2,000,000 chars" in result.stdout
