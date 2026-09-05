@@ -100,7 +100,9 @@ class FindSchema(Node):
 
     def post(self, shared, prep_res, exec_res):
         schema, mig_dir, mig_names = exec_res
-        assert schema["text"], (
+        if not schema["text"]:
+            # SystemExit, not assert: python -O strips asserts (coderay-q2r.50).
+            raise SystemExit(
             "No schema file found. Point --schema at it "
             "(e.g. packages/prisma/schema.prisma).")
         shared["schema"] = schema["text"]

@@ -26,7 +26,7 @@ def test_find_schema_populates_the_schema_and_the_migrations(tmp_path):
 
 def test_find_schema_refuses_a_repo_with_no_schema(tmp_path):
     repo = _repo(tmp_path, {"README.md": "# a static site\n"})
-    with pytest.raises(AssertionError, match="No schema file found"):
+    with pytest.raises(SystemExit, match="No schema file found"):
         n.FindSchema().run({"repo_path": repo})
 
 

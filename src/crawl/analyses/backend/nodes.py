@@ -41,7 +41,10 @@ class BuildBundle(Node):
         else:
             why = ("No backend source found (no routes/views/models). This analysis "
                    "expects a server-side backend (Django, Express, Rails, FastAPI, Go net/http, …).")
-        assert bundle.strip(), why
+        if not bundle.strip():
+            # SystemExit, not assert: python -O strips asserts, and three paid
+            # passes would run over nothing (coderay-q2r.50).
+            raise SystemExit(why)
         shared["codebase"] = bundle
         shared["layer_counts"] = c
         print(f"  Bundle: {stats['included']} files ({len(bundle):,} chars). Layers — "
