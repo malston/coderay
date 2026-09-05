@@ -7,7 +7,7 @@ from datetime import date
 
 from crawl.core import ensure_priced, get_usage, reset_usage, resolve_provider_and_model
 from crawl.core.env import env_defaults
-from crawl.core.runner import keeping_results, run_flow, write_run_state
+from crawl.core.runner import keeping_results, run_flow, run_state_writer
 from crawl.analyses.tour.flow import create_tour_flow
 from crawl.analyses.tour.nodes import CODEBASE_BUDGET, PipelineState
 from crawl.analyses.tour.render import (
@@ -86,17 +86,12 @@ def run(args) -> None:
     name = os.path.basename(os.path.abspath(args.repo_path))
     out = args.out or default_output_dir(args.repo_path, args.instructions)
     os.makedirs(out, exist_ok=True)
-    stale = os.path.join(out, "run_state.json")
-    if os.path.exists(stale):
-        os.remove(stale)
 
     reset_usage()
     wall_start = time.perf_counter()
 
     shared = init_shared(args)
-    inputs = frozenset(shared) | INPUT_KEYS
-    def dump_run_state(s, o):
-        return write_run_state(s, o, skip=inputs)
+    dump_run_state = run_state_writer(out, shared, INPUT_KEYS)
     with env_defaults(ENV_DEFAULTS):
         run_flow(build_flow(), shared, out, dump_run_state)
 

@@ -99,7 +99,8 @@ def test_run_keeps_the_run_state_when_a_tour_file_write_fails(tmp_path, monkeypa
 
     def fake_run_flow(flow, shared, out, dump):
         shared.update(selected_files=["a.py"], selection_reasoning="", abstractions=[{"name": "Engine"}],
-                      relationships=[], order=[0], chapters=[{"name": "Engine"}], summary="s")
+                      relationships=[], order=[0], chapters=[{"name": "Engine"}], summary="s",
+                      codebase="x" * 1000, symbol_graph=[{"from": "a.py", "to": "b.py"}])
 
     monkeypatch.setattr(tour, "resolve_provider_and_model", lambda: ("anthropic", "m"))
     monkeypatch.setattr(tour, "ensure_priced", lambda p, m: None)
@@ -114,7 +115,8 @@ def test_run_keeps_the_run_state_when_a_tour_file_write_fails(tmp_path, monkeypa
         run(args)
     state = json.loads((out / "run_state.json").read_text(encoding="utf-8"))
     assert state["chapters"] == [{"name": "Engine"}] and state["summary"] == "s"
-    assert "codebase" not in state and "repo_path" not in state and "codebase_budget" not in state
+    for key in ("codebase", "symbol_graph", "repo_path", "instructions", "codebase_budget"):
+        assert key not in state, key
     assert f"Wrote partial run state to {out / 'run_state.json'}" in capsys.readouterr().err
 
 

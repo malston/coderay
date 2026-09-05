@@ -318,9 +318,10 @@ class WriteChapters(Node):
         filenames = {n: f"{i+1:02d}_{slug(n)}.md" for i, n in enumerate(order)}
         chapter_list = "\n".join(f"- [{n}]({filenames[n]})" for n in order)
         instructions = load_instructions(shared.get("instructions", "beginner-tutorial"))
-        # Finished chapters land in shared one at a time, so a failure on
-        # chapter 7 of 10 leaves six paid bodies for the run-state dump
-        # (coderay-5wu.3). exec sees no shared, so it is handed the list.
+        # Finished chapters land in shared one at a time, so a failure that
+        # ends the run mid-sequence leaves the bodies written so far for the
+        # run-state dump (coderay-5wu.3). exec sees no shared, so it is handed
+        # the list; each retry attempt starts it over.
         shared["chapters"] = []
         return {
             "by_name": by_name,

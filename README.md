@@ -108,7 +108,7 @@ crawl git-history path/to/repo  # the product story in the commit log
 crawl product-intent path/to/repo  # the product story in the source
 ```
 
-If a run fails partway through (a bad LLM response after retries, a network error, a fault while writing the report), whatever the pipeline had produced is written to `run_state.json` in the output directory, so you can see how far it got without rerunning the whole pipeline. Every analysis writes each result it had finished, the tour's completed chapters included, leaving out the source it read, and a later successful run removes the file.
+If a run fails partway through (a bad LLM response after retries, a network error, a fault while writing the report), whatever the pipeline had produced is written to `run_state.json` in the output directory, so you can see how far it got without rerunning the whole pipeline. Every analysis writes each result it had finished, the tour's completed chapters included, leaving out the source it read and anything it can recompute without the model, and a later successful run removes the file.
 
 Example output:
 
