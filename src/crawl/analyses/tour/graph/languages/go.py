@@ -11,10 +11,10 @@ apart, so no edges are extracted and one note says so. Only import edges are
 extracted (see docs/superpowers/specs/2026-08-31-deterministic-import-graph-design.md,
 Non-goals).
 """
-import functools
 import os
 
 from crawl.core import is_test_file
+from crawl.core.gosrc import module_path  # noqa: F401  (the extractor's callers import it from here too)
 
 import tree_sitter_go as _ts_go
 from tree_sitter import Language
@@ -30,48 +30,6 @@ _IMPORT_QUERY_SRC = """
 (import_spec
   path: (_) @path)
 """
-
-
-def module_path(root):
-    """The module path declared in <root>/go.mod, or None when the file or the
-    `module` directive is absent, in which case one note is printed per root.
-
-    Accepts every form the go command does: a trailing `//` comment, a quoted
-    path, and the factored `module (` block. Read once per root while go.mod is
-    unchanged, since every Go file in the repo asks."""
-    if not root:
-        return None
-    gomod = os.path.join(root, "go.mod")
-    try:
-        stamp = os.stat(gomod).st_mtime_ns
-    except OSError:
-        stamp = None
-    return _module_path(root, gomod, stamp)
-
-
-@functools.lru_cache(maxsize=None)
-def _module_path(root, gomod, stamp):
-    lines = []
-    if stamp is not None:
-        try:
-            with open(gomod, encoding="utf-8", errors="replace") as fh:
-                lines = [line.split("//", 1)[0].strip() for line in fh]
-        except OSError:
-            lines = []
-    found = None
-    for i, line in enumerate(lines):
-        fields = line.split()
-        if fields[:1] != ["module"]:
-            continue
-        if len(fields) >= 2 and fields[1] != "(":
-            found = fields[1]
-        else:
-            found = next((l.split()[0] for l in lines[i + 1:] if l and l != ")"), None)
-        break
-    if found:
-        return found.strip('"')
-    print(f"  no go.mod or module path under {root}: no Go import edges")
-    return None
 
 
 def _package_dir(path):
