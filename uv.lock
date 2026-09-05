@@ -366,6 +366,7 @@ openai = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "packaging" },
     { name = "pytest" },
 ]
 
@@ -378,7 +379,7 @@ requires-dist = [
     { name = "pathspec", specifier = ">=1.1.1,<2" },
     { name = "pocketflow", specifier = ">=0.0.3,<0.1" },
     { name = "pyyaml", specifier = ">=6.0.3,<7" },
-    { name = "tree-sitter", specifier = ">=0.23,<0.26" },
+    { name = "tree-sitter", specifier = ">=0.25,<0.26" },
     { name = "tree-sitter-go", specifier = ">=0.23,<0.26" },
     { name = "tree-sitter-javascript", specifier = ">=0.23,<0.25" },
     { name = "tree-sitter-python", specifier = ">=0.23,<0.25" },
@@ -387,7 +388,10 @@ requires-dist = [
 provides-extras = ["openai", "gemini"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=9.1.1,<10" }]
+dev = [
+    { name = "packaging", specifier = ">=24" },
+    { name = "pytest", specifier = ">=9.1.1,<10" },
+]
 
 [[package]]
 name = "cryptography"
