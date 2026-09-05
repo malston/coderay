@@ -605,7 +605,13 @@ def test_sdk_evidence_reads_go_import_paths(tmp_path):
         "store.go": ('package hub\n\nimport (\n\t"database/sql"\n\t"modernc.org/sqlite"\n'
                      '\t"github.com/stripe/stripe-go/v79"\n\t"github.com/acme/clients/sdk-go/pkg/x"\n'
                      '\tredis "github.com/redis/go-redis/v9"\n\t"cloud.google.com/go/storage"\n'
-                     '\t"google.golang.org/grpc"\n\t"github.com/google/uuid"\n)\n'),
+                     '\t"google.golang.org/grpc"\n\t"github.com/google/uuid"\n'
+                     '\t_ "github.com/lib/pq"\n\t"github.com/aws/aws-sdk-go-v2/service/s3"\n'
+                     '\t"github.com/aws/aws-sdk-go/aws"\n\t"github.com/acme/go-sdk/v3"\n\t"gorm.io/gorm/logger"\n)\n'),
+        "one.go": 'package hub\nimport sq "github.com/mattn/go-sqlite3"\n',
+        "two.go": 'package hub\nimport "entgo.io/ent/dialect"\n',
+        # an opening quote with no closing one, in a file the grep also covers
+        "doc.py": 'DOC = """\n    "modernc.org/sqlite\n"""\n',
     })
     for cmd in (["init", "-q"], ["add", "-A"]):
         subprocess.run(["git", "-C", repo] + cmd, check=True)
@@ -613,10 +619,14 @@ def test_sdk_evidence_reads_go_import_paths(tmp_path):
                     "commit", "-qm", "x"], check=True)
     bundle, stats = ac.build_bundle(repo)
     for line in ("store.go:5: sqlite", "store.go:6: stripe-go", "store.go:7: acme",
-                 "store.go:8: go-redis", "store.go:9: storage", "store.go:10: grpc"):
+                 "store.go:8: go-redis", "store.go:9: storage", "store.go:10: grpc",
+                 "store.go:12: pq", "store.go:13: aws-sdk-go-v2", "store.go:14: aws-sdk-go",
+                 "store.go:15: acme", "store.go:16: gorm", "one.go:2: go-sqlite3", "two.go:2: ent"):
         assert line in bundle, line
     assert "uuid" not in bundle and "database/sql" not in bundle
-    assert stats["sdk_lines"] == 6
+    assert "doc.py" not in bundle          # an unterminated quote is not evidence and does not crash
+    assert stats["sdk_lines"] == 13
+    assert len(ac._sdk_grep(repo, max_lines=2)[0].splitlines()) == 2
 
 
 @pytest.mark.parametrize("path,name", [

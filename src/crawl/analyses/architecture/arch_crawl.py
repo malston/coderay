@@ -50,8 +50,12 @@ GO_SDK_RE = (r"(github\.com/aws/aws-sdk-go(-v2)?|cloud\.google\.com/go/[a-z0-9]+
              r"streadway/amqp|getsentry/sentry-go|aws/aws-lambda-go|hashicorp/vault|"
              r"go-sql-driver/mysql|jmoiron/sqlx|uptrace/bun|gorm/gorm)|"
              r"modernc\.org/sqlite|google\.golang\.org/grpc|gorm\.io/gorm|entgo\.io/ent|"
-             r"[a-z0-9.-]+/[a-z0-9-]+/([a-z0-9-]+/)*([a-z0-9-]*sdk-go|go-sdk)(/|\"))")
-_GO_IMPORT_LINE = "^[ \t]*([A-Za-z_][A-Za-z0-9_]*[ \t]+)?\"" + GO_SDK_RE  # a literal tab, for gofmt's indent
+             r"[a-z0-9.-]+/[a-z0-9-]+/([a-z0-9-]+/)*([a-z0-9-]*sdk-go|go-sdk)(/|[\"]))")
+# `import alias "path"` on one line is two identifiers before the quote; the
+# closing quote is required, so an unterminated line in any grepped file is
+# neither evidence nor a crash. A literal tab sits in the class: git grep does
+# no escape processing inside brackets, and gofmt indents imports with tabs.
+_GO_IMPORT_LINE = "^[ \t]*([A-Za-z_][A-Za-z0-9_]*[ \t]+){0,2}\"" + GO_SDK_RE + "[^\"]*\""
 _GO_VERSION_SEGMENT = re.compile(r"^v\d+$")
 # Hosts whose modules are one segment deep, so the client is that segment
 # (google.golang.org/grpc/credentials is grpc; gopkg.in/yaml.v3 is yaml).
@@ -388,7 +392,7 @@ def _sdk_grep(repo, max_lines=400):
         path, lineno, content = parts
         go = re.match(_GO_IMPORT_LINE, content)
         if go:
-            name = go_sdk_name(re.search(r"\"([^\"]+)\"", content).group(1))
+            name = go_sdk_name(re.search(r"\"([^\"]+)\"", content).group(1))  # both quotes are in the match
         else:
             m = re.search(SDK_RE, content) or re.search(r'new\s+(Stripe|Twilio|Redis|S3Client)', content)
             name = (m.group(1) if m else "sdk").strip("'\"@")
