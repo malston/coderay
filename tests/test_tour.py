@@ -99,7 +99,8 @@ def test_run_keeps_the_run_state_when_a_tour_file_write_fails(tmp_path, monkeypa
 
     def fake_run_flow(flow, shared, out, dump):
         shared.update(selected_files=["a.py"], selection_reasoning="", abstractions=[{"name": "Engine"}],
-                      relationships=[], order=[0], chapters=[{"name": "Engine"}], summary="s")
+                      relationships=[], order=[0], chapters=[{"name": "Engine"}], summary="s",
+                      codebase="x" * 1000, symbol_graph=[{"from": "a.py", "to": "b.py"}])
 
     monkeypatch.setattr(tour, "resolve_provider_and_model", lambda: ("anthropic", "m"))
     monkeypatch.setattr(tour, "ensure_priced", lambda p, m: None)
@@ -113,5 +114,30 @@ def test_run_keeps_the_run_state_when_a_tour_file_write_fails(tmp_path, monkeypa
     with pytest.raises(OSError, match="disk full"):
         run(args)
     state = json.loads((out / "run_state.json").read_text(encoding="utf-8"))
-    assert state["chapters_completed"] == ["Engine"]
+    assert state["chapters"] == [{"name": "Engine"}] and state["summary"] == "s"
+    for key in ("codebase", "symbol_graph", "repo_path", "instructions", "codebase_budget"):
+        assert key not in state, key
     assert f"Wrote partial run state to {out / 'run_state.json'}" in capsys.readouterr().err
+
+
+def test_run_removes_a_stale_state_file_and_writes_none_on_success(tmp_path, monkeypatch):
+    """The tour's output directory is the same run to run, so a state file from
+    an earlier failure would sit beside fresh chapters and read as a failure."""
+    import crawl.analyses.tour as tour
+
+    def fake_run_flow(flow, shared, out, dump):
+        shared.update(selected_files=[], selection_reasoning="", abstractions=[], relationships=[],
+                      order=[], chapters=[], summary="s")
+
+    monkeypatch.setattr(tour, "resolve_provider_and_model", lambda: ("anthropic", "m"))
+    monkeypatch.setattr(tour, "ensure_priced", lambda p, m: None)
+    monkeypatch.setattr(tour, "run_flow", fake_run_flow)
+    for w in ("write_chapter_files", "write_index_md", "write_index_html"):
+        monkeypatch.setattr(tour, w, lambda *a: None)
+    out = tmp_path / "o"
+    out.mkdir()
+    (out / "run_state.json").write_text("{}", encoding="utf-8")
+    args = argparse.Namespace(repo_path=str(tmp_path), out=str(out), instructions="beginner-tutorial",
+                              dry_run=False, codebase_budget=1_000_000)
+    run(args)
+    assert not (out / "run_state.json").exists()

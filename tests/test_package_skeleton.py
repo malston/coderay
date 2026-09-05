@@ -42,12 +42,11 @@ def test_the_file_walker_module_does_not_share_the_package_name():
 
 
 def test_every_runner_analysis_declares_the_input_keys_its_failure_dump_leaves_out():
-    """run_analysis writes run_state.json on failure minus INPUT_KEYS, so an
-    analysis without the declaration would dump its whole source bundle."""
+    """The failure dump writes run_state.json minus INPUT_KEYS (run_analysis for
+    the card and bespoke analyses, the tour's own run()), so an analysis without
+    the declaration would dump its whole source bundle."""
     from crawl.analyses import ANALYSES
     for name, analysis in ANALYSES.items():
-        if name == "tour":
-            continue
         assert isinstance(analysis.INPUT_KEYS, frozenset) and analysis.INPUT_KEYS, name
 
 

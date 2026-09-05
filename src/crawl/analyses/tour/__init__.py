@@ -7,14 +7,13 @@ from datetime import date
 
 from crawl.core import ensure_priced, get_usage, reset_usage, resolve_provider_and_model
 from crawl.core.env import env_defaults
-from crawl.core.runner import keeping_results, run_flow
+from crawl.core.runner import keeping_results, run_flow, run_state_writer
 from crawl.analyses.tour.flow import create_tour_flow
 from crawl.analyses.tour.nodes import CODEBASE_BUDGET, PipelineState
 from crawl.analyses.tour.render import (
     available_lenses,
     build_mermaid,
     default_output_dir,
-    dump_run_state,
     estimate_dry_run_cost,
     format_dry_run_summary,
     format_session_summary,
@@ -57,6 +56,10 @@ def add_arguments(parser) -> None:
 # (coderay-q2r.46); backend raises its cap the same way.
 ENV_DEFAULTS = {"LLM_MAX_OUTPUT_TOKENS": "32768"}
 
+# Left out of the failure dump: the assembled source and the import graph
+# both regenerate without an LLM call, and the source can be a megabyte.
+INPUT_KEYS = frozenset({"codebase", "symbol_graph"})
+
 def init_shared(args) -> PipelineState:
     return {"repo_path": args.repo_path, "instructions": args.instructions,
             "codebase_budget": args.codebase_budget}
@@ -88,6 +91,7 @@ def run(args) -> None:
     wall_start = time.perf_counter()
 
     shared = init_shared(args)
+    dump_run_state = run_state_writer(out, shared, INPUT_KEYS)
     with env_defaults(ENV_DEFAULTS):
         run_flow(build_flow(), shared, out, dump_run_state)
 

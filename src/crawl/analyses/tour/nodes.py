@@ -76,8 +76,9 @@ class PipelineState(TypedDict, total=False):
     Written by Relate.post; read by crawl.analyses.tour.render.build_mermaid:
       relationships            list[dict]  # each with "source": "EXTRACTED" | "INFERRED"
 
-    Written by WriteChapters.post; read by crawl.analyses.tour.render's renderers:
-      chapters                 list[dict]
+    Written by WriteChapters; read by crawl.analyses.tour.render's renderers:
+      chapters                 list[dict]  # grows one chapter at a time during exec: a failure
+                                           # leaves the finished ones for the dump, a retry resumes after them
       filenames                dict[str, str]
     """
     repo_path: str
@@ -317,6 +318,11 @@ class WriteChapters(Node):
         filenames = {n: f"{i+1:02d}_{slug(n)}.md" for i, n in enumerate(order)}
         chapter_list = "\n".join(f"- [{n}]({filenames[n]})" for n in order)
         instructions = load_instructions(shared.get("instructions", "beginner-tutorial"))
+        # Finished chapters land in shared one at a time, so a failure that
+        # ends the run leaves every body written so far for the run-state
+        # dump, and a retry attempt resumes after them instead of buying them
+        # again (coderay-5wu.3). exec sees no shared, so it is handed the list.
+        shared["chapters"] = []
         return {
             "by_name": by_name,
             "order": order,
@@ -325,14 +331,17 @@ class WriteChapters(Node):
             "codebase": shared["codebase"],
             "instructions": instructions,
             "context_window": shared.get("chapter_context_window", CHAPTER_CONTEXT_WINDOW),
+            "chapters": shared["chapters"],
         }
 
     def exec(self, ctx):
-        chapters = []
-        prev_chapters = []
+        chapters = ctx["chapters"]
+        prev_chapters = [c["content"] for c in chapters]
         total = len(ctx["order"])
         window = ctx["context_window"]
         for i, name in enumerate(ctx["order"]):
+            if i < len(chapters):
+                continue  # finished on an earlier attempt
             print(f"  Chapter {i+1}/{total}: {printable(name, 80)}")
             recent = prev_chapters[-window:] if window else prev_chapters
             prev = "\n\n---\n\n".join(recent) if recent else "(This is the first chapter.)"
@@ -350,14 +359,12 @@ class WriteChapters(Node):
             try:
                 content = call_llm(prompt)
             except ResponseTruncated as e:
-                # coderay-q2r.46: deterministic, so a retry would only rewrite
-                # every earlier chapter again. SystemExit is not an Exception,
-                # so it passes straight through the node's retry loop.
+                # coderay-q2r.46: deterministic, so a retry would hit the same
+                # cap. SystemExit is not an Exception, so it passes straight
+                # through the node's retry loop.
                 raise SystemExit(f"Chapter {i+1}/{total} ({name}) overran the output cap: {e}") from e
             chapters.append({"name": name, "filename": ctx["filenames"][name], "content": content})
             prev_chapters.append(content)
-        return chapters
 
     def post(self, shared: PipelineState, prep_res, exec_res):
-        shared["chapters"] = exec_res
         shared["filenames"] = prep_res["filenames"]
