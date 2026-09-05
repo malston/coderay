@@ -79,8 +79,12 @@ def run(args) -> None:
             provider, model = resolve_provider_and_model()
         except RuntimeError:
             provider, model = "anthropic", "claude-sonnet-5"
-        print(format_dry_run_summary(estimate_dry_run_cost(
-            args.repo_path, args.instructions, provider, model, codebase_budget=args.codebase_budget)))
+        # The real run below applies ENV_DEFAULTS for the whole flow, so the
+        # estimate must see the same LLM_MAX_OUTPUT_TOKENS or its worst-case
+        # bound is half of what a real run could actually hit (coderay-5wu.26).
+        with env_defaults(ENV_DEFAULTS):
+            print(format_dry_run_summary(estimate_dry_run_cost(
+                args.repo_path, args.instructions, provider, model, codebase_budget=args.codebase_budget)))
         return
 
     provider, model = resolve_provider_and_model()

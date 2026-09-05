@@ -12,6 +12,25 @@ def test_run_exits_with_message_when_repo_path_is_not_a_directory(tmp_path):
         run(args)
 
 
+def test_dry_run_estimates_worst_case_output_using_the_same_cap_as_the_real_run(tmp_path, monkeypatch, capsys):
+    """coderay-5wu.26. The real run wraps run_flow in env_defaults(ENV_DEFAULTS),
+    raising LLM_MAX_OUTPUT_TOKENS to 32768 for its duration; --dry-run must use
+    that same cap for its worst-case estimate rather than the bare 16384
+    default, or the printed bound is half of what a real run could hit."""
+    monkeypatch.delenv("LLM_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "main.py").write_text("print('hi')\n", encoding="utf-8")
+    args = argparse.Namespace(repo_path=str(repo), out=None, instructions="beginner-tutorial",
+                               dry_run=True, codebase_budget=1_000_000)
+
+    run(args)
+
+    out = capsys.readouterr().out
+    assert "up to ~360448 output tokens" in out   # 32768 * 11 prompts, not 16384 * 11
+
+
 # coderay-5wu.15: the codebase budget is settable from the command line and the
 # environment. Flag over env over the constant.
 def _parse(argv, monkeypatch, env=None):
