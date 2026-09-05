@@ -17,3 +17,16 @@ def printable(text, limit):
     whitespace collapsed, cut to `limit`, so a reply cannot move the cursor,
     reverse the line or fake a line of the run's own output."""
     return " ".join("".join(ch for ch in str(text or "") if _is_visible(ch)).split())[:limit]
+
+
+def positive_int(raw):
+    """A positive whole number from a knob's text (a flag or an environment
+    variable). Raises ValueError with the reason; the caller wraps it in the
+    error type its setting deserves."""
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        n = 0
+    if n <= 0:
+        raise ValueError(f"{raw!r} is not a positive whole number")
+    return n

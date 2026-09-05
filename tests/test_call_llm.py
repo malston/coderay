@@ -804,3 +804,11 @@ def test_a_bad_max_output_tokens_names_the_variable_and_stops_before_any_call(mo
     monkeypatch.setenv("LLM_MAX_OUTPUT_TOKENS", bad)
     with pytest.raises(SystemExit, match=f"LLM_MAX_OUTPUT_TOKENS.*{bad!r}"):
         max_output_tokens()
+
+
+def test_positive_int_is_the_one_rule_for_count_knobs():
+    from crawl.core.text import positive_int
+    assert positive_int("42") == 42 and positive_int(" 7 ") == 7
+    for bad in ("", "lots", "1.5", "0", "-3"):
+        with pytest.raises(ValueError, match="positive whole number"):
+            positive_int(bad)

@@ -7,6 +7,7 @@ from datetime import date
 
 from crawl.core import ensure_priced, get_usage, reset_usage, resolve_provider_and_model
 from crawl.core.env import env_defaults
+from crawl.core.text import positive_int
 from crawl.core.runner import keeping_results, run_flow, run_state_writer, write_manifest
 from crawl.analyses.tour.flow import create_tour_flow
 from crawl.analyses.tour.nodes import CODEBASE_BUDGET, PipelineState
@@ -32,14 +33,10 @@ def _budget(value):
     default too, so a bad CODEBASE_BUDGET in the environment fails at parse
     time with the same message as a bad flag."""
     try:
-        n = int(value)
-    except ValueError:
-        n = 0
-    if n <= 0:
+        return positive_int(value)
+    except ValueError as e:
         raise argparse.ArgumentTypeError(
-            f"{value!r} is not a positive whole number of characters "
-            "(--codebase-budget or the CODEBASE_BUDGET environment variable)")
-    return n
+            f"{e} of characters (--codebase-budget or the CODEBASE_BUDGET environment variable)") from None
 
 
 def add_arguments(parser) -> None:

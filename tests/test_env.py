@@ -27,3 +27,14 @@ def test_empty_defaults_is_a_no_op():
     with env_defaults({}):
         assert dict(os.environ) == before
     assert dict(os.environ) == before
+
+
+def test_a_blank_value_counts_as_absent_and_is_restored_blank(monkeypatch):
+    """Sourcing .env.example exports every knob as the empty string; the
+    analysis default must still apply, and the blank must come back after."""
+    import os
+    from crawl.core.env import env_defaults
+    monkeypatch.setenv("LLM_MAX_OUTPUT_TOKENS", "")
+    with env_defaults({"LLM_MAX_OUTPUT_TOKENS": "32768"}):
+        assert os.environ["LLM_MAX_OUTPUT_TOKENS"] == "32768"
+    assert os.environ["LLM_MAX_OUTPUT_TOKENS"] == ""
