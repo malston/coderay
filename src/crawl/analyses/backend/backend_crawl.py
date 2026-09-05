@@ -26,9 +26,6 @@ SRC_EXT = ('.py', '.ts', '.tsx', '.js', '.rb', '.go', '.java', '.php')
 LAYERS = ('route', 'middleware', 'handler', 'service', 'database', 'response')
 # Spine layers lead the bundle; the sampled layers follow.
 BUNDLE_ORDER = ('route', 'middleware', 'response', 'handler', 'service', 'database')
-# Files where teams most often write custom idioms.
-SPINE_NAMES = ('urls.py', 'rest.py', 'response.py', 'decorator.py', 'decorators.py',
-               'middleware.py', 'computed_settings.py', 'routes.rb', 'application_controller.rb')
 # Core-action keywords: sample these files first so the trace has the spine endpoint.
 CORE_HINTS = ('message', 'send', 'booking', 'book', 'order', 'checkout', 'create',
               'post', 'auth', 'user', 'session', 'event')
