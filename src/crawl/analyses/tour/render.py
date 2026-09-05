@@ -1,6 +1,5 @@
 """Rendering, cost estimation, and session-summary formatting for the tour analysis."""
 import html
-import json
 import os
 import re
 from datetime import date
@@ -389,23 +388,6 @@ def format_dry_run_summary(estimate):
         "reuses the same codebase block across calls, so actual cost is often "
         "lower than the low end shown here."
     )
-
-
-def dump_run_state(shared: PipelineState, out):
-    """Write a summary of the pipeline's progress (selected files, abstraction
-    and chapter names, order, relationships) to run_state.json, for post-mortem
-    on an unhandled failure deep into a run (e.g. the 3rd LLM retry still failing
-    on chapter 7 of 10)."""
-    state = {
-        "selected_files": shared.get("selected_files"),
-        "abstractions": [a["name"] for a in shared["abstractions"]] if shared.get("abstractions") else None,
-        "order": shared.get("order"),
-        "relationships": shared.get("relationships"),
-        "chapters_completed": [c["name"] for c in shared["chapters"]] if shared.get("chapters") else None,
-    }
-    path = os.path.join(out, "run_state.json")
-    write_text(path, json.dumps(state, indent=2))
-    return path
 
 
 def default_output_dir(repo_path, instructions):

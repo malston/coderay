@@ -82,3 +82,21 @@ def test_tour_run_applies_its_env_defaults_around_the_flow(tmp_path, monkeypatch
         tour.run(args)
     assert seen["cap"] == 32768
     assert "LLM_MAX_OUTPUT_TOKENS" not in os.environ
+
+
+def test_finished_chapter_bodies_are_in_shared_when_a_later_chapter_fails(monkeypatch):
+    """coderay-5wu.3. A tour that dies on chapter 7 of 10 has paid for six
+    chapters; they must be in shared, bodies included, when the dump runs."""
+    calls = []
+
+    def fake(prompt):
+        calls.append(prompt)
+        if len(calls) == 2:
+            raise ResponseTruncated("overran")
+        return "body of " + str(len(calls))
+
+    monkeypatch.setattr(nodes_module, "call_llm", fake)
+    shared = dict(SHARED)
+    with pytest.raises(SystemExit):
+        nodes_module.WriteChapters().run(shared)
+    assert shared["chapters"] == [{"name": "Hub", "filename": "01_hub.md", "content": "body of 1"}]

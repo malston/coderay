@@ -76,8 +76,9 @@ class PipelineState(TypedDict, total=False):
     Written by Relate.post; read by crawl.analyses.tour.render.build_mermaid:
       relationships            list[dict]  # each with "source": "EXTRACTED" | "INFERRED"
 
-    Written by WriteChapters.post; read by crawl.analyses.tour.render's renderers:
-      chapters                 list[dict]
+    Written by WriteChapters; read by crawl.analyses.tour.render's renderers:
+      chapters                 list[dict]  # grows one chapter at a time during exec, so a
+                                           # failure part way leaves the finished ones for the dump
       filenames                dict[str, str]
     """
     repo_path: str
@@ -317,6 +318,10 @@ class WriteChapters(Node):
         filenames = {n: f"{i+1:02d}_{slug(n)}.md" for i, n in enumerate(order)}
         chapter_list = "\n".join(f"- [{n}]({filenames[n]})" for n in order)
         instructions = load_instructions(shared.get("instructions", "beginner-tutorial"))
+        # Finished chapters land in shared one at a time, so a failure on
+        # chapter 7 of 10 leaves six paid bodies for the run-state dump
+        # (coderay-5wu.3). exec sees no shared, so it is handed the list.
+        shared["chapters"] = []
         return {
             "by_name": by_name,
             "order": order,
@@ -325,10 +330,12 @@ class WriteChapters(Node):
             "codebase": shared["codebase"],
             "instructions": instructions,
             "context_window": shared.get("chapter_context_window", CHAPTER_CONTEXT_WINDOW),
+            "chapters": shared["chapters"],
         }
 
     def exec(self, ctx):
-        chapters = []
+        chapters = ctx["chapters"]
+        chapters.clear()  # a retry starts the sequence over
         prev_chapters = []
         total = len(ctx["order"])
         window = ctx["context_window"]

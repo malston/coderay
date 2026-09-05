@@ -1,4 +1,3 @@
-import json
 import os
 import subprocess
 import sys
@@ -10,7 +9,6 @@ from crawl.analyses.tour.render import (
     build_mermaid,
     build_related_links,
     default_output_dir,
-    dump_run_state,
     estimate_dry_run_cost,
     format_dry_run_summary,
     format_session_summary,
@@ -265,21 +263,6 @@ def test_write_index_html_escapes_staleness_disclaimer(tmp_path):
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in out
 
 
-def test_dump_run_state_captures_partial_progress(tmp_path):
-    shared = {
-        "selected_files": ["a.py", "b.py"],
-        "abstractions": [{"name": "Foo"}, {"name": "Bar"}],
-        "order": ["Foo", "Bar"],
-    }
-    path = dump_run_state(shared, str(tmp_path))
-
-    state = json.loads((tmp_path / "run_state.json").read_text(encoding="utf-8"))
-    assert path == str(tmp_path / "run_state.json")
-    assert state["selected_files"] == ["a.py", "b.py"]
-    assert state["abstractions"] == ["Foo", "Bar"]
-    assert state["chapters_completed"] is None
-
-
 def test_format_session_summary_reports_unknown_cost_for_an_unpriced_model():
     usage = [{
         "provider": "openai", "model": "gpt-6-mystery",
@@ -319,18 +302,6 @@ def test_format_session_summary_handles_empty_usage():
     out = format_session_summary([], wall_seconds=0.4)
     assert "Total cost:            $0.0000" in out
     assert "Usage:                 0 input, 0 output, 0 cache read, 0 cache write" in out
-
-
-def test_dump_run_state_handles_empty_shared(tmp_path):
-    dump_run_state({}, str(tmp_path))
-    state = json.loads((tmp_path / "run_state.json").read_text(encoding="utf-8"))
-    assert state == {
-        "selected_files": None,
-        "abstractions": None,
-        "order": None,
-        "relationships": None,
-        "chapters_completed": None,
-    }
 
 
 def _make_repo_files(tmp_path, count, size=500):
