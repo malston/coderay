@@ -46,3 +46,21 @@ def test_every_runner_analysis_declares_the_input_keys_its_failure_dump_leaves_o
         if name == "tour":
             continue
         assert isinstance(analysis.INPUT_KEYS, frozenset) and analysis.INPUT_KEYS, name
+
+
+def test_the_tree_sitter_range_admits_only_cores_that_ship_query_cursor():
+    """Every extractor imports QueryCursor from tree_sitter, which core 0.25
+    added; the Go grammar the lock resolves (0.25) is language ABI 15, which
+    only core 0.25 loads. A range that admits 0.23 or 0.24 installs from the
+    wheel and fails on the first import (coderay-5wu.16)."""
+    import pathlib
+    import tomllib
+    from packaging.requirements import Requirement
+    from packaging.version import Version
+    root = pathlib.Path(__file__).parent.parent
+    cfg = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    core = [Requirement(d) for d in cfg["project"]["dependencies"] if Requirement(d).name == "tree-sitter"]
+    assert len(core) == 1, core
+    spec = core[0].specifier
+    assert Version("0.24.0") not in spec and Version("0.23.0") not in spec
+    assert Version("0.25.0") in spec
