@@ -17,7 +17,7 @@ dependencies = [
     "tree-sitter-python>=0.23,<0.25",
     "tree-sitter-javascript>=0.25.0,<0.26",
     "tree-sitter-typescript>=0.23.2,<0.25",
-    # go 0.25.0 needs language ABI 15, which core 0.25 loads; the other grammars stay at 0.23.x.
+    # go 0.25.0 needs language ABI 15, which core 0.26 still loads; the other grammars stay at 0.23.x.
     "tree-sitter-go>=0.23,<0.26",
 ]
 
