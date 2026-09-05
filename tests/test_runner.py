@@ -240,3 +240,17 @@ def test_a_failure_before_any_result_writes_no_state_file(tmp_path, capsys):
         run_analysis(_failing_analysis(produce=False), _Args(str(tmp_path), out=str(out)))
     assert not (out / "run_state.json").exists()
     assert "partial run state" not in capsys.readouterr().err
+
+
+def test_run_analysis_writes_partial_state_when_the_report_write_fails(tmp_path, monkeypatch, capsys):
+    """coderay-5wu.4. After the flow succeeds `shared` holds every paid result;
+    a renderer bug or a full disk while writing index.html must not lose them
+    one step after the flow's own failure would have kept them."""
+    import crawl.core.runner as runner
+    monkeypatch.setattr(runner, "render_html", lambda *a: (_ for _ in ()).throw(KeyError("evidence")))
+    out = tmp_path / "out"
+    with pytest.raises(KeyError, match="evidence"):
+        run_analysis(_fake_analysis(), _Args(str(tmp_path), out=str(out)))
+    state = json.loads((out / "run_state.json").read_text(encoding="utf-8"))
+    assert state == {"body_md": "### A\ntext"}
+    assert f"Wrote partial run state to {out / 'run_state.json'}" in capsys.readouterr().err

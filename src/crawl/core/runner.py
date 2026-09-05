@@ -7,14 +7,22 @@ from .env import env_defaults
 from .render import render_html, render_markdown
 
 def run_flow(flow, shared, out_dir, dump_state):
-    """Run `flow` against `shared`. On an unhandled exception, call
-    `dump_state(shared, out_dir)` to write whatever partial progress exists,
-    say where it landed on stderr beside the traceback, and re-raise. A dump
-    that fails is reported the same way and the pipeline's own error is still
-    the one that propagates; a dump that returns None had nothing to write and
-    says nothing."""
+    """Run `flow` against `shared`, keeping its partial progress on failure
+    (see keeping_results)."""
+    keeping_results(lambda: flow.run(shared), shared, out_dir, dump_state)
+
+
+def keeping_results(step, shared, out_dir, dump_state):
+    """Call `step()`. On an unhandled exception, call `dump_state(shared,
+    out_dir)` to write whatever results `shared` holds, say where they landed
+    on stderr beside the traceback, and re-raise. A dump that fails is
+    reported the same way and the step's own error is still the one that
+    propagates; a dump that returns None had nothing to write and says
+    nothing. Covers the report write as well as the flow: once the flow has
+    returned, `shared` holds every paid result, and a renderer error loses
+    them just as a failed node would (coderay-5wu.4)."""
     try:
-        flow.run(shared)
+        step()
     except (Exception, SystemExit):
         try:
             state_path = dump_state(shared, out_dir)
@@ -78,10 +86,11 @@ def run_analysis(analysis, args):
     """Run one analysis and write its index.md and index.html. Returns out_dir.
 
     The output directory is created before the flow runs, because an analysis
-    may write extra files into it during the run. If the flow raises, whatever
-    it added to `shared` is written to run_state.json there and the exception
-    propagates; a state file left by an earlier failed run is removed first,
-    since the default output directory is the same run to run."""
+    may write extra files into it during the run. If the flow or the report
+    write raises, whatever the flow added to `shared` is written to
+    run_state.json there and the exception propagates; a state file left by
+    an earlier failed run is removed first, since the default output
+    directory is the same run to run."""
     out_dir = args.out or default_output_dir(args.repo_path, analysis.NAME)
     os.makedirs(out_dir, exist_ok=True)
     stale = os.path.join(out_dir, "run_state.json")
@@ -91,11 +100,12 @@ def run_analysis(analysis, args):
     name = repo_name_of(args.repo_path)
     shared = analysis.init_shared(args)
     inputs = frozenset(shared) | getattr(analysis, "INPUT_KEYS", frozenset())
-    with env_defaults(getattr(analysis, "ENV_DEFAULTS", {})):
-        run_flow(analysis.build_flow(), shared, out_dir,
-                 lambda s, o: write_run_state(s, o, skip=inputs))
+    def run_and_report():
+        with env_defaults(getattr(analysis, "ENV_DEFAULTS", {})):
+            analysis.build_flow().run(shared)
+        write_report(analysis, name, shared, out_dir)
 
-    write_report(analysis, name, shared, out_dir)
+    keeping_results(run_and_report, shared, out_dir, lambda s, o: write_run_state(s, o, skip=inputs))
 
     print(f"\nWrote {analysis.NAME} to {out_dir}/")
     print(f"  Open {out_dir}/index.html in a browser")
