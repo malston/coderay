@@ -152,8 +152,9 @@ def readable(repo, path, *, credential_names=False):
     through, since the target is inside the repo, so the target's own name has
     to clear the credential skip as well, the rule list_files already applies
     at walk time (coderay-q2r.52), and a model-named `.env` is refused the
-    same way (coderay-q2r.56). One function, so no crawler reaches for the
-    weaker half (coderay-q2r.63).
+    same way (coderay-q2r.56). One function for reads, on the one containment
+    predicate the walk uses too, so no crawler reaches for a weaker half
+    (coderay-q2r.63).
 
     `credential_names=True` lets a crawler read a credential-named file it
     walked to itself (the architecture crawler reads a real `.env` for variable
