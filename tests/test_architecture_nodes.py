@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from crawl.analyses.architecture import nodes as n
@@ -41,6 +43,24 @@ def test_build_bundle_prints_when_a_package_json_was_malformed(tmp_path, capsys)
     repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n", "package.json": "{not json"})
     n.BuildBundle().run({"repo_path": repo})
     assert "package.json malformed" in capsys.readouterr().out
+
+
+def test_build_bundle_prints_when_a_package_json_was_unreadable(tmp_path, capsys):
+    outside = tmp_path / "outside.json"
+    outside.write_text('{"dependencies": {"left-out": "^1"}}', encoding="utf-8")
+    repo = _repo(tmp_path / "repo", {"docker-compose.yml": "services: {}\n"})
+    os.symlink(outside, os.path.join(repo, "package.json"))
+    n.BuildBundle().run({"repo_path": repo})
+    assert "package.json unreadable" in capsys.readouterr().out
+
+
+def test_build_bundle_prints_when_an_env_file_was_unreadable(tmp_path, capsys):
+    outside = tmp_path / "outside.env"
+    outside.write_text("STRIPE_SECRET_KEY=sk_live_x\n", encoding="utf-8")
+    repo = _repo(tmp_path / "repo", {"docker-compose.yml": "services: {}\n"})
+    os.symlink(outside, os.path.join(repo, ".env"))
+    n.BuildBundle().run({"repo_path": repo})
+    assert "env files unreadable" in capsys.readouterr().out
 
 
 def test_build_bundle_prints_when_sdk_imports_were_capped(tmp_path, capsys, monkeypatch):

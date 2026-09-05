@@ -33,6 +33,46 @@ def test_classify_returns_none_for_a_file_that_is_not_an_architecture_source(rel
     assert ac._classify(rel) is None
 
 
+def test_read_returns_ok_true_for_ordinary_content(tmp_path):
+    p = tmp_path / "a.yml"
+    p.write_text("services: {}\n", encoding="utf-8")
+    text, ok = ac._read(str(p))
+    assert (text, ok) == ("services: {}\n", True)
+
+
+def test_read_returns_ok_true_for_a_genuinely_empty_file(tmp_path):
+    """coderay-5wu.6: this is the case _read must NOT confuse with a failed
+    read -- an empty file is real evidence the file exists and has no
+    content, not a refusal or an OSError."""
+    p = tmp_path / "a.yml"
+    p.write_text("", encoding="utf-8")
+    assert ac._read(str(p)) == ("", True)
+
+
+def test_read_returns_ok_false_when_readable_refuses_the_path(tmp_path):
+    outside = tmp_path / "outside.env"
+    outside.write_text("SECRET\n", encoding="utf-8")
+    repo = _repo(tmp_path / "repo", {"README.md": "# hi\n"})
+    link = os.path.join(repo, "docker-compose.yml")
+    os.symlink(outside, link)
+    assert ac._read(link, repo=repo) == ("", False)
+
+
+def test_read_returns_ok_false_on_oserror(tmp_path):
+    """A directory is not a file; open() raises IsADirectoryError, an OSError,
+    for a path readable() has no opinion about (no `repo` given)."""
+    d = tmp_path / "a-directory"
+    d.mkdir()
+    assert ac._read(str(d)) == ("", False)
+
+
+def test_read_truncates_at_the_limit_without_lying_about_it(tmp_path):
+    p = tmp_path / "a.json"
+    p.write_text("x" * 10, encoding="utf-8")
+    text, ok = ac._read(str(p), limit=5)
+    assert (text, ok) == ("xxxxx", True)   # ok is about the read succeeding, not completeness
+
+
 @pytest.mark.parametrize("rel", [
     "infra/lib/api-stack.ts",     # AWS CDK
     "infrastructure/index.ts",    # Pulumi
@@ -450,6 +490,7 @@ def test_build_bundle_overlays_the_four_sources_and_counts_them(tmp_path):
     bundle, stats = ac.build_bundle(repo)
 
     assert stats == {"config_files": 4, "config_files_found": 4, "package_json_malformed": 0,
+                     "package_json_unreadable": 0, "env_files_unreadable": 0,
                      "truncated": False,
                      "env_vars": 2, "deps": 2, "integrations": 0, "sdk_lines": 0,
                      "sdk_unavailable": "not a git repository", "sdk_capped": False,
@@ -522,6 +563,47 @@ def test_build_bundle_does_not_count_an_unreadable_package_json_as_malformed(tmp
     os.symlink(outside, os.path.join(repo, "package.json"))
     _bundle, stats = ac.build_bundle(repo)
     assert stats["deps"] == 0
+    assert stats["package_json_malformed"] == 0
+
+
+def test_build_bundle_counts_a_refused_package_json_somewhere(tmp_path):
+    """coderay-5wu.6. config_files_found only sums the compose/k8s/gateway/iac
+    buckets (buckets = {k: [] for k in ('compose', 'k8s', 'gateway', 'iac')}),
+    which package.json never belongs to -- a refused or unreadable manifest
+    previously had zero visibility in any stat, contrary to a comment
+    claiming config_files_found covered it."""
+    outside = tmp_path / "outside.json"
+    outside.write_text(json.dumps({"dependencies": {"left-out": "^1"}}), encoding="utf-8")
+    repo = _repo(tmp_path / "repo", {"docker-compose.yml": "services: {}\n"})
+    os.symlink(outside, os.path.join(repo, "package.json"))
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["package_json_unreadable"] == 1
+    assert stats["package_json_malformed"] == 0
+
+
+def test_build_bundle_counts_a_refused_env_file_somewhere(tmp_path):
+    outside = tmp_path / "outside.env"
+    outside.write_text("STRIPE_SECRET_KEY=sk_live_x\n", encoding="utf-8")
+    repo = _repo(tmp_path / "repo", {"docker-compose.yml": "services: {}\n"})
+    os.symlink(outside, os.path.join(repo, ".env"))
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["env_vars"] == 0
+    assert stats["env_files_unreadable"] == 1
+
+
+def test_build_bundle_does_not_count_a_package_json_truncated_by_its_own_read_limit_as_malformed(tmp_path):
+    """coderay-5wu.6. _read slices at its own `limit`, so a manifest above
+    that limit comes back as valid-but-cut text; json.loads then raises on
+    the cut JSON, and without this the manifest is reported as malformed
+    when it parses fine in full -- the exact conflation this bead exists to
+    remove, just relocated."""
+    huge_deps = {f"pkg-{i}": "^1.0.0" for i in range(20_000)}
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services: {}\n",
+        "package.json": json.dumps({"dependencies": huge_deps}),
+    })
+    assert len(open(os.path.join(repo, "package.json")).read()) > 200_000
+    _bundle, stats = ac.build_bundle(repo)
     assert stats["package_json_malformed"] == 0
 
 

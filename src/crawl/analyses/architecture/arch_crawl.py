@@ -478,11 +478,16 @@ def _integration_dirs(repo):
     return None, []
 
 
+PACKAGE_JSON_READ_LIMIT = 200_000   # shared with the truncation check below, so they can't drift apart
+
+
 def build_bundle(repo, max_chars=500_000):
     """Return (bundle_text, stats)."""
     buckets = {k: [] for k in ('compose', 'k8s', 'gateway', 'iac')}
     env_names, deps = set(), {}
     env_files, package_files = [], []  # what contributed names and dependency lists
+    env_files_unreadable = 0
+    package_json_unreadable = 0
     package_json_malformed = 0
     for dirpath, _dn, filenames in _walk(repo):
         for f in filenames:
@@ -492,22 +497,30 @@ def build_bundle(repo, max_chars=500_000):
                 continue
             full = os.path.join(dirpath, f)
             if kind == 'env':
-                text, _ok = _read(full, 40_000, repo)
+                text, ok = _read(full, 40_000, repo)
+                if not ok:
+                    env_files_unreadable += 1
+                    continue
                 names = _env_names(text)
                 if names:
                     env_names.update(names)
                     env_files.append(rel)
             elif kind == 'package':
-                text, ok = _read(full, 200_000, repo)
+                text, ok = _read(full, PACKAGE_JSON_READ_LIMIT, repo)
                 if not ok:
-                    continue   # refused or unreadable; config_files_found covers this class
+                    package_json_unreadable += 1
+                    continue
                 try:
                     data = json.loads(text)
                 except ValueError:
-                    # A real file, actually read, that isn't valid JSON -- distinct from
-                    # `ok is False` above, and from the docs/examples branch below, which
-                    # both silently skip zero dependencies for reasons that aren't a
-                    # malformed manifest (coderay-5wu.6).
+                    if len(text) >= PACKAGE_JSON_READ_LIMIT:
+                        # _read's own limit cut valid JSON mid-stream; this manifest may
+                        # parse fine in full, so it is not a malformed one (coderay-5wu.6).
+                        continue
+                    # A real file, actually read in full, that still isn't valid JSON --
+                    # distinct from `ok is False` above and from the truncation case just
+                    # above it, both of which silently skip zero dependencies for reasons
+                    # that aren't a malformed manifest (coderay-5wu.6).
                     package_json_malformed += 1
                     continue
                 if not isinstance(data, dict):
@@ -609,6 +622,8 @@ def build_bundle(repo, max_chars=500_000):
         "config_files": included,
         "config_files_found": sum(len(v) for v in buckets.values()),
         "package_json_malformed": package_json_malformed,
+        "package_json_unreadable": package_json_unreadable,
+        "env_files_unreadable": env_files_unreadable,
         "truncated": len(whole) > max_chars,
         "env_vars": len(env_names),
         "deps": len(deps),
