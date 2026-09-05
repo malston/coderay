@@ -7,7 +7,7 @@ from datetime import date
 
 from crawl.core import ensure_priced, get_usage, reset_usage, resolve_provider_and_model
 from crawl.core.env import env_defaults
-from crawl.core.runner import run_flow
+from crawl.core.runner import keeping_results, run_flow
 from crawl.analyses.tour.flow import create_tour_flow
 from crawl.analyses.tour.nodes import CODEBASE_BUDGET, PipelineState
 from crawl.analyses.tour.render import (
@@ -97,12 +97,17 @@ def run(args) -> None:
     mermaid = build_mermaid(shared["abstractions"], shared["relationships"])
 
     generated_at = date.today().isoformat()
-    write_chapter_files(chapters, name, out, shared["relationships"], generated_at)
-    write_index_md(chapters, name, args.instructions, shared["summary"], mermaid, out, generated_at)
-    write_index_html(
-        chapters, name, args.instructions, shared["summary"], mermaid,
-        shared["selected_files"], shared["selection_reasoning"], out, generated_at,
-    )
+
+    def write_tour():
+        write_chapter_files(chapters, name, out, shared["relationships"], generated_at)
+        write_index_md(chapters, name, args.instructions, shared["summary"], mermaid, out, generated_at)
+        write_index_html(
+            chapters, name, args.instructions, shared["summary"], mermaid,
+            shared["selected_files"], shared["selection_reasoning"], out, generated_at,
+        )
+
+    # shared holds every paid result by now; a failed write keeps it as a failed node would.
+    keeping_results(write_tour, shared, out, dump_run_state)
 
     print(f"\nWrote tour to {out}/")
     print(f"  Open {out}/index.html in a browser")
