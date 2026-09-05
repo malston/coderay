@@ -1,76 +1,74 @@
 ---
 name: epic-loop
-description: Work every open child of a beads epic unattended in Claude Code. One worktree, branch and PR per bead, a failing test first with the guard mutated to prove it bites, a fresh-context review pass, serious findings fixed and the rest filed to a sibling findings epic, then the PR merged (or held for human approval with --hold) and the bead closed before the next one starts. Design and keep-or-delete questions get a recommendation and a `human` tag instead of a decision. Pairs with /goal for the completion condition and a turn budget stored in the epic. Use when Mark says "run the epic", "work the epic", "epic loop", "burn down these beads", names a beads epic id and wants it done end to end, or asks to leave Claude Code running on a list of issues overnight. Not for a single bead, an epic
+description: Work every open child of a beads epic unattended in Claude Code. One worktree, branch and PR per bead, a failing test first with the guard mutated to prove it bites, a fresh-context review pass, serious findings fixed and the rest filed to a sibling findings epic, then the PR merged (or held for human approval with --hold) and the bead closed before the next one starts. Design and keep-or-delete questions get a recommendation and a `human` tag instead of a decision. Pairs with /goal for the completion condition and a turn budget stored in the epic. Invoke as /epic-loop EPIC-ID, with --hold to stop at ready-for-review instead of merging. Not for a single bead, an epic with no children, or work that needs a human decision at every step.
+disable-model-invocation: true
 ---
 
-# Running an epic unattended
+# Epic loop
 
-Claude Code can work every open child of a beads epic without you driving each step. One branch and one PR per bead, a fresh-context review pass, the findings fixed or filed, the PR merged or handed to you, the bead closed, then the next one. This page is how to start it, what it does on each pass, what keeps it bounded, and how to stop it.
+Work the open children of a beads epic, one at a time, until every one is closed, blocked on a held PR, or tagged `human`.
 
-The protocol itself lives in `.claude/commands/epic-loop.md`, which Claude Code exposes as the `/epic-loop` command. Edit that file to change the rules.
+## Arguments
 
-## Before you start
+`$ARGUMENTS` is the epic id, optionally followed by `--hold`.
 
-* **The epic exists and its children are real work.** `bd show <epic-id>` should list the beads you want done. Anything that is a keep-or-delete call or an open design question can stay in the list. The loop investigates it, writes a recommendation into the bead, tags it `human` (`bd tag <id> human`, listed by `bd human list`), and moves on without deciding.
-* **`main` is green** (`make test`) and `gh auth status` works, since the loop pushes and opens PRs. Your own checkout can be on any branch with any uncommitted work. The loop never touches it.
-* **You've picked a merge mode.** `/epic-loop <epic-id>` merges each PR itself once review is clean. `/epic-loop <epic-id> --hold` stops at ready-for-review and leaves the merge to you. Use `--hold` in any repo with branch protection or a policy that a person approves every change. The review, the fix-or-file rule and the bead bookkeeping are the same in both modes. Only step 7 differs.
-* **A findings epic exists, or you're fine with the loop creating one.** Review findings the loop doesn't fix are filed as beads under a sibling epic named `<epic-id> review findings`, never under the epic being worked. See "Why findings go to a sibling epic" below.
+* `EPIC` is the first word.
+* `HOLD` is true if `--hold` appears anywhere. In hold mode you never merge. You stop at ready-for-review and move on.
 
-Optional: put the protocol into the epic's DESIGN field as well (`bd update <epic-id> --design "..."`). `/epic-loop` checks there first and lets it override the command file, and `bd show` brings it back after a context compaction.
+Run `bd show $EPIC` first. Its DESIGN field may carry epic-specific instructions, most often the order to work the children in and which beads pair into one PR. Follow those. If DESIGN carries a full loop protocol, that protocol wins over anything below.
 
-## Start it
+## How the loop runs
 
-Two lines in a Claude Code session opened in the repo:
+The user drives this with `/goal`, which re-evaluates the condition after every turn, waits for background review agents before judging, and survives a resumed session. The goal line looks like:
 
-```
-/epic-loop coderay-5wu
-/goal Every open child of beads epic coderay-5wu is closed or tagged `human`, worked per /epic-loop; or stop when the epic's turn counter reaches 80
+```text
+/goal Every open child of beads epic <epic-id> is closed, blocked on a held PR, or tagged `human`, worked per /epic-loop; or stop when the epic's turn counter reaches 80
 ```
 
-The first line loads the protocol and starts the first bead. The second sets the completion condition. After every turn, a small model checks the condition and either lets Claude continue, records the goal as achieved, or records it as impossible. While a review agent or a background command is still running, the check is skipped until a turn ends with nothing in flight, so reviews are never cut short.
+The turn counter lives in the epic so a resumed session doesn't reset it. End every turn, whatever else happened in it, by reading the epic's notes with `bd show $EPIC --json`, replacing the `turns: N` line (or appending one if absent), and writing the whole notes field back with `bd update $EPIC --notes "..."`. Notes is a single field and the user keeps their own remarks in it, so never write only the counter.
 
-The turn counter lives in the epic, not the session. At the end of every turn the loop increments `turns` in the epic's notes (`bd update <epic-id> --notes "turns: N"`), and the goal clause reads that number. A session restart doesn't reset it. Raise or lower the bound to taste, and reset the counter by hand (`--notes "turns: 0"`) when you want a fresh budget.
+If no goal is active, keep going anyway. End each turn by picking up the next bead, and stop only at the stop condition at the bottom of this file.
 
-## What one pass does
+## Paths
 
-1. From the main checkout, picks the next open bead whose files don't overlap an open PR from this loop, fetches, and creates a worktree for it under `.claude/worktrees/` on a fresh branch from `origin/main`. Syncs its venv and runs the rest of the pass from there. If a worktree for the bead already exists, it's reused. Your checkout is never switched. If every remaining bead overlaps an open PR, the loop stops and tells you which PRs need to land first. It doesn't stack branches.
-2. Claims the bead and re-reads it. If an earlier PR already covered part of the bead, the loop records exactly what it's dropping as a bead comment (`bd comment <id> "Trimmed: ... already done in PR NN"`) before doing any work, and repeats the trim in the PR body. The bead's own text is never edited by the loop.
-3. Writes the failing test, watches it fail, makes the smallest fix, mutates the guard and watches the test go red again, restores it, runs the suite. Every commit is gated on a green suite in the same command. The mutation step is what proves the test bites. Skip it and you get green suites that assert nothing.
-4. Pushes, opens the PR with a body that states what changed, what was trimmed from the bead and why, what was left for you to decide, the red and green test counts, and what was verified by hand. Waits for CI.
-5. Runs review in a fresh context. Every PR gets `/code-review <PR#> medium` from a subagent that hasn't seen the implementation session, so the reviewer doesn't inherit the author's assumptions about what the diff does. A PR carrying a bead of priority P0 to P3 also gets the `/pr-review-toolkit:review-pr` agents. A PR whose beads are all P4 stops at the fresh-context `/code-review`.
-6. Fixes what is labelled Critical, Important or HIGH in one review commit, re-runs the suite, and adds a "Review round" section to the PR body. Everything else becomes a P3 or P4 bead under the sibling findings epic. Findings outside the bead's scope are filed, never fixed in that PR.
-7. In merge mode, merges with a merge commit, fetches, and once `origin/main` contains the branch removes the worktree and the local branch (the remote branch stays), closes the bead with a reason that names the PR, and starts the next one. Your local `main` catches up on your next `git pull`. In `--hold` mode, marks the PR ready for review, applies the `epic-loop` label, sets the bead to `blocked` with the PR number in the reason, and moves to the next non-overlapping bead. On later passes, any held PR that has since merged gets its worktree cleaned up and its bead closed.
+`ROOT` is the main checkout, `git rev-parse --show-toplevel` run from where the session started. Worktrees live at `$ROOT/.claude/worktrees/<bead-id>`, always as absolute paths so a worktree is never created inside another. The main checkout belongs to the user. Never switch its branch, and never run a bare `git stash` (the stash stack is shared across worktrees).
 
-The first two passes on the 1.0.0 epic (PRs #41 and #42) were three commits and about 130 to 150 changed lines each, tests included.
+## Findings epic
 
-## Why findings go to a sibling epic
+Review findings you don't fix go under a sibling epic, never under `$EPIC`. On the first filing of a run, look for an open epic titled `$EPIC review findings` with `bd list --type=epic`. If none exists, create it (`bd create "$EPIC review findings" --type epic`) and record its id in the PR body. Every finding filed there names the PR it came from in its description.
 
-An earlier version filed review findings under the epic being worked. Since the goal is "every open child is closed," each PR could add children and extend the run. A reviewer's taste on pass 12 was shaping what got built on pass 25, with nobody in between. Filing to `<epic-id> review findings` keeps the run bounded by the work you asked for. When the loop finishes, `bd show <findings-epic-id>` is a list of what it saw and chose not to fix, and you decide whether to run the loop again on that epic.
+## Per bead
 
-## Watching it
+1. **Pick and isolate.** From `$ROOT`, `git fetch origin`. List open PRs from this loop (`gh pr list --label epic-loop --json number,headRefName,files`). For each held PR whose bead is blocked, check `gh pr view <n> --json state`. If it merged, remove its worktree and branch as in step 7 and `bd close` its bead with the PR number. Then pick the next open bead whose files don't overlap any still-open PR from this loop. If every remaining bead overlaps an open PR, report which PRs need to land and stop. Never base a worktree on another PR's branch. Create the worktree with `git worktree add --no-track -b <branch> $ROOT/.claude/worktrees/<bead-id> origin/main` (`--no-track` so `git push -u origin <branch>` works). If `git worktree list` already shows one for this bead, reuse it. `cd` into it, `uv sync --locked`, and run steps 2 to 6 from there.
 
-* `bd list --status=in_progress` shows the bead being worked. `bd show <epic-id>` shows what is left and the current turn counter.
-* `gh pr list --label epic-loop` shows PRs the loop opened. In `--hold` mode this is your review queue. Each body is the record of decisions, trims and the review round.
-* The `◎ /goal active` indicator in the terminal shows how long the goal has run.
-* `bd show <findings-epic-id>` lists what the loop found and did not fix. Each bead's description names the PR its finding came from.
+2. **Claim and scope.** `bd update <id> --claim`. Re-read the bead. If an earlier PR already covered part of it, don't edit the bead's title or description. Write down exactly what you're dropping and why, and carry that into the PR body's "Trimmed" section and the bead's close reason. Batch beads that share a file into one PR and say so in the body.
 
-## Stopping and resuming
+3. **Test first.** Write the failing test, watch it fail for the right reason, make the smallest fix, then mutate the guard both ways and watch the test go red each time before restoring it. After a mutation round, `rm -rf src/**/__pycache__` before trusting the suite. A same-size restore in the same second leaves a stale `.pyc` and the suite passes against the mutated code. Run the full suite (`uv run pytest tests/ -q`, the same command as `make test`). Gate every commit with `&&` on a pytest grep, since `set -e` doesn't abort in this tool. Edit files with Python, not `sed -i`.
 
-* `/goal clear` stops the loop after the current turn. The bead's worktree and branch stay on disk under `.claude/worktrees/`. The PR, if open, stays open. `git worktree list` shows what is there.
-* If you close the terminal, `claude --resume` restores an active goal. The turn counter is read from the epic, so the budget picks up where it left off. Re-run `/epic-loop <epic-id>` in the resumed session if the protocol isn't in the epic's DESIGN field.
-* If Claude answers the goal check several turns in a row without using any tool, Claude Code prints a warning and hands control back to you with the goal still set. That usually means a bead needs a decision only you can make, or every remaining bead is waiting on a held PR. Read the last message, answer it or merge, and the loop resumes.
+4. **Open the PR.** `git push -u origin <branch>`, then `gh pr create --label epic-loop` with these sections: what changed, trimmed (what was dropped from the bead and why, or "nothing"), decisions left for the user, tests (red and green counts, mutations), verified by hand, what stays as is. Wait for CI in two steps. `gh pr checks <n> --watch` on its own returns at once before CI has registered the run, so first poll until the check exists (`until gh pr checks <n> | grep -q pytest; do sleep 10; done`), then `gh pr checks <n> --watch`.
 
-## What the loop never does
+5. **Review in a fresh context.** Dispatch a subagent whose entire prompt is the PR number and the instruction to run `/code-review <n> medium` against `gh pr diff <n>` and `git show origin/<branch>:<path>`, never the working tree. Pass it nothing from this session. Its output is the review. If the PR carries a bead of priority P0, P1, P2 or P3, also run `/pr-review-toolkit:review-pr <n>` with the same read-from-remote instruction. A PR whose beads are all P4 stops at the fresh-context `/code-review`. Stay in the bead's worktree until its fixes are pushed.
 
-* Decide a keep-or-delete or design question. Those get a recommendation and a `human` tag.
-* Edit a bead's text. Trims are comments, and the bead stays as you wrote it.
-* Delete code that looks unused, or rewrite an implementation.
-* Branch from another open PR. Overlapping work waits.
-* File a finding under the epic it's working.
-* Review its own diff from the session that wrote it.
-* Bump the version, tag, or cut a release. Those are yours once the epic is empty.
-* Fix a review finding outside the current bead's scope. It files a bead instead.
+6. **Fix or file.** Fix every finding the reviews label Critical, Important or HIGH, and any finding that is a correctness or security defect whatever its label, in one review commit. Re-run checks. Add a "Review round" section to the PR body. File everything else under the findings epic after `bd search` for a duplicate, P3 for behavioural, P4 for style or simplification, with "PR <n> review" in the description. Findings outside the bead's scope are filed, never fixed in this PR.
 
-## Adapting it for another repo
+7. **Land or hold.**
+   * Merge mode: `gh pr merge <n> --merge` (a merge commit, not a squash, so the branch tip stays reachable from `origin/main`). Back in `$ROOT`, `git fetch origin`. Once `git branch -r --contains <branch>` lists `origin/main`, `git worktree remove $ROOT/.claude/worktrees/<bead-id>` and `git branch -D <branch>`. The remote branch stays. `bd close <id> --reason="PR <n>: ..."` including any trim, then `bd show <id>` to confirm the status changed. Then the next bead.
+   * Hold mode: `gh pr ready <n>` if it's a draft. `bd update <id> --status blocked` and append a line `held: PR <n>` to the bead's notes, preserving whatever is already there. Leave the worktree and branch in place. Then the next non-overlapping bead. The cleanup and close happen in step 1 of a later pass once the PR has merged.
 
-Copy `.claude/commands/epic-loop.md`. The parts specific to this repo are the test command (`uv run pytest tests/ -q`) and the venv sync (`uv sync --locked`). Check that `.claude/worktrees/` is ignored in the target repo (`git check-ignore -q .claude/worktrees`). Here it's excluded by Claude Code's own entries in `.git/info/exclude`, which is per clone and not committed, so a fresh clone is covered only once Claude Code has written that block. Create the `epic-loop` label once (`gh label create epic-loop`). The review commands, the fix-or-file rule, the decision-bead rule and the sibling findings epic carry over unchanged. Default to `--hold` when you're not the only person who merges to that repo.
+## Decision beads
+
+A bead that asks whether to keep or delete code, or that has an open design question, isn't yours to decide. Investigate, write the recommendation with `bd update <id> --notes`, run `bd tag <id> human` (listed by `bd human list`; `bd human <id>` on its own only prints a help menu), and move on. Never delete code that seems unused or rewrite an implementation without the user.
+
+## Never
+
+* Edit a bead's title or description. Trims go in the PR body and close reason.
+* Overwrite a notes field. Read it, change your line, write the whole thing back.
+* Base a worktree on another PR's branch.
+* File a finding under `$EPIC`.
+* Review a diff from the session that wrote it.
+* Merge in hold mode.
+* Bump the version, tag, or cut a release.
+
+## Stop
+
+When every child of `$EPIC` is closed, blocked on a held PR, or tagged `human`, report the state in a few lines. Name the findings epic id and how many beads it holds, and in hold mode list the PRs waiting for approval. Then stop.
