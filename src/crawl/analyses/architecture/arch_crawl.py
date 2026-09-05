@@ -9,7 +9,7 @@ An architecture never lives in one file; you overlay four sources:
 Feeding a 600k-line repo whole is impossible, so we build a bundle small enough
 for one LLM pass but dense enough to inventory the architecture: the config
 files in full, env var NAMES (never values), the union of package.json
-dependencies (which name every SDK), the integration directories, and the SDK
+dependencies (which name a Node app's SDKs), the integration directories, and the SDK
 `import` lines found by `git grep` (real file paths, proof a connection is live).
 Nothing here calls an LLM.
 """
@@ -30,7 +30,7 @@ GATEWAY_NAMES = frozenset({
     'render.yaml', 'railway.json', 'Procfile',
 })
 
-# SDK / client imports that name an external node. Kept broad but specific.
+# Node and Python SDK / client imports that name an external node. Kept broad but specific.
 SDK_RE = (r"(stripe|twilio|@?aws-sdk|aws-sdk|googleapis|@google-cloud|ioredis|"
           r"'redis'|\"redis\"|nodemailer|@sendgrid|resend|@slack|slack|openai|"
           r"@sentry|@prisma/client|mongodb|mysql2?|pg|kafkajs|bullmq|amqplib|"
@@ -38,9 +38,10 @@ SDK_RE = (r"(stripe|twilio|@?aws-sdk|aws-sdk|googleapis|@google-cloud|ioredis|"
           r"@salesforce|algolia|elastic|pusher|ably|firebase)")
 # Go imports name a module path, not a package, so they get their own pattern:
 # the well-known clients, plus any module whose path says it is an SDK
-# (coderay-5wu.14). A Go import line is `"path"` or `alias "path"`. Written as
-# POSIX extended regex, since git grep -E runs it and Python reads it too:
-# capturing groups only, bracket classes instead of \w and \s.
+# (coderay-5wu.14). A Go import line is `"path"`, `alias "path"` or
+# `import "path"`. Written as POSIX extended regex that Python's re also
+# accepts verbatim, since git grep -E runs it and the name extraction re-reads
+# it: capturing groups only, and a literal space-or-tab class instead of \s.
 GO_SDK_RE = (r"(github\.com/aws/aws-sdk-go(-v2)?|cloud\.google\.com/go/[a-z0-9]+|"
              r"github\.com/(redis/go-redis|go-redis/redis|jackc/pgx|lib/pq|mattn/go-sqlite3|"
              r"stripe/stripe-go|slack-go/slack|sendgrid/sendgrid-go|twilio/twilio-go|"
@@ -50,22 +51,33 @@ GO_SDK_RE = (r"(github\.com/aws/aws-sdk-go(-v2)?|cloud\.google\.com/go/[a-z0-9]+
              r"go-sql-driver/mysql|jmoiron/sqlx|uptrace/bun|gorm/gorm)|"
              r"modernc\.org/sqlite|google\.golang\.org/grpc|gorm\.io/gorm|entgo\.io/ent|"
              r"[a-z0-9.-]+/[a-z0-9-]+/([a-z0-9-]+/)*([a-z0-9-]*sdk-go|go-sdk)(/|\"))")
-_GO_IMPORT_LINE = r"^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*[[:space:]]+)?\"" + GO_SDK_RE
+_GO_IMPORT_LINE = "^[ \t]*([A-Za-z_][A-Za-z0-9_]*[ \t]+)?\"" + GO_SDK_RE  # a literal tab, for gofmt's indent
 _GO_VERSION_SEGMENT = re.compile(r"^v\d+$")
+# Hosts whose modules are one segment deep, so the client is that segment
+# (google.golang.org/grpc/credentials is grpc; gopkg.in/yaml.v3 is yaml).
+_SINGLE_SEGMENT_HOSTS = frozenset({"google.golang.org", "modernc.org", "gorm.io", "entgo.io", "gopkg.in", "golang.org"})
+_GENERIC_REPO_NAMES = frozenset({"clients", "sdk-go", "go-sdk", "sdk"})
 
 
 def go_sdk_name(path):
-    """The client a Go module path names: the repo segment for a host/owner/repo
-    path, the service for cloud.google.com/go/<service>, the owner when the repo
-    is a generic sdk-go, and the last segment otherwise. A trailing /vN is not
-    a name."""
+    """The client a Go module path names. A /vN segment anywhere is not a name.
+    For cloud.google.com/go/<service> it is the service. For a host whose
+    modules are one segment deep (google.golang.org, modernc.org, gopkg.in and
+    the like) it is that segment, minus a gopkg.in .vN suffix, so a subpackage
+    import still names the module. For any other host/owner/repo path it is the
+    repo, or the owner when the repo or the segment after it is a generic name
+    (clients, sdk-go, go-sdk). A path with fewer segments gives its last one."""
     segments = [s for s in path.split("/") if s and not _GO_VERSION_SEGMENT.match(s)]
     host = segments[0]
     if host == "cloud.google.com" and len(segments) >= 3:
         return segments[2]
-    if host == "github.com" and len(segments) >= 3:
-        owner, repo = segments[1], segments[2]
-        return owner if repo in ("clients", "sdk-go", "go-sdk") or "sdk-go" in segments[3:4] else repo
+    if host in _SINGLE_SEGMENT_HOSTS and len(segments) >= 2:
+        name = segments[1]
+        return name.rsplit(".v", 1)[0] if host == "gopkg.in" else name
+    if len(segments) >= 3:
+        owner, repo, after = segments[1], segments[2], segments[3:4]
+        generic = repo in _GENERIC_REPO_NAMES or (after and after[0] in _GENERIC_REPO_NAMES)
+        return owner if generic else repo
     return segments[-1]
 
 
@@ -374,7 +386,7 @@ def _sdk_grep(repo, max_lines=400):
         if len(parts) < 3:
             continue
         path, lineno, content = parts
-        go = re.match(_GO_IMPORT_LINE.replace("[[:space:]]", r"\s"), content)
+        go = re.match(_GO_IMPORT_LINE, content)
         if go:
             name = go_sdk_name(re.search(r"\"([^\"]+)\"", content).group(1))
         else:

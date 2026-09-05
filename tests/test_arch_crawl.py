@@ -626,7 +626,14 @@ def test_sdk_evidence_reads_go_import_paths(tmp_path):
     ("modernc.org/sqlite", "sqlite"),
     ("cloud.google.com/go/storage", "storage"),
     ("google.golang.org/grpc", "grpc"),
+    ("google.golang.org/grpc/credentials/insecure", "grpc"),
+    ("modernc.org/sqlite/lib", "sqlite"),
+    ("gopkg.in/yaml.v3", "yaml"),
     ("github.com/nats-io/nats.go", "nats.go"),
+    ("gitlab.com/acme/foo-sdk-go/pkg/x", "foo-sdk-go"),
+    ("github.com/acme/foo/go-sdk/pkg", "acme"),
+    ("github.com/acme/clients/sdk-go/pkg/x", "acme"),
+    ("github.com/x/y/v2/pkg/z", "y"),
 ])
 def test_go_sdk_name_is_the_client_not_the_host(path, name):
     assert ac.go_sdk_name(path) == name
