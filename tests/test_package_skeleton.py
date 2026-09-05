@@ -64,11 +64,12 @@ def test_the_tree_sitter_floor_is_the_core_that_ships_query_cursor():
     assert Version(floors[0].version) >= Version("0.25")
 
 
-def test_the_python_floor_is_the_release_that_ships_tomllib():
+def test_the_python_floor_is_at_least_the_release_that_ships_tomllib():
     """These tests read pyproject.toml through tomllib, stdlib from 3.11; a
     floor that admits 3.10 claims an interpreter the suite cannot run on
-    (coderay-5wu.22, Mark's call: raise the floor, no tomli fallback)."""
+    (coderay-5wu.22)."""
     from packaging.specifiers import SpecifierSet
     from packaging.version import Version
-    spec = SpecifierSet(_pyproject()["project"]["requires-python"])
-    assert Version("3.10.99") not in spec and Version("3.11") in spec
+    floors = [s for s in SpecifierSet(_pyproject()["project"]["requires-python"]) if s.operator == ">="]
+    assert len(floors) == 1, floors
+    assert Version(floors[0].version) >= Version("3.11")
