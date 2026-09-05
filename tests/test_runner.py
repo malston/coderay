@@ -7,7 +7,7 @@ import textwrap
 import pytest
 
 from crawl.core.render import Section, Theme, render_html, render_markdown
-from crawl.core.runner import run_analysis, run_flow
+from crawl.core.runner import keeping_results, run_analysis, run_flow
 
 
 def test_run_flow_dumps_state_and_reraises_on_failure():
@@ -253,19 +253,23 @@ def test_run_analysis_writes_partial_state_when_the_report_write_fails(tmp_path,
         run_analysis(_fake_analysis(), _Args(str(tmp_path), out=str(out)))
     state = json.loads((out / "run_state.json").read_text(encoding="utf-8"))
     assert state == {"body_md": "### A\ntext"}
-    assert f"Wrote partial run state to {out / 'run_state.json'}" in capsys.readouterr().err
+    assert f"Run failed. Wrote partial run state to {out / 'run_state.json'}" in capsys.readouterr().err
 
 
 def test_an_interrupt_keeps_the_results_and_still_propagates(capsys):
     """coderay-5wu.2 (Mark's call): Ctrl-C on chapter 9 of 10 has paid for
-    eight chapters. Dump them, say so, and re-raise so the exit stays 130."""
-    from crawl.core.runner import keeping_results
-
+    eight chapters. Dump them, say so, and re-raise so the interrupt exits
+    the process the way an interrupt does."""
     def step():
         raise KeyboardInterrupt
 
     dumped = {}
+
+    def dump_state(shared, out_dir):
+        dumped["shared"], dumped["out_dir"] = shared, out_dir
+        return "/tmp/x"
+
     with pytest.raises(KeyboardInterrupt):
-        keeping_results(step, {"x": 1}, "/tmp", lambda s, o: dumped.setdefault("s", s) and "/tmp/x")
-    assert dumped == {"s": {"x": 1}}
+        keeping_results(step, {}, "/tmp", dump_state)
+    assert dumped == {"shared": {}, "out_dir": "/tmp"}
     assert "Run interrupted. Wrote partial run state to /tmp/x" in capsys.readouterr().err
