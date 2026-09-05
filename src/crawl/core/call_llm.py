@@ -31,6 +31,8 @@ import os
 import tempfile
 import time
 
+from .text import positive_int
+
 CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "crawl")
 
 # A prompt may embed this literal marker to split a stable, cacheable prefix
@@ -70,8 +72,15 @@ def _truncated(detail):
 
 
 def max_output_tokens():
-    """The max-output-tokens cap call_llm() would use right now, without calling it."""
-    return int(os.environ.get("LLM_MAX_OUTPUT_TOKENS", str(DEFAULT_MAX_OUTPUT_TOKENS)))
+    """The max-output-tokens cap call_llm() would use right now, without calling
+    it. An empty LLM_MAX_OUTPUT_TOKENS means unset, since .env.example ships it
+    blank; anything but a positive whole number stops the run with the
+    variable named, before a call is paid for."""
+    raw = os.environ.get("LLM_MAX_OUTPUT_TOKENS") or str(DEFAULT_MAX_OUTPUT_TOKENS)
+    try:
+        return positive_int(raw)
+    except ValueError as e:
+        raise SystemExit(f"LLM_MAX_OUTPUT_TOKENS must be a positive whole number of tokens: {e}") from None
 
 
 def _record_usage(provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, duration_s, cached):

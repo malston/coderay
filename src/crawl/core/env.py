@@ -4,16 +4,19 @@ import os
 
 @contextlib.contextmanager
 def env_defaults(defaults):
-    """Set each key only when it is absent, then restore the prior environment.
+    """Set each key only when it is absent or blank, then restore the prior
+    environment.
 
-    A value the user already set always wins. Restoring on exit keeps one
-    analysis's default from leaking into the next under `crawl all`.
+    A value the user already set always wins. Blank counts as absent because
+    sourcing .env.example exports every knob as the empty string. Restoring on
+    exit keeps one analysis's default from leaking into the next under
+    `crawl all`.
     """
     prior = {}
     try:
         for key, value in defaults.items():
             prior[key] = os.environ.get(key)
-            if prior[key] is None:
+            if not prior[key]:
                 os.environ[key] = value
         yield
     finally:
