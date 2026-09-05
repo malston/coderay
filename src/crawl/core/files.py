@@ -134,6 +134,12 @@ def is_test_file(filename):
             or (base.endswith('.go') and base.startswith(_GO_TEST_PREFIXES)))
 
 
+def _contained(root, target):
+    """True if resolved `target` is resolved `root` or lies under it. The one
+    containment predicate, so the walk and the read-time check cannot drift."""
+    return target == root or target.startswith(root + os.sep)
+
+
 def readable(repo, path, *, credential_names=False):
     """True if a file a crawler discovered in `repo` may be read into a prompt.
 
@@ -153,9 +159,8 @@ def readable(repo, path, *, credential_names=False):
     walked to itself (the architecture crawler reads a real `.env` for variable
     names); a symlink to one is still refused.
     """
-    root = os.path.realpath(repo)
     target = os.path.realpath(path)
-    if not (target == root or target.startswith(root + os.sep)):
+    if not _contained(os.path.realpath(repo), target):
         return False
     if credential_names and not os.path.islink(path):
         return True
@@ -228,7 +233,7 @@ def list_files(root, *, keep_ext=DEFAULT_KEEP_EXT, skip_dirs=DEFAULT_SKIP_DIR,
                 continue
             path = os.path.join(dirpath, f)
             real = os.path.realpath(path)
-            if not real.startswith(real_root + os.sep):
+            if not _contained(real_root, real):
                 continue  # symlink resolving outside the repo root
             # coderay-q2r.52: a symlink can rename a skipped file into a
             # source-looking one (src/config.py -> ../.env), so the target's
