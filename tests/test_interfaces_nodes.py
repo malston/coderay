@@ -42,7 +42,7 @@ def test_find_routes_populates_the_surface(tmp_path):
 
 def test_find_routes_refuses_a_repo_with_no_surface_files(tmp_path):
     repo = _repo(tmp_path, {"README.md": "# a library\n"})
-    with pytest.raises(AssertionError, match="No route/surface files found"):
+    with pytest.raises(SystemExit, match="No route/surface files found"):
         n.FindRoutes().run({"repo_path": repo})
 
 
@@ -580,7 +580,7 @@ def test_the_no_routes_message_names_go_among_the_frameworks(tmp_path):
     """A Go CLI with no HTTP registrations has no surface; the user who reads
     this message must not conclude Go is unsupported."""
     _repo(tmp_path, {"cmd/tool/main.go": "func main() { cmd.Execute() }\n"})
-    with pytest.raises(AssertionError) as e:
+    with pytest.raises(SystemExit) as e:
         n.FindRoutes().run({"repo_path": str(tmp_path)})
     assert "Go" in str(e.value) and "Rails" in str(e.value)
 

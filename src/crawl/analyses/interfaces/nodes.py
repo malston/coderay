@@ -62,7 +62,9 @@ class FindRoutes(Node):
 
     def post(self, shared, prep_res, exec_res):
         routes, files, kept = exec_res
-        assert routes.strip(), (
+        if not routes.strip():
+            # SystemExit, not assert: python -O strips asserts (coderay-q2r.50).
+            raise SystemExit(
             "No route/surface files found. This analysis expects a web API "
             "(Rails routes, Django urls, Next.js pages/api, tRPC, GraphQL, gRPC, Go net/http).")
         shared["routes"] = routes

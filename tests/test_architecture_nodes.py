@@ -38,7 +38,7 @@ def test_build_bundle_refuses_a_repo_with_no_architecture_sources(tmp_path):
     test_backend_nodes.py holds the other half of the pair.
     """
     repo = _repo(tmp_path, {"README.md": "# a single-binary tool\n"})
-    with pytest.raises(AssertionError, match="No architecture sources found"):
+    with pytest.raises(SystemExit, match="No architecture sources found"):
         n.BuildBundle().run({"repo_path": repo})
 
 
@@ -48,7 +48,7 @@ def test_the_no_sources_guard_names_missing_sdk_evidence_too(tmp_path):
     the import evidence was unavailable, not only list four config sources
     that were never the problem."""
     repo = _repo(tmp_path, {"src/pay.ts": "import Stripe from 'stripe';\n"})
-    with pytest.raises(AssertionError, match="SDK import evidence was also unavailable: not a git repository"):
+    with pytest.raises(SystemExit, match="SDK import evidence was also unavailable: not a git repository"):
         n.BuildBundle().run({"repo_path": repo})
 
 
@@ -136,6 +136,6 @@ def test_the_no_sources_guard_speaks_to_the_reader_not_to_a_book(tmp_path):
     """coderay-5wu.17. The message reaches the user; a section marker from the
     course the analysis was ported from means nothing to them."""
     repo = _repo(tmp_path, {"README.md": "x\n"})
-    with pytest.raises(AssertionError) as e:
+    with pytest.raises(SystemExit) as e:
         n.BuildBundle().run({"repo_path": repo})
     assert "§" not in str(e.value) and "single-binary tool" in str(e.value)

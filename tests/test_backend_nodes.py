@@ -23,7 +23,7 @@ def test_build_bundle_rejects_a_repo_with_no_backend(tmp_path):
     run. This matches the behaviour architecture has always had.
     """
     (tmp_path / "README.md").write_text("# hi\n", encoding="utf-8")
-    with pytest.raises(AssertionError, match="No backend source found"):
+    with pytest.raises(SystemExit, match="No backend source found"):
         n.BuildBundle().run({"repo_path": str(tmp_path)})
 
 
@@ -109,7 +109,7 @@ def test_build_bundle_names_the_files_it_found_when_none_could_be_read(tmp_path)
     own counts contradicted."""
     (tmp_path / "app").mkdir()
     (tmp_path / "app" / "urls.py").write_bytes(b"urlpatterns = [] # caf\xe9\n")
-    with pytest.raises(AssertionError, match=r"1 file.* route.*none .*unreadable or not UTF-8") as info:
+    with pytest.raises(SystemExit, match=r"1 file.* route.*none .*unreadable or not UTF-8") as info:
         n.BuildBundle().run({"repo_path": str(tmp_path)})
     assert "No backend source found" not in str(info.value)
 
@@ -122,7 +122,7 @@ def test_build_bundle_abort_does_not_blame_encoding_for_an_unreadable_file(tmp_p
     p.write_text("urlpatterns = []\n", encoding="utf-8")
     p.chmod(0)
     try:
-        with pytest.raises(AssertionError, match=r"Found 1 file in route.*unreadable"):
+        with pytest.raises(SystemExit, match=r"Found 1 file in route.*unreadable"):
             n.BuildBundle().run({"repo_path": str(tmp_path)})
     finally:
         p.chmod(0o644)
@@ -132,6 +132,6 @@ def test_the_no_backend_message_names_go_among_the_frameworks(tmp_path):
     """README lists Go net/http services as supported; the message a Go user
     reads when nothing classified must not contradict it."""
     (tmp_path / "README.md").write_text("x\n")
-    with pytest.raises(AssertionError) as e:
+    with pytest.raises(SystemExit) as e:
         n.BuildBundle().run({"repo_path": str(tmp_path)})
     assert "Go" in str(e.value) and "Django" in str(e.value)
