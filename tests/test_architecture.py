@@ -170,6 +170,24 @@ def test_the_footer_says_when_a_package_json_was_unreadable():
     assert "unreadable or refused" not in quiet_footer
 
 
+def test_the_footer_says_when_another_manifest_was_malformed():
+    stats = {"config_files": 1, "config_files_found": 1, "deps": 0, "integrations": 0,
+             "manifest_malformed": 2}
+    footer = architecture._footer({"arch_stats": stats})
+    assert "2 other manifest files could not be parsed" in footer
+    quiet_footer = architecture._footer({"arch_stats": {**stats, "manifest_malformed": 0}})
+    assert "could not be parsed" not in quiet_footer
+
+
+def test_the_footer_says_when_another_manifest_was_unreadable():
+    stats = {"config_files": 1, "config_files_found": 1, "deps": 0, "integrations": 0,
+             "manifest_unreadable": 1}
+    footer = architecture._footer({"arch_stats": stats})
+    assert "1 other manifest file was unreadable or refused" in footer
+    quiet_footer = architecture._footer({"arch_stats": {**stats, "manifest_unreadable": 0}})
+    assert "unreadable or refused" not in quiet_footer
+
+
 def test_the_footer_says_when_an_env_file_was_unreadable():
     stats = {"config_files": 1, "config_files_found": 1, "deps": 0, "integrations": 0,
              "env_files_unreadable": 2}

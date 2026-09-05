@@ -19,6 +19,10 @@ from crawl.analyses.architecture import arch_crawl as ac
     ("infra/main.tf", "iac"),
     ("infra/prod.tfvars", "iac"),
     ("package.json", "package"),
+    ("go.mod", "go_mod"),
+    ("pyproject.toml", "pyproject"),
+    ("requirements.txt", "requirements"),
+    ("requirements-dev.txt", "requirements"),
     ("deploy/k8s/api.yaml", "k8s"),
     ("ops/manifests/web.yml", "k8s"),
 ])
@@ -490,7 +494,8 @@ def test_build_bundle_overlays_the_four_sources_and_counts_them(tmp_path):
     bundle, stats = ac.build_bundle(repo)
 
     assert stats == {"config_files": 4, "config_files_found": 4, "package_json_malformed": 0,
-                     "package_json_unreadable": 0, "env_files_unreadable": 0,
+                     "package_json_unreadable": 0, "manifest_unreadable": 0, "manifest_malformed": 0,
+                     "env_files_unreadable": 0,
                      "truncated": False,
                      "env_vars": 2, "deps": 2, "integrations": 0, "sdk_lines": 0,
                      "sdk_unavailable": "not a git repository", "sdk_capped": False,
@@ -962,3 +967,178 @@ def test_build_bundle_survives_a_package_json_that_is_valid_json_of_the_wrong_sh
                             "examples/package.json": text})
     _bundle, stats = ac.build_bundle(repo)
     assert stats["deps"] == 0 and stats["files"] == ["docker-compose.yml"]
+
+
+# ----- coderay-5wu.18: manifest readers beyond package.json -----
+
+@pytest.mark.parametrize("spec,expected", [
+    ("requests>=2.0,<3.0", ("requests", ">=2.0,<3.0")),
+    ("requests==2.31.0", ("requests", "==2.31.0")),
+    ("requests", ("requests", "")),
+    ("requests[socks]>=2.0", ("requests", ">=2.0")),
+    ("requests ; python_version < '3.8'", ("requests", "")),
+    ("requests>=2.0 ; python_version < '3.8'", ("requests", ">=2.0")),
+    ("git+https://github.com/psf/requests.git", None),
+    ("./local-package", None),
+    ("-e .", None),
+    ("https://example.com/foo.whl", None),
+    ("certifi @ https://example.com/certifi.whl", None),
+])
+def test_parse_pep508_extracts_name_and_constraint(spec, expected):
+    assert ac._parse_pep508(spec) == expected
+
+
+def test_parse_go_mod_keeps_a_direct_dep_with_a_non_indirect_trailing_comment():
+    """coderay-5wu.18 review. A require line whose trailing comment is
+    anything other than the literal `// indirect` used to fail the entry
+    regex entirely, silently dropping a real dependency."""
+    text = "require (\n\tgithub.com/foo/bar v1.2.3 // pinned for CVE-2024\n)\n"
+    assert ac._parse_go_mod(text) == {"github.com/foo/bar": "v1.2.3"}
+    assert ac._parse_go_mod("require github.com/foo/bar v1.2.3 // pinned\n") == {
+        "github.com/foo/bar": "v1.2.3"}
+
+
+def test_parse_go_mod_ignores_a_standalone_comment_line_inside_a_block():
+    text = "require (\n\t// note\n\tgithub.com/foo/bar v1.2.3\n)\n"
+    assert ac._parse_go_mod(text) == {"github.com/foo/bar": "v1.2.3"}
+
+
+def test_parse_go_mod_does_not_open_a_block_from_a_commented_out_require():
+    text = "// require (\n//\tfake.com/x v9\n// )\nrequire (\n\treal.com/y v1\n)\n"
+    assert ac._parse_go_mod(text) == {"real.com/y": "v1"}
+
+
+def test_parse_go_mod_excludes_indirect_and_covers_both_forms():
+    text = (
+        "module example.com/app\n\n"
+        "go 1.21\n\n"
+        "require github.com/single/dep v1.2.3\n\n"
+        "require (\n"
+        "\tgithub.com/direct/dep v1.0.0\n"
+        "\tgithub.com/other/indirect v2.0.0 // indirect\n"
+        ")\n\n"
+        "require (\n"
+        "\tgithub.com/second/block v3.0.0\n"
+        ")\n"
+    )
+    deps = ac._parse_go_mod(text)
+    assert deps == {
+        "github.com/single/dep": "v1.2.3",
+        "github.com/direct/dep": "v1.0.0",
+        "github.com/second/block": "v3.0.0",
+    }
+
+
+def test_parse_go_mod_excludes_an_indirect_single_line_require():
+    text = "require github.com/some/dep v1.0.0 // indirect\n"
+    assert ac._parse_go_mod(text) == {}
+
+
+def test_parse_pyproject_reads_project_dependencies_and_optional_groups():
+    text = (
+        '[project]\n'
+        'name = "app"\n'
+        'dependencies = ["requests>=2.0", "click"]\n'
+        '[project.optional-dependencies]\n'
+        'dev = ["pytest==8.0"]\n'
+    )
+    assert ac._parse_pyproject(text) == {"requests": ">=2.0", "click": "", "pytest": "==8.0"}
+
+
+@pytest.mark.parametrize("bad_deps", ['"requests"', '{ foo = "1.0" }'])
+def test_parse_pyproject_ignores_a_dependencies_field_of_the_wrong_shape(bad_deps):
+    """coderay-5wu.18 review. project.dependencies must be an array per PEP
+    621; tomllib parses a bare string or a table without complaint, and
+    iterating it unguarded fabricated a garbage dependency per character
+    or per table key."""
+    text = f'[project]\nname = "app"\ndependencies = {bad_deps}\n'
+    assert ac._parse_pyproject(text) == {}
+
+
+def test_parse_pyproject_ignores_poetry_only_tables():
+    text = '[tool.poetry.dependencies]\npython = "^3.11"\n'
+    assert ac._parse_pyproject(text) == {}
+
+
+def test_parse_requirements_drops_pip_compile_hash_flags_and_continuations():
+    """coderay-5wu.18 review. `pip-compile --generate-hashes` output trails
+    each pin with a backslash continuation and one or more --hash flags;
+    both used to end up glued onto the constraint."""
+    text = "django==4.2 \\\n    --hash=sha256:abc\n"
+    assert ac._parse_requirements(text) == {"django": "==4.2"}
+    assert ac._parse_requirements("Django==4.0 --hash=sha256:abc\n") == {"Django": "==4.0"}
+
+
+def test_parse_requirements_skips_comments_blanks_and_option_lines():
+    text = (
+        "# a comment\n"
+        "\n"
+        "requests>=2.0  # inline comment\n"
+        "-r other.txt\n"
+        "-e .\n"
+        "click\n"
+    )
+    assert ac._parse_requirements(text) == {"requests": ">=2.0", "click": ""}
+
+
+def test_build_bundle_reads_go_mod_dependencies(tmp_path):
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services: {}\n",
+        "go.mod": "module example.com/app\n\nrequire (\n\tgithub.com/stripe/stripe-go v1.0.0\n"
+                  "\tgithub.com/other/indirect v2.0.0 // indirect\n)\n",
+    })
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["deps"] == 1
+    assert "github.com/stripe/stripe-go" in _bundle
+
+
+def test_build_bundle_reads_pyproject_dependencies(tmp_path):
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services: {}\n",
+        "pyproject.toml": '[project]\nname = "app"\ndependencies = ["stripe>=5.0"]\n',
+    })
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["deps"] == 1
+    assert "stripe @ >=5.0" in _bundle
+
+
+def test_build_bundle_reads_requirements_txt_dependencies(tmp_path):
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services: {}\n",
+        "requirements.txt": "stripe==5.0\n-e .\n",
+    })
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["deps"] == 1
+    assert "stripe @ ==5.0" in _bundle
+
+
+def test_build_bundle_tolerates_a_malformed_pyproject_toml(tmp_path):
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services: {}\n",
+        "pyproject.toml": "not [ valid toml",
+    })
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["deps"] == 0
+    assert stats["manifest_malformed"] == 1
+
+
+def test_build_bundle_counts_a_refused_go_mod_as_unreadable(tmp_path):
+    outside = tmp_path / "outside.mod"
+    outside.write_text("module example.com/app\n\nrequire github.com/x/y v1.0.0\n", encoding="utf-8")
+    repo = _repo(tmp_path / "repo", {"docker-compose.yml": "services: {}\n"})
+    os.symlink(outside, os.path.join(repo, "go.mod"))
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["deps"] == 0
+    assert stats["manifest_unreadable"] == 1
+    assert stats["manifest_malformed"] == 0
+
+
+def test_build_bundle_does_not_count_a_pyproject_truncated_by_its_own_read_limit_as_malformed(tmp_path):
+    huge_deps = ", ".join(f'"pkg-{i}>=1.0.0"' for i in range(20_000))
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services: {}\n",
+        "pyproject.toml": f'[project]\nname = "app"\ndependencies = [{huge_deps}]\n',
+    })
+    assert len(open(os.path.join(repo, "pyproject.toml")).read()) > 200_000
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["manifest_malformed"] == 0

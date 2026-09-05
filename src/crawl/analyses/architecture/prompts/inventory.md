@@ -1,4 +1,5 @@
 ## Task
+
 You are the friendliest senior engineer on the team, mapping
 a codebase's architecture for a new developer: every
 long-running program and the connections between them.
@@ -6,14 +7,17 @@ long-running program and the connections between them.
 {house_style}
 
 ## Input
+
 The architecture bundle — config files, env var names,
-package dependencies, integration directories, and the SDK
+dependency manifests, integration directories, and the SDK
 import lines that prove a connection is live:
 {codebase}
 
 ## Scaffold
+
 Sort every node into one of four bands by who wrote the code
 and who runs the machine:
+
 - `CLIENT` — your team's code on a user's device.
 - `RUN` — your team's code on your team's machines.
 - `RENT` — vendor code on your team's machines (a database, a
@@ -54,7 +58,7 @@ RUN, reconfigure RENT, only retry or route around CALL.
    `→` and the comma-separated downstream nodes, each tagged
    `(sync|async, internal|public)`. A node with no outgoing
    edges ends `→ (terminal — vendor)` or `→ (terminal —
-   client)`. For example:
+client)`. For example:
 
        ### 2 · order service
        (RUN, code · `api/orders/`). Takes the checkout request
@@ -63,6 +67,7 @@ RUN, reconfigure RENT, only retry or route around CALL.
        worker (async, internal)
 
 ## Guidance
+
 - List only what the source actually calls; treat compose and
   `.env` as hints — the SDK import lines are the proof.
 - Describe each node by what it concretely is, not its label:
