@@ -305,3 +305,23 @@ def test_a_failed_run_writes_no_manifest(tmp_path):
     with pytest.raises(RuntimeError):
         run_analysis(_failing_analysis(), _Args(str(tmp_path), out=str(out)))
     assert not (out / "manifest.json").exists()
+
+
+def test_the_manifest_lists_this_runs_provider_and_model_pairs_once_each(tmp_path):
+    import importlib
+    llm = importlib.import_module("crawl.core.call_llm")  # crawl.core re-exports a function of that name
+    llm._record_usage("gemini", "stale-from-an-earlier-run", 1, 1, 0, 0, 0.0, False)
+
+    class Flow:
+        def run(self, shared):
+            shared["body_md"] = "### A\ntext"
+            llm._record_usage("openai", "n", 1, 1, 0, 0, 0.0, False)
+            llm._record_usage("anthropic", "m", 1, 1, 0, 0, 0.0, False)
+            llm._record_usage("anthropic", "m", 1, 1, 0, 0, 0.0, True)
+
+    analysis = _fake_analysis()
+    analysis.build_flow = staticmethod(Flow)
+    out = tmp_path / "out"
+    run_analysis(analysis, _Args(str(tmp_path), out=str(out)))
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["llm"] == [{"provider": "anthropic", "model": "m"}, {"provider": "openai", "model": "n"}]

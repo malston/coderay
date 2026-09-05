@@ -78,6 +78,9 @@ def test_the_python_floor_is_at_least_the_release_that_ships_tomllib():
 def test_every_analysis_says_what_it_sent():
     """manifest.json records which repo content reached the model (coderay-3eu);
     an analysis without `sent` would write a manifest that says nothing."""
+    import json
     from crawl.analyses import ANALYSES
     for name, analysis in ANALYSES.items():
-        assert callable(getattr(analysis, "sent", None)), name
+        described = analysis.sent({})
+        assert isinstance(described, dict) and described, name
+        json.dumps(described)

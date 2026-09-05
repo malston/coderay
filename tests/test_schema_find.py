@@ -175,6 +175,10 @@ def test_find_schema_keeps_whole_model_files_and_drops_the_tail(tmp_path):
     assert found["kind"] == "models"
     assert "of 5 found" in found["path"]
     assert "# ===== TRUNCATED" not in found["text"]   # whole files, fewer of them
+    # coderay-3eu: the manifest lists the kept files, not the five found
+    import re
+    assert 0 < len(found["files"]) < 5
+    assert found["files"] == re.findall(r"^# ===== (\S+) =====$", found["text"], re.M)
 
 
 def test_find_schema_refuses_a_schema_symlinked_to_an_in_repo_credential_file(tmp_path):
@@ -371,6 +375,7 @@ def test_embedded_sql_keeps_whole_files_and_drops_the_tail_under_the_budget(tmp_
     files = {f"pkg/m{i}.go": "package a\n_ = `" + ddl % i + "`\n" for i in range(4)}
     found = sf.find_schema(_repo(tmp_path, files))
     assert found["path"].startswith("2 Go files with embedded SQL") and found["path"].endswith(" of 4 found")
+    assert len(found["files"]) == 2 and all(f"===== {f} =====" in found["text"] for f in found["files"])
     monkeypatch.setattr(sf, "SCHEMA_BUDGET", 50)
     found = sf.find_schema(_repo(tmp_path / "one", {"pkg/m.go": files["pkg/m0.go"]}))
     assert "CREATE TABLE IF NOT EXISTS t0" in found["text"] and found["path"].startswith("1 Go file with")

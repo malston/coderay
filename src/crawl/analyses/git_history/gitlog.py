@@ -157,11 +157,14 @@ def pivots_summary(commits, top_k=25, depth=2):
     return "\n".join(lines)
 
 
+def top_changes(changes, top_k=20):
+    """The bulk changes the survey prompt lists, biggest first."""
+    return sorted(changes, key=lambda c: c["count"], reverse=True)[:top_k]
+
+
 def _changes_summary(changes, top_k=20):
-    lines = []
-    for c in sorted(changes, key=lambda c: c["count"], reverse=True)[:top_k]:
-        lines.append(f"{c['hash']}  {c['date']}  {c['count']} files  {c['scope']}/  {c['subject']}")
-    return "\n".join(lines)
+    return "\n".join(f"{c['hash']}  {c['date']}  {c['count']} files  {c['scope']}/  {c['subject']}"
+                     for c in top_changes(changes, top_k))
 
 
 def additions_summary(repo_path, min_files=10, top_k=20):

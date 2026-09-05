@@ -28,9 +28,10 @@ def add_arguments(parser):
 
 def sent(shared):
     """What left the machine: no files here. The whole log is summarised for the
-    era names; the sampled commits' subject lines and the landmark and grave
-    diffs go out whole (coderay-3eu)."""
-    listed, diffs = set(), set()
+    era names, with the biggest bulk changes' subject lines verbatim; each era's
+    sampled commits' subject lines and the landmark and grave diffs go out
+    whole (coderay-3eu)."""
+    listed, diffs = set(shared.get("survey_commits_sent", [])), set()
     for p in shared.get("profiles", []):
         listed.update(p.get("commits_sent", []))
         diffs.update(p.get("diffs_sent", []))

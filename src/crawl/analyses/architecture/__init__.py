@@ -66,9 +66,14 @@ THEME = Theme(
 )
 
 def sent(shared):
-    """What left the machine: config files whole (redacted), plus the .env files
-    whose variable names and the package.json files whose dependency lists went (coderay-3eu)."""
-    return {"files": shared.get("bundle_files", [])}
+    """What left the machine (coderay-3eu): `files` is the config files whole
+    (redacted), plus the .env files whose variable names and the package.json
+    files whose dependency lists went. `sdk_import_files` are the source files
+    git grep matched, of which the path, line number and SDK name went, not the
+    line; `integration_dirs` are directory names."""
+    return {"files": shared.get("bundle_files", []),
+            "sdk_import_files": shared.get("sdk_import_files", []),
+            "integration_dirs": shared.get("integration_dirs", [])}
 
 
 def init_shared(args):

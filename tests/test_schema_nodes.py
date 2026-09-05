@@ -256,3 +256,13 @@ def test_schema_tour_filters_the_fallback_when_the_erd_will_not_parse(monkeypatc
     shared = {"schema": "model users {}", "repo_path": "/tmp/toy_repo"}
     n.SchemaTour().run(shared)
     assert shared["table_list"] == ["users"]
+
+
+def test_sent_names_the_schema_files_and_the_migration_names(tmp_path):
+    """coderay-3eu: the manifest reads what FindSchema stored."""
+    from crawl.analyses import schema
+    repo = _repo(tmp_path, {"db/schema.rb": "create_table :users\n",
+                            "db/migrate/20210101120000_create_users.rb": "x\n"})
+    shared = {"repo_path": repo}
+    n.FindSchema().run(shared)
+    assert schema.sent(shared) == {"files": ["db/schema.rb"], "migration_names": ["20210101120000_create_users"]}

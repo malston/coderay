@@ -84,15 +84,19 @@ class NameEras(Node):
     def prep(self, shared):
         commits = shared["commits"]
         big_dels = [c for c in shared["bulk_dels"] if c["count"] >= 10]
-        return fill(
+        prompt = fill(
             load_prompt("name-eras.md"),
             heatmap_summary=gl.heatmap_summary(commits),
             pivots_summary=gl.pivots_summary(commits),
             deletions_summary=gl._changes_summary(big_dels) or "(none)",
             additions_summary=gl._changes_summary(shared["bulk_adds"]) or "(none)",
         )
+        # The bulk-change lines carry each commit's subject verbatim (coderay-3eu).
+        listed = [c["hash"] for c in gl.top_changes(big_dels) + gl.top_changes(shared["bulk_adds"])]
+        return prompt, listed
 
-    def exec(self, prompt):
+    def exec(self, inputs):
+        prompt, _listed = inputs
         def normalize(result):
             if isinstance(result, dict):
                 result = result.get("eras", [result])
@@ -110,6 +114,7 @@ class NameEras(Node):
 
     def post(self, shared, prep_res, exec_res):
         shared["eras"] = exec_res
+        shared["survey_commits_sent"] = prep_res[1]
         print(f"  Named {len(exec_res)} eras: " + " -> ".join(printable(e["name"], 60) for e in exec_res))
 
 

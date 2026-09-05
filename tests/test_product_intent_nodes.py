@@ -255,3 +255,12 @@ def test_variant_print_strips_control_characters_and_newlines(monkeypatch, capsy
     out = capsys.readouterr().out
     assert "\x1b" not in out and out.count("\n") == 1
     assert "Variant sentence: ok[31m fake line of output..." in out
+
+
+def test_sent_names_the_files_the_bundle_carried(tmp_path):
+    """coderay-3eu: the manifest reads what FetchRepo stored."""
+    from crawl.analyses import product_intent
+    repo = _tree(tmp_path, {"src/a.py": "a\n", "src/b.py": "b\n"})
+    shared = {"repo_path": repo, "include": [], "exclude": []}
+    n.FetchRepo().run(shared)
+    assert product_intent.sent(shared) == {"files": ["src/a.py", "src/b.py"]}

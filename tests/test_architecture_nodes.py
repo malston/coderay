@@ -139,3 +139,14 @@ def test_the_no_sources_guard_speaks_to_the_reader_not_to_a_book(tmp_path):
     with pytest.raises(SystemExit) as e:
         n.BuildBundle().run({"repo_path": repo})
     assert "§" not in str(e.value) and "single-binary tool" in str(e.value)
+
+
+def test_sent_names_the_files_the_bundle_carried(tmp_path):
+    """coderay-3eu: the manifest reads what BuildBundle stored."""
+    from crawl.analyses import architecture
+    repo = _repo(tmp_path, {"docker-compose.yml": "services:\n  api:\n    image: api\n",
+                            ".env": "APP_KEY=1\n", "integrations/stripe/x.js": "", "integrations/slack/y.js": ""})
+    shared = {"repo_path": repo}
+    n.BuildBundle().run(shared)
+    assert architecture.sent(shared) == {"files": [".env", "docker-compose.yml"], "sdk_import_files": [],
+                                         "integration_dirs": ["slack", "stripe"]}

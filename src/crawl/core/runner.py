@@ -4,7 +4,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
-from .call_llm import get_usage, reset_usage
+from .call_llm import get_usage
 from .env import env_defaults
 from .render import render_html, render_markdown
 
@@ -99,13 +99,14 @@ def write_report(analysis, name, shared, out_dir):
     return out_dir
 
 
-def write_manifest(analysis, name, shared, out_dir):
+def write_manifest(analysis, name, shared, out_dir, usage):
     """Write manifest.json beside the report: which repo content reached the
     model, as the analysis's own `sent(shared)` describes it (file paths for
     most, commit hashes for git-history), with the provider and model pairs
-    the run called and when. Repo content leaves the machine on every run, and
-    this is the record of what did (coderay-3eu). Returns the path."""
-    seen = {(u["provider"], u["model"]) for u in get_usage()}
+    this run called (`usage`, its slice of the usage log) and when. Repo
+    content leaves the machine on every run, and this is the record of what
+    did (coderay-3eu). Returns the path."""
+    seen = {(u["provider"], u["model"]) for u in usage}
     manifest = {
         "analysis": analysis.NAME,
         "repo": name,
@@ -133,13 +134,13 @@ def run_analysis(analysis, args):
     name = repo_name_of(args.repo_path)
     shared = analysis.init_shared(args)
     dump = run_state_writer(out_dir, shared, getattr(analysis, "INPUT_KEYS", frozenset()))
-    reset_usage()  # the manifest records the provider and model this run called, no other
+    first_call = len(get_usage())  # the manifest records this run's calls, not an embedder's
 
     def run_and_report():
         with env_defaults(getattr(analysis, "ENV_DEFAULTS", {})):
             analysis.build_flow().run(shared)
         write_report(analysis, name, shared, out_dir)
-        write_manifest(analysis, name, shared, out_dir)
+        write_manifest(analysis, name, shared, out_dir, get_usage()[first_call:])
 
     keeping_results(run_and_report, shared, out_dir, dump)
 

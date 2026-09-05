@@ -404,7 +404,8 @@ def test_build_bundle_overlays_the_four_sources_and_counts_them(tmp_path):
                      "env_vars": 2, "deps": 2, "integrations": 0, "sdk_lines": 0,
                      "sdk_unavailable": "not a git repository",
                      "files": [".env.example", "Procfile", "deploy/k8s/api.yaml", "docker-compose.yml",
-                               "infra/main.tf", "package.json"]}
+                               "infra/main.tf", "package.json"],
+                     "sdk_import_files": [], "integration_dirs": []}
     assert "PROCESS DECLARATION (compose / k8s): docker-compose.yml" in bundle
     assert "KUBERNETES MANIFESTS: deploy/k8s/api.yaml" in bundle
     assert "GATEWAY / PLATFORM CONFIG: Procfile" in bundle
@@ -545,6 +546,8 @@ def test_sdk_evidence_carries_the_path_and_the_sdk_but_not_the_source(tmp_path):
     assert "sk_live_HARDCODED" not in bundle
     assert "pay.ts:2: Stripe" in bundle    # the edge is still reported
     assert stats["sdk_lines"] == 2 and stats["sdk_unavailable"] is None
+    # coderay-3eu: the path and line went, so the file is disclosed, apart from `files`
+    assert stats["sdk_import_files"] == ["pay.ts"] and "pay.ts" not in stats["files"]
 
 
 def test_build_bundle_refuses_a_config_file_symlinked_out_of_the_repo(tmp_path):
@@ -691,3 +694,31 @@ def test_build_bundle_lists_every_file_whose_content_reached_the_model(tmp_path)
     bundle, stats = ac.build_bundle(repo)
     assert sorted(stats["files"]) == [".env", "docker-compose.yml", "package.json"]
     assert "docker-compose.yml =====" in bundle
+
+
+def test_build_bundle_lists_only_the_files_whose_block_starts_inside_the_budget(tmp_path):
+    """coderay-3eu. The bundle is cut at max_chars. A block that starts inside
+    the budget reached the model, whole or in part, and is listed; a section
+    that starts past the cut never did, so the .env and package.json entries
+    whose sections sit at the end of the bundle are not."""
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services:\n  api:\n    image: api\n",
+        "deploy/k8s/late.yaml": "kind: Deployment\n" * 200,
+        ".env": "A=1\n",
+        "package.json": json.dumps({"dependencies": {"stripe": "^14"}}),
+    })
+    bundle, stats = ac.build_bundle(repo, max_chars=600)
+    assert stats["truncated"]
+    assert stats["files"] == ["deploy/k8s/late.yaml", "docker-compose.yml"]
+    assert "stripe @" not in bundle and "A\n" not in bundle
+
+
+def test_build_bundle_does_not_list_a_package_json_that_contributed_no_dependency(tmp_path):
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services:\n  api:\n    image: api\n",
+        "package.json": json.dumps({"name": "x"}),
+        "web/package.json": "{not json",
+        ".env.local": "# nothing set here\n",
+    })
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["files"] == ["docker-compose.yml"]

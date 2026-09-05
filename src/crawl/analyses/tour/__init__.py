@@ -112,7 +112,7 @@ def run(args) -> None:
             chapters, name, args.instructions, shared["summary"], mermaid,
             shared["selected_files"], shared["selection_reasoning"], out, generated_at,
         )
-        write_manifest(sys.modules[__name__], name, shared, out)
+        write_manifest(sys.modules[__name__], name, shared, out, get_usage())
 
     # shared holds every paid result by now; a failed write, or an interrupt,
     # keeps it as a failed node would.
