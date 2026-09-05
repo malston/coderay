@@ -284,7 +284,7 @@ def test_build_bundle_samples_from_readable_files_not_from_the_first_n_paths(tmp
     files["app/views/zeta.py"] = "def z(): pass\n"
     repo = _repo(tmp_path, files)
     bundle, stats = bc.build_bundle(repo)
-    assert stats == {"counts": {"handler": 19}, "included": 1}
+    assert stats == {"counts": {"handler": 19}, "included": 1, "files": ["app/views/zeta.py"]}
     assert "app/views/zeta.py" in bundle
 
 
@@ -394,3 +394,20 @@ def test_build_bundle_skips_fixture_directories_for_every_language(tmp_path):
     bundle, stats = bc.build_bundle(repo)
     assert stats["counts"] == {"route": 2}
     assert "testdata" not in bundle and "testutil" not in bundle and "factorytest" not in bundle
+
+
+def test_build_bundle_lists_exactly_the_files_whose_text_reached_it(tmp_path):
+    """coderay-3eu: the manifest of what left the machine is built from this list,
+    so it must match the bundle's own headers in both directions, and a file the
+    budget dropped must not appear."""
+    import re
+    repo = _repo(tmp_path, {
+        "app/urls.py": "urlpatterns = []\n",
+        "app/middleware.py": "class Mw: pass\n",
+        "app/views/message.py": "def send(): pass\n" * 200,
+        "app/models.py": "class User: pass\n",
+    })
+    bundle, stats = bc.build_bundle(repo, max_chars=1_200)
+    headers = re.findall(r"^===== LAYER [A-Z]+: (\S+) =====$", bundle, re.M)
+    assert headers and sorted(stats["files"]) == sorted(headers)
+    assert "app/views/message.py" not in stats["files"]

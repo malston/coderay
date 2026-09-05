@@ -24,6 +24,11 @@ def add_arguments(parser):
                         help=".gitignore-style pattern: drop matching paths. "
                              "Repeatable.")
 
+def sent(shared):
+    """What left the machine: every source file the bundle carried whole (coderay-3eu)."""
+    return {"files": shared.get("bundle_files", [])}
+
+
 def init_shared(args):
     return {
         "repo_path": args.repo_path,

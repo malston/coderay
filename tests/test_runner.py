@@ -61,6 +61,7 @@ def _fake_analysis(env_defaults_dict=None, record=None):
             md_preamble=lambda sh: "")
         init_shared = staticmethod(lambda args: {"repo_path": args.repo_path})
         build_flow = staticmethod(Flow)
+        sent = staticmethod(lambda shared: {"files": []})
 
     Analysis.INPUT_KEYS = frozenset()
     if env_defaults_dict:
@@ -135,6 +136,7 @@ def test_run_analysis_writes_utf8_output_under_the_c_locale(tmp_path):
                 md_preamble=lambda sh: "")
             init_shared = staticmethod(lambda args: {{"repo_path": args.repo_path}})
             build_flow = staticmethod(Flow)
+            sent = staticmethod(lambda shared: {{"files": []}})
 
         class Args:
             repo_path = {str(tmp_path)!r}
@@ -283,3 +285,23 @@ def test_an_interrupt_whose_dump_fails_still_propagates_and_says_the_state_was_l
         run_analysis(_failing_analysis(fail=KeyboardInterrupt()), _Args(str(tmp_path), out=str(out)))
     assert not (out / "run_state.json").exists()
     assert "Run interrupted, and the partial run state could not be written" in capsys.readouterr().err
+
+
+# coderay-3eu: a successful run records what left the machine.
+def test_run_analysis_writes_a_manifest_of_what_was_sent(tmp_path):
+    analysis = _fake_analysis()
+    analysis.sent = staticmethod(lambda shared: {"files": ["a.py", "b.py"]})
+    out = tmp_path / "out"
+    run_analysis(analysis, _Args(str(tmp_path), out=str(out)))
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["analysis"] == "demo" and manifest["repo"] == tmp_path.name
+    assert manifest["files"] == ["a.py", "b.py"]
+    assert manifest["generated_at"].endswith("+00:00")
+    assert manifest["llm"] == []  # no call_llm ran in this fake
+
+
+def test_a_failed_run_writes_no_manifest(tmp_path):
+    out = tmp_path / "out"
+    with pytest.raises(RuntimeError):
+        run_analysis(_failing_analysis(), _Args(str(tmp_path), out=str(out)))
+    assert not (out / "manifest.json").exists()

@@ -180,7 +180,10 @@ class ProfileEras(Node):
                     f"`mood` must be an object with `patterns`, got {result['mood']!r}"
                 return result
             result = json_call(prompt, normalize)
-            profiles.append({"era": era, "profile": result, "commit_count": len(window)})
+            profiles.append({"era": era, "profile": result, "commit_count": len(window),
+                             # what left the machine for this era (coderay-3eu)
+                             "commits_sent": [c["hash"] for c in sampled],
+                             "diffs_sent": list(dict.fromkeys(c["hash"] for c in diffs.values()))})
             prior_lines.append(
                 f"Era {i+1} \"{era['name']}\": "
                 f"cast — {result['cast'].get('narrative', '')} "

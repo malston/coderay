@@ -2,12 +2,13 @@
 graph, identifies abstractions, relates them, and writes a multi-chapter tour."""
 import argparse
 import os
+import sys
 import time
 from datetime import date
 
 from crawl.core import ensure_priced, get_usage, reset_usage, resolve_provider_and_model
 from crawl.core.env import env_defaults
-from crawl.core.runner import keeping_results, run_flow, run_state_writer
+from crawl.core.runner import keeping_results, run_flow, run_state_writer, write_manifest
 from crawl.analyses.tour.flow import create_tour_flow
 from crawl.analyses.tour.nodes import CODEBASE_BUDGET, PipelineState
 from crawl.analyses.tour.render import (
@@ -60,6 +61,12 @@ ENV_DEFAULTS = {"LLM_MAX_OUTPUT_TOKENS": "32768"}
 # both regenerate without an LLM call, and the source can be a megabyte.
 INPUT_KEYS = frozenset({"codebase", "symbol_graph"})
 
+def sent(shared):
+    """What left the machine: the selected files, whole, and every file whose
+    preview went into the selection prompt (coderay-3eu)."""
+    return {"files": shared.get("selected_files", []), "previewed_files": shared.get("previewed_files", [])}
+
+
 def init_shared(args) -> PipelineState:
     return {"repo_path": args.repo_path, "instructions": args.instructions,
             "codebase_budget": args.codebase_budget}
@@ -105,6 +112,7 @@ def run(args) -> None:
             chapters, name, args.instructions, shared["summary"], mermaid,
             shared["selected_files"], shared["selection_reasoning"], out, generated_at,
         )
+        write_manifest(sys.modules[__name__], name, shared, out)
 
     # shared holds every paid result by now; a failed write, or an interrupt,
     # keeps it as a failed node would.

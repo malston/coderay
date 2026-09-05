@@ -108,6 +108,7 @@ class FindSchema(Node):
         shared["schema"] = schema["text"]
         shared["schema_kind"] = schema["kind"]
         shared["schema_path"] = schema["path"]
+        shared["schema_files"] = schema["files"]
         shared["migration_dir"] = mig_dir
         shared["migration_names"] = mig_names
         print(f"  Schema: {schema['path']} ({schema['kind']}, {len(schema['text']):,} chars); "

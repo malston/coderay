@@ -26,6 +26,19 @@ def add_arguments(parser):
                         help="a deletion counts as a killed feature at this "
                              "many files (default 8)")
 
+def sent(shared):
+    """What left the machine: no files here. The whole log is summarised for the
+    era names; the sampled commits' subject lines and the landmark and grave
+    diffs go out whole (coderay-3eu)."""
+    listed, diffs = set(), set()
+    for p in shared.get("profiles", []):
+        listed.update(p.get("commits_sent", []))
+        diffs.update(p.get("diffs_sent", []))
+    diffs.update(g["commit"]["hash"] for g in shared.get("graves", []))
+    return {"commits_logged": len(shared.get("commits", [])),
+            "commits_listed": sorted(listed), "diffs": sorted(diffs)}
+
+
 def init_shared(args):
     return {
         "repo_path": args.repo_path,

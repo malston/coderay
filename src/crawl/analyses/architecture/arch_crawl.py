@@ -452,6 +452,7 @@ def build_bundle(repo, max_chars=500_000):
     """Return (bundle_text, stats)."""
     buckets = {k: [] for k in ('compose', 'k8s', 'gateway', 'iac')}
     env_names, deps = set(), {}
+    files = []  # every file whose content, names or dependency list left the machine (coderay-3eu)
     for dirpath, _dn, filenames in _walk(repo):
         for f in filenames:
             rel = os.path.relpath(os.path.join(dirpath, f), repo)
@@ -460,12 +461,16 @@ def build_bundle(repo, max_chars=500_000):
                 continue
             full = os.path.join(dirpath, f)
             if kind == 'env':
-                env_names.update(_env_names(_read(full, 40_000, repo)))
+                names = _env_names(_read(full, 40_000, repo))
+                if names:
+                    env_names.update(names)
+                    files.append(rel)
             elif kind == 'package':
                 try:
                     data = json.loads(_read(full, 200_000, repo))
                     for grp in ('dependencies', 'devDependencies'):
                         deps.update(data.get(grp, {}))
+                    files.append(rel)
                 except (ValueError, OSError):
                     pass
             else:
@@ -481,6 +486,7 @@ def build_bundle(repo, max_chars=500_000):
             if text.strip():
                 parts.append(f"===== {label}: {rel} =====\n{text}\n")
                 included += 1
+                files.append(rel)
 
     if env_names:
         parts.append("===== ENVIRONMENT VARIABLE NAMES (values omitted) =====\n"
@@ -524,5 +530,6 @@ def build_bundle(repo, max_chars=500_000):
         "integrations": len(isubs),
         "sdk_lines": sdk.count("\n") + 1 if sdk else 0,
         "sdk_unavailable": sdk_unavailable,
+        "files": files,
     }
     return bundle, stats

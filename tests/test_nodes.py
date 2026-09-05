@@ -414,3 +414,14 @@ def test_extract_graph_reads_an_uppercase_source_extension(tmp_path):
     exec_res = ExtractGraph().exec(prep_res)
     ExtractGraph().post(shared, prep_res, exec_res)
     assert shared["symbol_graph"] == [{"from": "MAIN.PY", "to": "pkg/helper.py", "kind": "imports"}]
+
+
+def test_smart_crawl_records_the_files_whose_previews_it_sent(tmp_path):
+    """coderay-3eu: the preview manifest sends the head of every file it lists,
+    up to the preview budget, so those files left the machine whether or not
+    the model then selected them."""
+    _make_files(tmp_path, count=50)
+    shared = {"repo_path": str(tmp_path), "preview_budget": 4000}
+    SmartCrawl().prep(shared)
+    assert len(shared["previewed_files"]) == 5
+    assert all(f.startswith("file_") and "/" not in f for f in shared["previewed_files"])

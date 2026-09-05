@@ -121,6 +121,9 @@ class SmartCrawl(Node):
         chars_per_file = PREVIEW_CHARS_PER_FILE
         max_files = max(1, budget // chars_per_file)
         files = all_files[:max_files]
+        # The head of each of these goes to the model whether or not it is then
+        # selected, so the manifest lists them too (coderay-3eu).
+        shared["previewed_files"] = [os.path.relpath(p, root) for p in files]
         target = shared.get("target_files", min(50, max(20, len(files) // 20)))
 
         manifest_parts = []

@@ -65,6 +65,12 @@ THEME = Theme(
     hero_prefix=_hero_prefix,
 )
 
+def sent(shared):
+    """What left the machine: config files whole (redacted), plus the .env files
+    whose variable names and the package.json files whose dependency lists went (coderay-3eu)."""
+    return {"files": shared.get("bundle_files", [])}
+
+
 def init_shared(args):
     return {"repo_path": args.repo_path}
 

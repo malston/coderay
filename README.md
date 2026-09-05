@@ -110,6 +110,8 @@ crawl product-intent path/to/repo  # the product story in the source
 
 If a run fails partway through (a bad LLM response after retries, a network error, a fault while writing the report) or you interrupt it with Ctrl-C, whatever the pipeline had produced is written to `run_state.json` in the output directory, so you can see how far it got without rerunning the whole pipeline. Every analysis writes each result it had finished, the tour's completed chapters included, leaving out the source it read and anything it can recompute without the model, and a later successful run removes the file.
 
+A successful run writes `manifest.json` beside the report: which files from the repo reached the model (for `git-history`, which commits' subjects and diffs), the provider and model called, and when. Repo content leaves the machine on every run; this is the record of what did.
+
 Example output:
 
 ```bash

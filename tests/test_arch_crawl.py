@@ -402,7 +402,9 @@ def test_build_bundle_overlays_the_four_sources_and_counts_them(tmp_path):
 
     assert stats == {"config_files": 4, "config_files_found": 4, "truncated": False,
                      "env_vars": 2, "deps": 2, "integrations": 0, "sdk_lines": 0,
-                     "sdk_unavailable": "not a git repository"}
+                     "sdk_unavailable": "not a git repository",
+                     "files": ["package.json", ".env.example", "docker-compose.yml", "deploy/k8s/api.yaml",
+                               "Procfile", "infra/main.tf"]}
     assert "PROCESS DECLARATION (compose / k8s): docker-compose.yml" in bundle
     assert "KUBERNETES MANIFESTS: deploy/k8s/api.yaml" in bundle
     assert "GATEWAY / PLATFORM CONFIG: Procfile" in bundle
@@ -674,3 +676,18 @@ def test_go_sdk_evidence_names_only_the_module_and_only_from_go_files(tmp_path):
     got = sorted(lines.splitlines())
     assert got == ["a.go:3: anthropic-sdk-go", "a.go:4: other", "a.go:5: azure-sdk-for-go", "a.go:6: foo-sdk-go"], got
     assert "sk_live" not in lines and "vendor" not in lines and "acme" not in lines
+
+
+def test_build_bundle_lists_every_file_whose_content_reached_the_model(tmp_path):
+    """coderay-3eu. Config files go in whole (redacted); a .env contributes its
+    variable names and package.json its dependency list, so those left the
+    machine too and are listed. A config file with no text is not."""
+    repo = _repo(tmp_path, {
+        ".env": "DOTENV_SECRET=x\n",
+        "docker-compose.yml": "services:\n  api:\n    image: api:1.2\n",
+        "deploy/k8s/empty.yaml": "",
+        "package.json": json.dumps({"dependencies": {"stripe": "^12"}}),
+    })
+    bundle, stats = ac.build_bundle(repo)
+    assert sorted(stats["files"]) == [".env", "docker-compose.yml", "package.json"]
+    assert "docker-compose.yml =====" in bundle

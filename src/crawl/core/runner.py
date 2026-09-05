@@ -2,7 +2,9 @@
 import json
 import os
 import sys
+from datetime import datetime, timezone
 
+from .call_llm import get_usage, reset_usage
 from .env import env_defaults
 from .render import render_html, render_markdown
 
@@ -97,8 +99,29 @@ def write_report(analysis, name, shared, out_dir):
     return out_dir
 
 
+def write_manifest(analysis, name, shared, out_dir):
+    """Write manifest.json beside the report: which repo content reached the
+    model, as the analysis's own `sent(shared)` describes it (file paths for
+    most, commit hashes for git-history), with the provider and model pairs
+    the run called and when. Repo content leaves the machine on every run, and
+    this is the record of what did (coderay-3eu). Returns the path."""
+    seen = {(u["provider"], u["model"]) for u in get_usage()}
+    manifest = {
+        "analysis": analysis.NAME,
+        "repo": name,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "llm": [{"provider": p, "model": m} for p, m in sorted(seen)],
+        **analysis.sent(shared),
+    }
+    path = os.path.join(out_dir, "manifest.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(manifest, indent=2))
+    return path
+
+
 def run_analysis(analysis, args):
-    """Run one analysis and write its index.md and index.html. Returns out_dir.
+    """Run one analysis and write its index.md, index.html and manifest.json.
+    Returns out_dir.
 
     The output directory is created before the flow runs, because an analysis
     may write extra files into it during the run. If the flow or the report
@@ -110,11 +133,13 @@ def run_analysis(analysis, args):
     name = repo_name_of(args.repo_path)
     shared = analysis.init_shared(args)
     dump = run_state_writer(out_dir, shared, getattr(analysis, "INPUT_KEYS", frozenset()))
+    reset_usage()  # the manifest records the provider and model this run called, no other
 
     def run_and_report():
         with env_defaults(getattr(analysis, "ENV_DEFAULTS", {})):
             analysis.build_flow().run(shared)
         write_report(analysis, name, shared, out_dir)
+        write_manifest(analysis, name, shared, out_dir)
 
     keeping_results(run_and_report, shared, out_dir, dump)
 

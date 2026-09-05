@@ -67,6 +67,11 @@ THEME = Theme(
     hero_prefix=_hero_prefix,
 )
 
+def sent(shared):
+    """What left the machine: the source files whose text reached the bundle (coderay-3eu)."""
+    return {"files": shared.get("bundle_files", [])}
+
+
 def init_shared(args):
     return {"repo_path": args.repo_path}
 

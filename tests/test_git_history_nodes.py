@@ -269,3 +269,24 @@ def test_era_for_returns_none_for_a_month_no_era_covers():
     assert n._era_for("2020-12", eras) is eras[1]
     assert n._era_for("2010-01", eras) is None
     assert n._era_for("2021-01", eras) is None
+
+
+def test_profile_eras_records_the_commits_and_diffs_it_sent(monkeypatch, tmp_path):
+    """coderay-3eu: no files leave in this analysis; commit subjects and diffs do."""
+    repo = _repo(tmp_path, [("c", {"a.py": "1\n"}, [])])
+    _fake_llm(monkeypatch, lambda p: "```json\n" + json.dumps(PROFILE) + "\n```")
+    from crawl.analyses.git_history import gitlog as gl
+    real = gl.git_log_commits(repo)[0]
+    shared = {"repo_path": repo, "commits_asc": [dict(real, month="2019-06")], "eras": ERAS}
+    n.ProfileEras().run(shared)
+    assert shared["profiles"][0]["commits_sent"] == [real["hash"]]
+    assert shared["profiles"][0]["diffs_sent"] == [real["hash"]]
+
+
+def test_sent_gathers_the_commits_listed_and_the_diffs_shown():
+    from crawl.analyses.git_history import sent
+    shared = {"commits": [{"hash": "a"}, {"hash": "b"}, {"hash": "c"}],
+              "profiles": [{"commits_sent": ["a", "b"], "diffs_sent": ["a"]},
+                           {"commits_sent": ["b", "c"], "diffs_sent": ["c"]}],
+              "graves": [{"commit": {"hash": "b"}}]}
+    assert sent(shared) == {"commits_logged": 3, "commits_listed": ["a", "b", "c"], "diffs": ["a", "b", "c"]}

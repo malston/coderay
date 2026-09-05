@@ -149,6 +149,14 @@ THEME = Theme(
     hero_prefix=_hero_prefix,
 )
 
+def sent(shared):
+    """What left the machine: the route files read into the surface bundle and
+    the source files the sequence view read on the model's pick, each once (coderay-3eu)."""
+    files = list(shared.get("route_files_read", []))
+    files += [f for f in shared.get("sequence_files", []) if f not in files]
+    return {"files": files}
+
+
 def init_shared(args):
     return {"repo_path": args.repo_path}
 

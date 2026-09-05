@@ -66,7 +66,7 @@ def test_find_schema_concatenates_model_files_when_there_is_no_single_file(tmp_p
 
 def test_find_schema_returns_nothing_for_a_repo_with_no_schema(tmp_path):
     found = sf.find_schema(_repo(tmp_path, {"README.md": "# hi\n"}))
-    assert found == {"kind": None, "path": None, "text": ""}
+    assert found == {"kind": None, "path": None, "files": [], "text": ""}
 
 
 def test_find_schema_honours_an_explicit_override(tmp_path):
@@ -374,3 +374,20 @@ def test_embedded_sql_keeps_whole_files_and_drops_the_tail_under_the_budget(tmp_
     monkeypatch.setattr(sf, "SCHEMA_BUDGET", 50)
     found = sf.find_schema(_repo(tmp_path / "one", {"pkg/m.go": files["pkg/m0.go"]}))
     assert "CREATE TABLE IF NOT EXISTS t0" in found["text"] and found["path"].startswith("1 Go file with")
+
+
+def test_find_schema_lists_the_files_it_read(tmp_path):
+    """coderay-3eu: the manifest needs paths, and the models and embedded-SQL
+    branches describe themselves in `path` with a sentence, not a path."""
+    assert sf.find_schema(_repo(tmp_path, {"db/schema.rb": "create_table :users\n"}))["files"] == ["db/schema.rb"]
+
+
+def test_find_schema_lists_every_models_file_it_joined(tmp_path):
+    repo = _repo(tmp_path, {"a/models.py": "class A: pass\n", "b/models.py": "class B: pass\n"})
+    found = sf.find_schema(repo)
+    assert found["kind"] == "models" and sorted(found["files"]) == ["a/models.py", "b/models.py"]
+
+
+def test_find_schema_override_lists_the_override(tmp_path):
+    repo = _repo(tmp_path, {"custom/ddl.sql": "CREATE TABLE t();\n"})
+    assert sf.find_schema(repo, override="custom/ddl.sql")["files"] == ["custom/ddl.sql"]

@@ -599,3 +599,12 @@ def test_the_sequence_summary_line_strips_control_characters_from_the_endpoint(t
     _sequence_node().run(shared)
     out = capsys.readouterr().out
     assert "\x1b" not in out and "\r" not in out.replace("\r\n", "\n")
+
+
+def test_sent_lists_the_route_files_read_and_the_sequence_sources_once():
+    """coderay-3eu. The sequence view reads model-picked source files after the
+    route files; a file in both lists left the machine once."""
+    from crawl.analyses.interfaces import sent
+    shared = {"route_files_read": ["api/routes.ts", "api/users.ts"], "sequence_files": ["lib/db.ts", "api/users.ts"]}
+    assert sent(shared) == {"files": ["api/routes.ts", "api/users.ts", "lib/db.ts"]}
+    assert sent({"route_files_read": ["a"]}) == {"files": ["a"]}

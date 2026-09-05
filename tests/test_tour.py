@@ -141,3 +141,31 @@ def test_run_removes_a_stale_state_file_and_writes_none_on_success(tmp_path, mon
                               dry_run=False, codebase_budget=1_000_000)
     run(args)
     assert not (out / "run_state.json").exists()
+
+
+def test_sent_names_the_selected_files_and_the_previewed_ones():
+    from crawl.analyses.tour import sent
+    shared = {"selected_files": ["a.py"], "previewed_files": ["a.py", "b.py"], "codebase": "x"}
+    assert sent(shared) == {"files": ["a.py"], "previewed_files": ["a.py", "b.py"]}
+
+
+def test_run_writes_a_manifest_beside_the_tour(tmp_path, monkeypatch):
+    import json
+    import crawl.analyses.tour as tour
+
+    def fake_run_flow(flow, shared, out, dump):
+        shared.update(selected_files=["a.py"], previewed_files=["a.py", "b.py"], selection_reasoning="",
+                      abstractions=[], relationships=[], order=[], chapters=[], summary="s")
+
+    monkeypatch.setattr(tour, "resolve_provider_and_model", lambda: ("anthropic", "m"))
+    monkeypatch.setattr(tour, "ensure_priced", lambda p, m: None)
+    monkeypatch.setattr(tour, "run_flow", fake_run_flow)
+    for w in ("write_chapter_files", "write_index_md", "write_index_html"):
+        monkeypatch.setattr(tour, w, lambda *a: None)
+    out = tmp_path / "o"
+    args = argparse.Namespace(repo_path=str(tmp_path), out=str(out), instructions="beginner-tutorial",
+                              dry_run=False, codebase_budget=1_000_000)
+    run(args)
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["analysis"] == "tour" and manifest["repo"] == tmp_path.name
+    assert manifest["files"] == ["a.py"] and manifest["previewed_files"] == ["a.py", "b.py"]
