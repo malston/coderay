@@ -1,3 +1,4 @@
+import pytest
 import os
 import sys
 
@@ -173,3 +174,30 @@ def test_dotenv_templates_are_the_keep_names_dotenv_entries():
     assert {n for n in files.DEFAULT_KEEP_NAMES if n.startswith('.env')} == files.DOTENV_TEMPLATES
     for name in files.DOTENV_TEMPLATES:
         assert files._wanted(name, set(), files.DEFAULT_KEEP_NAMES)
+
+
+# coderay-5wu.23: run_state.json and manifest.json are written whole or not at all.
+def test_write_text_atomic_leaves_no_partial_file_when_the_write_is_interrupted(tmp_path, monkeypatch):
+    import crawl.core.files as files
+
+    class Interrupted:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def write(self, text): raise KeyboardInterrupt
+
+    monkeypatch.setattr(files.os, "fdopen", lambda fd, *a, **k: (files.os.close(fd), Interrupted())[1])
+    target = tmp_path / "run_state.json"
+    with pytest.raises(KeyboardInterrupt):
+        files.write_text_atomic(str(target), "x" * 10_000)
+    assert not target.exists()
+    assert list(tmp_path.iterdir()) == []  # the temp file is gone too
+
+
+def test_write_text_atomic_replaces_the_target_whole(tmp_path):
+    from crawl.core.files import write_text_atomic
+    target = tmp_path / "manifest.json"
+    target.write_text("old", encoding="utf-8")
+    assert write_text_atomic(str(target), "new") == str(target)
+    assert target.read_text(encoding="utf-8") == "new"
+    assert [p.name for p in tmp_path.iterdir()] == ["manifest.json"]

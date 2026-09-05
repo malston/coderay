@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from .call_llm import get_usage
 from .env import env_defaults
+from .files import write_text_atomic
 from .render import render_html, render_markdown
 
 def run_flow(flow, shared, out_dir, dump_state):
@@ -55,12 +56,10 @@ def write_run_state(shared, out_dir, skip=frozenset()):
 
 
 def _write_json(path, obj):
-    """Serialise in full before the file is opened, so a serialisation error
-    cannot leave a truncated or empty file passing for a record."""
-    text = json.dumps(obj, indent=2, default=str)
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write(text)
-    return path
+    """Serialise in full before any file is touched, so a serialisation error
+    cannot leave a truncated or empty file passing for a record; the write
+    itself is atomic for the same reason."""
+    return write_text_atomic(path, json.dumps(obj, indent=2, default=str))
 
 
 def run_state_writer(out_dir, shared, input_keys):

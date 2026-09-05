@@ -25,6 +25,7 @@ Patterns are matched against the path relative to `root`. Both lists default
 to empty (no path filtering). Patterns follow the same rules as `.gitignore`.
 """
 import os
+import tempfile
 
 import pathspec
 
@@ -275,3 +276,22 @@ def safe_read(path, max_chars=None):
             return f.read(max_chars) if max_chars is not None else f.read()
     except (UnicodeDecodeError, OSError):
         return None
+
+
+def write_text_atomic(path, text):
+    """Write `text` to `path` whole or not at all: into a temporary file beside
+    it, then one rename over the target. A crash or a Ctrl-C part way leaves
+    the old file (or none), never a truncated one passing for a record
+    (coderay-5wu.23). Returns `path`."""
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path) or ".")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+    return path
