@@ -593,3 +593,40 @@ def test_build_bundle_refuses_a_credential_named_manifest_it_walked_to(tmp_path)
     assert "HUNTER2" not in bundle
     assert stats["env_vars"] == 1                 # .env is still read for names
     assert "region" in bundle and "hunter2" not in bundle   # .tfvars still read, redacted
+
+
+def test_sdk_evidence_reads_go_import_paths(tmp_path):
+    """coderay-5wu.14. A Go import is a module path, not a package name, so it
+    needs its own pattern; the evidence is the client's name, drawn from the
+    path (the repo segment, or the owner when the repo is a generic sdk-go)."""
+    import subprocess
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services: {}\n",
+        "store.go": ('package hub\n\nimport (\n\t"database/sql"\n\t"modernc.org/sqlite"\n'
+                     '\t"github.com/stripe/stripe-go/v79"\n\t"github.com/acme/clients/sdk-go/pkg/x"\n'
+                     '\tredis "github.com/redis/go-redis/v9"\n\t"cloud.google.com/go/storage"\n'
+                     '\t"google.golang.org/grpc"\n\t"github.com/google/uuid"\n)\n'),
+    })
+    for cmd in (["init", "-q"], ["add", "-A"]):
+        subprocess.run(["git", "-C", repo] + cmd, check=True)
+    subprocess.run(["git", "-C", repo, "-c", "user.email=a@b.c", "-c", "user.name=t",
+                    "commit", "-qm", "x"], check=True)
+    bundle, stats = ac.build_bundle(repo)
+    for line in ("store.go:5: sqlite", "store.go:6: stripe-go", "store.go:7: acme",
+                 "store.go:8: go-redis", "store.go:9: storage", "store.go:10: grpc"):
+        assert line in bundle, line
+    assert "uuid" not in bundle and "database/sql" not in bundle
+    assert stats["sdk_lines"] == 6
+
+
+@pytest.mark.parametrize("path,name", [
+    ("github.com/stripe/stripe-go/v79", "stripe-go"),
+    ("github.com/aws/aws-sdk-go-v2/service/s3", "aws-sdk-go-v2"),
+    ("github.com/acme/clients/sdk-go/pkg/x", "acme"),
+    ("modernc.org/sqlite", "sqlite"),
+    ("cloud.google.com/go/storage", "storage"),
+    ("google.golang.org/grpc", "grpc"),
+    ("github.com/nats-io/nats.go", "nats.go"),
+])
+def test_go_sdk_name_is_the_client_not_the_host(path, name):
+    assert ac.go_sdk_name(path) == name

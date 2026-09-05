@@ -36,6 +36,37 @@ SDK_RE = (r"(stripe|twilio|@?aws-sdk|aws-sdk|googleapis|@google-cloud|ioredis|"
           r"@sentry|@prisma/client|mongodb|mysql2?|pg|kafkajs|bullmq|amqplib|"
           r"@aws-sdk/client-s3|boto3|sib-api|mailgun|postmark|hubspot|"
           r"@salesforce|algolia|elastic|pusher|ably|firebase)")
+# Go imports name a module path, not a package, so they get their own pattern:
+# the well-known clients, plus any module whose path says it is an SDK
+# (coderay-5wu.14). A Go import line is `"path"` or `alias "path"`. Written as
+# POSIX extended regex, since git grep -E runs it and Python reads it too:
+# capturing groups only, bracket classes instead of \w and \s.
+GO_SDK_RE = (r"(github\.com/aws/aws-sdk-go(-v2)?|cloud\.google\.com/go/[a-z0-9]+|"
+             r"github\.com/(redis/go-redis|go-redis/redis|jackc/pgx|lib/pq|mattn/go-sqlite3|"
+             r"stripe/stripe-go|slack-go/slack|sendgrid/sendgrid-go|twilio/twilio-go|"
+             r"openai/openai-go|sashabaranov/go-openai|minio/minio-go|elastic/go-elasticsearch|"
+             r"segmentio/kafka-go|nats-io/nats\.go|IBM/sarama|Shopify/sarama|rabbitmq/amqp091-go|"
+             r"streadway/amqp|getsentry/sentry-go|aws/aws-lambda-go|hashicorp/vault|"
+             r"go-sql-driver/mysql|jmoiron/sqlx|uptrace/bun|gorm/gorm)|"
+             r"modernc\.org/sqlite|google\.golang\.org/grpc|gorm\.io/gorm|entgo\.io/ent|"
+             r"[a-z0-9.-]+/[a-z0-9-]+/([a-z0-9-]+/)*([a-z0-9-]*sdk-go|go-sdk)(/|\"))")
+_GO_IMPORT_LINE = r"^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*[[:space:]]+)?\"" + GO_SDK_RE
+_GO_VERSION_SEGMENT = re.compile(r"^v\d+$")
+
+
+def go_sdk_name(path):
+    """The client a Go module path names: the repo segment for a host/owner/repo
+    path, the service for cloud.google.com/go/<service>, the owner when the repo
+    is a generic sdk-go, and the last segment otherwise. A trailing /vN is not
+    a name."""
+    segments = [s for s in path.split("/") if s and not _GO_VERSION_SEGMENT.match(s)]
+    host = segments[0]
+    if host == "cloud.google.com" and len(segments) >= 3:
+        return segments[2]
+    if host == "github.com" and len(segments) >= 3:
+        owner, repo = segments[1], segments[2]
+        return owner if repo in ("clients", "sdk-go", "go-sdk") or "sdk-go" in segments[3:4] else repo
+    return segments[-1]
 
 
 def _walk(root):
@@ -318,7 +349,8 @@ def _sdk_grep(repo, max_lines=400):
     try:
         raw = subprocess.check_output(
             ["git", "-C", repo, "grep", "-nE",
-             r"(import .*from ['\"]" + SDK_RE + r"|require\(['\"]" + SDK_RE + r"|new (Stripe|Twilio|Redis|S3Client))",
+             r"(import .*from ['\"]" + SDK_RE + r"|require\(['\"]" + SDK_RE + r"|new (Stripe|Twilio|Redis|S3Client)|"
+             + _GO_IMPORT_LINE + ")",
              "--", "*.ts", "*.tsx", "*.js", "*.py", "*.go"],
             text=True, errors="replace", stderr=subprocess.PIPE,
         )
@@ -342,8 +374,12 @@ def _sdk_grep(repo, max_lines=400):
         if len(parts) < 3:
             continue
         path, lineno, content = parts
-        m = re.search(SDK_RE, content) or re.search(r'new\s+(Stripe|Twilio|Redis|S3Client)', content)
-        name = (m.group(1) if m else "sdk").strip("'\"@")
+        go = re.match(_GO_IMPORT_LINE.replace("[[:space:]]", r"\s"), content)
+        if go:
+            name = go_sdk_name(re.search(r"\"([^\"]+)\"", content).group(1))
+        else:
+            m = re.search(SDK_RE, content) or re.search(r'new\s+(Stripe|Twilio|Redis|S3Client)', content)
+            name = (m.group(1) if m else "sdk").strip("'\"@")
         entry = f"{path}:{lineno}: {name}"
         if entry in seen:
             continue
