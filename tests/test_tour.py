@@ -88,3 +88,30 @@ def test_codebase_budget_rejects_a_bad_env_value_at_parse_time(monkeypatch, caps
         _parse([], monkeypatch, env="lots")
     assert e.value.code == 2
     assert "CODEBASE_BUDGET" in capsys.readouterr().err
+
+
+def test_run_keeps_the_run_state_when_a_tour_file_write_fails(tmp_path, monkeypatch, capsys):
+    """coderay-5wu.4. After the flow returns, shared holds every paid result;
+    a failed chapter or index write must leave run_state.json behind as a
+    failed node would."""
+    import json
+    import crawl.analyses.tour as tour
+
+    def fake_run_flow(flow, shared, out, dump):
+        shared.update(selected_files=["a.py"], selection_reasoning="", abstractions=[{"name": "Engine"}],
+                      relationships=[], order=[0], chapters=[{"name": "Engine"}], summary="s")
+
+    monkeypatch.setattr(tour, "resolve_provider_and_model", lambda: ("anthropic", "m"))
+    monkeypatch.setattr(tour, "ensure_priced", lambda p, m: None)
+    monkeypatch.setattr(tour, "run_flow", fake_run_flow)
+    monkeypatch.setattr(tour, "write_chapter_files", lambda *a: None)
+    monkeypatch.setattr(tour, "write_index_md", lambda *a: None)
+    monkeypatch.setattr(tour, "write_index_html", lambda *a: (_ for _ in ()).throw(OSError("disk full")))
+    out = tmp_path / "o"
+    args = argparse.Namespace(repo_path=str(tmp_path), out=str(out), instructions="beginner-tutorial",
+                              dry_run=False, codebase_budget=1_000_000)
+    with pytest.raises(OSError, match="disk full"):
+        run(args)
+    state = json.loads((out / "run_state.json").read_text(encoding="utf-8"))
+    assert state["chapters_completed"] == ["Engine"]
+    assert f"Wrote partial run state to {out / 'run_state.json'}" in capsys.readouterr().err

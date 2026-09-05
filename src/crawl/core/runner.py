@@ -26,12 +26,12 @@ def keeping_results(step, shared, out_dir, dump_state):
     except (Exception, SystemExit):
         try:
             state_path = dump_state(shared, out_dir)
-        except (OSError, TypeError, ValueError) as e:
-            print(f"\nPipeline failed, and the partial run state could not be written to {out_dir}: {e}",
+        except Exception as e:  # the dump's own error is printed here; the step's is what propagates
+            print(f"\nRun failed, and the partial run state could not be written to {out_dir}: {type(e).__name__}: {e}",
                   file=sys.stderr)
         else:
             if state_path:
-                print(f"\nPipeline failed. Wrote partial run state to {state_path}", file=sys.stderr)
+                print(f"\nRun failed. Wrote partial run state to {state_path}", file=sys.stderr)
         raise
 
 def write_run_state(shared, out_dir, skip=frozenset()):
