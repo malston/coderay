@@ -31,9 +31,11 @@ def test_write_chapters_does_not_retry_a_truncated_chapter(monkeypatch):
         return "chapter"
 
     monkeypatch.setattr(nodes_module, "call_llm", fake)
+    shared = dict(SHARED)
     with pytest.raises(SystemExit) as e:
-        nodes_module.WriteChapters().run(dict(SHARED))
+        nodes_module.WriteChapters().run(shared)
     assert len(calls) == 2
+    assert shared["chapters"] == [{"name": "Hub", "filename": "01_hub.md", "content": "chapter"}]
     assert "Claw" in str(e.value) and "2/2" in str(e.value)
     assert "LLM_MAX_OUTPUT_TOKENS" in str(e.value)
 
@@ -84,19 +86,39 @@ def test_tour_run_applies_its_env_defaults_around_the_flow(tmp_path, monkeypatch
     assert "LLM_MAX_OUTPUT_TOKENS" not in os.environ
 
 
-def test_finished_chapter_bodies_are_in_shared_when_a_later_chapter_fails(monkeypatch):
-    """coderay-5wu.3. A tour that dies on chapter 7 of 10 has paid for six
-    chapters; they must be in shared, bodies included, when the dump runs."""
+def test_a_retry_resumes_after_the_finished_chapters_and_keeps_them(monkeypatch):
+    """coderay-5wu.3. A transient failure on chapter 2 must not rewrite chapter
+    1 (paid once) nor drop it from shared if the outage outlasts the retries."""
     calls = []
 
     def fake(prompt):
         calls.append(prompt)
         if len(calls) == 2:
-            raise ResponseTruncated("overran")
+            raise RuntimeError("connection reset")
         return "body of " + str(len(calls))
 
     monkeypatch.setattr(nodes_module, "call_llm", fake)
+    node = nodes_module.WriteChapters()
+    node.wait = 0
     shared = dict(SHARED)
-    with pytest.raises(SystemExit):
-        nodes_module.WriteChapters().run(shared)
+    node.run(shared)
+    assert len(calls) == 3
+    assert [c["content"] for c in shared["chapters"]] == ["body of 1", "body of 3"]
+
+
+def test_finished_chapters_stay_in_shared_when_every_retry_fails(monkeypatch):
+    calls = []
+
+    def fake(prompt):
+        calls.append(prompt)
+        if len(calls) >= 2:
+            raise RuntimeError("outage")
+        return "body of 1"
+
+    monkeypatch.setattr(nodes_module, "call_llm", fake)
+    node = nodes_module.WriteChapters()
+    node.wait = 0
+    shared = dict(SHARED)
+    with pytest.raises(RuntimeError, match="outage"):
+        node.run(shared)
     assert shared["chapters"] == [{"name": "Hub", "filename": "01_hub.md", "content": "body of 1"}]
