@@ -117,3 +117,28 @@ def test_render_html_keeps_a_headline_inside_its_div(tmp_path):
     shared["surprises"]["present"][0]["headline"] = "Fast\n# fake"
     html = render.render_html("repo", shared)
     assert "<h1>fake</h1>" not in html and "Fast # fake" in html
+
+
+def test_render_html_names_the_actual_dimension_count(tmp_path):
+    """coderay-q2r.51. The intro sentence hardcoded "Four dimensions" while
+    normalize() accepts any count >= 3; the golden fixture has three."""
+    import json, pathlib
+    from crawl.analyses.product_intent import render
+    shared = json.loads((pathlib.Path(__file__).parent / "fixtures" / "golden" / "product-intent" / "shared.json").read_text())
+    assert len(shared["positioning"]["dimensions"]) == 3
+    html = render.render_html("repo", shared)
+    assert "Three dimensions that actually split the field." in html
+    assert "Four dimensions" not in html
+
+
+def test_render_html_names_five_dimensions_when_there_are_five(tmp_path):
+    import json, pathlib
+    from crawl.analyses.product_intent import render
+    shared = json.loads((pathlib.Path(__file__).parent / "fixtures" / "golden" / "product-intent" / "shared.json").read_text())
+    dims = shared["positioning"]["dimensions"]
+    extra = [dict(dims[0], name=f"Extra {i}") for i in range(2)]
+    shared["positioning"]["dimensions"] = dims + extra
+    for c in shared["positioning"]["competitors"]:
+        c["cells"] = c["cells"] + [dict(c["cells"][0]) for _ in range(2)]
+    html = render.render_html("repo", shared)
+    assert "Five dimensions that actually split the field." in html

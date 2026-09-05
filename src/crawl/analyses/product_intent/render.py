@@ -7,7 +7,6 @@ section labels with accent bars, cards with subtle shadows, numbered badges
 on surprises, amber "on purpose" badges on absences.
 """
 import html as _html
-import os
 
 from crawl.core.render import markdown_parser, md_cell, md_heading, md_line, md_quote
 
@@ -147,17 +146,9 @@ HTML_TEMPLATE = """<!doctype html>
   .pain-card .pain-body {{
     display: grid; grid-template-columns: 1fr; gap: 16px; align-items: center;
   }}
-  .pain-card.has-image .pain-body {{ grid-template-columns: 1fr 280px; }}
-  @media (max-width: 640px) {{
-    .pain-card.has-image .pain-body {{ grid-template-columns: 1fr; }}
-  }}
   .pain-card p {{
     font-size: 1.02rem; line-height: 1.65; color: #334155;
     margin: 0;
-  }}
-  .pain-card img.pain-illustration {{
-    width: 100%; height: auto; border-radius: 8px;
-    border: 1px solid var(--rule); background: #fff;
   }}
 
   /* Two column cards (sacrifices / gains) */
@@ -325,11 +316,10 @@ HTML_TEMPLATE = """<!doctype html>
   <main>
     <section class="sec">
       <div class="sec-label">The Pain</div>
-      <div class="pain-card{pain_card_mod}">
+      <div class="pain-card">
         <div class="pain-label">↳ Why this exists</div>
         <div class="pain-body">
           <p>{pain}</p>
-{pain_image_html}
         </div>
       </div>
     </section>
@@ -360,7 +350,7 @@ HTML_TEMPLATE = """<!doctype html>
 
     <section class="sec">
       <div class="sec-label">Side by Side</div>
-      <p class="sec-intro">Four dimensions that actually split the field.</p>
+      <p class="sec-intro">{dims_intro}</p>
       <ul class="dim-defs">
 {dim_defs_html}
       </ul>
@@ -401,19 +391,20 @@ def _esc(s):
     return _html.escape(str(s).strip())
 
 
+_COUNT_WORDS = {3: "Three", 4: "Four", 5: "Five", 6: "Six", 7: "Seven", 8: "Eight", 9: "Nine"}
+
+
+def _dims_intro(n):
+    """The Side-by-Side section's lead sentence. `normalize()` accepts any
+    dimension count >= 3, so this names the count the model actually
+    produced rather than a number pinned to one particular run
+    (coderay-q2r.51)."""
+    return f"{_COUNT_WORDS.get(n, str(n))} dimensions that actually split the field."
+
+
 def render_html(name, shared):
     positioning = shared["positioning"]
     surprises = shared["surprises"]
-    pain_img = shared.get("pain_image_path")
-
-    if pain_img and os.path.exists(pain_img):
-        # The HTML lives in the same folder as the image (output/<name>-story/),
-        # so a basename src works without any path math.
-        pain_image_html = f'          <img class="pain-illustration" src="{os.path.basename(pain_img)}" alt="before and after illustration">'
-        pain_card_mod = ' has-image'
-    else:
-        pain_image_html = ""
-        pain_card_mod = ""
 
     dims = positioning["dimensions"]
     dim_defs = "\n".join(
@@ -475,8 +466,7 @@ def render_html(name, shared):
         name=_esc(name),
         variant=md(shared["variant"]),
         pain=md(shared["pain"]),
-        pain_image_html=pain_image_html,
-        pain_card_mod=pain_card_mod,
+        dims_intro=_dims_intro(len(dims)),
         dim_defs_html=dim_defs,
         dim_headers=dim_headers,
         competitor_rows=competitor_rows,
