@@ -93,8 +93,9 @@ def add_arguments(parser):
 
 def sent(shared):
     """What left the machine: the schema files read, and the names (not the
-    bodies) of the migrations listed for the model (coderay-3eu)."""
-    return {"files": shared.get("schema_files", []), "migration_names": shared.get("migration_names", [])}
+    bodies) of the migrations the acts prompt listed; below MIGRATION_FLOOR
+    that prompt is never built and none go (coderay-3eu)."""
+    return {"files": shared.get("schema_files", []), "migration_names": shared.get("migrations_sent", [])}
 
 
 def init_shared(args):

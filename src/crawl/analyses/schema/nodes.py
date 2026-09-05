@@ -233,6 +233,8 @@ class MigrationActs(Node):
 
     def post(self, shared, prep_res, exec_res):
         shared["migration_md"] = exec_res
+        # Below the floor no prompt carried the names (coderay-3eu).
+        shared["migrations_sent"] = prep_res if exec_res is not None else []
         if exec_res:
             print(f"  Migrations: {exec_res.count(chr(35) + '##')} acts")
         else:

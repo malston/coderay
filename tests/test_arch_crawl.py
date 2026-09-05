@@ -722,3 +722,12 @@ def test_build_bundle_does_not_list_a_package_json_that_contributed_no_dependenc
     })
     _bundle, stats = ac.build_bundle(repo)
     assert stats["files"] == ["docker-compose.yml"]
+
+
+@pytest.mark.parametrize("text", ["[]", "null", '"x"', "1", json.dumps({"dependencies": ["a"]})])
+def test_build_bundle_survives_a_package_json_that_is_valid_json_of_the_wrong_shape(tmp_path, text):
+    """docs/ and examples/ are walked, and a package.json there can hold anything."""
+    repo = _repo(tmp_path, {"docker-compose.yml": "services:\n  api:\n    image: api\n",
+                            "examples/package.json": text})
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["deps"] == 0 and stats["files"] == ["docker-compose.yml"]

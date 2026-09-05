@@ -470,7 +470,10 @@ def build_bundle(repo, max_chars=500_000):
                     data = json.loads(_read(full, 200_000, repo))
                 except (ValueError, OSError):
                     continue
-                found = {k: v for grp in ('dependencies', 'devDependencies') for k, v in data.get(grp, {}).items()}
+                if not isinstance(data, dict):
+                    continue  # docs/ and examples/ are walked; a package.json there can hold anything
+                found = {k: v for grp in ('dependencies', 'devDependencies')
+                         if isinstance(data.get(grp), dict) for k, v in data[grp].items()}
                 if found:
                     deps.update(found)
                     package_files.append(rel)

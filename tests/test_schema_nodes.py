@@ -154,6 +154,7 @@ def test_migration_acts_skips_a_history_too_short_to_cluster(monkeypatch):
     n.MigrationActs().run(shared)
     assert calls == []
     assert shared["migration_md"] is None
+    assert shared["migrations_sent"] == []  # nothing went, so the manifest says none
 
 
 def test_migration_acts_clusters_a_real_history(monkeypatch):
@@ -164,6 +165,7 @@ def test_migration_acts_clusters_a_real_history(monkeypatch):
     n.MigrationActs().run(shared)
     assert shared["migration_md"] == CARDS.strip()
     assert "0001_change" in prompts[0] and "0006_change" in prompts[0]
+    assert shared["migrations_sent"] == names
 
 
 @pytest.mark.parametrize("node_cls,key,extra", [
@@ -265,4 +267,5 @@ def test_sent_names_the_schema_files_and_the_migration_names(tmp_path):
                             "db/migrate/20210101120000_create_users.rb": "x\n"})
     shared = {"repo_path": repo}
     n.FindSchema().run(shared)
-    assert schema.sent(shared) == {"files": ["db/schema.rb"], "migration_names": ["20210101120000_create_users"]}
+    # one migration is below the floor, so its name never reaches a prompt
+    assert schema.sent(shared) == {"files": ["db/schema.rb"], "migration_names": []}

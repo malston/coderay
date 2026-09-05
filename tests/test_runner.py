@@ -325,3 +325,34 @@ def test_the_manifest_lists_this_runs_provider_and_model_pairs_once_each(tmp_pat
     run_analysis(analysis, _Args(str(tmp_path), out=str(out)))
     manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["llm"] == [{"provider": "anthropic", "model": "m"}, {"provider": "openai", "model": "n"}]
+
+
+def test_a_rerun_that_fails_leaves_no_earlier_manifest_behind(tmp_path):
+    """The output directory is the same run to run; a manifest from an earlier
+    successful run beside a fresh run_state.json would describe the wrong run."""
+    out = tmp_path / "out"
+    run_analysis(_fake_analysis(), _Args(str(tmp_path), out=str(out)))
+    assert (out / "manifest.json").exists()
+    with pytest.raises(RuntimeError):
+        run_analysis(_failing_analysis(), _Args(str(tmp_path), out=str(out)))
+    assert not (out / "manifest.json").exists()
+
+
+def test_the_manifest_separates_live_calls_from_cache_hits(tmp_path):
+    """A rerun served from the LLM disk cache sends nothing; the manifest must
+    not read like a live run."""
+    import importlib
+    llm = importlib.import_module("crawl.core.call_llm")
+
+    class Flow:
+        def run(self, shared):
+            shared["body_md"] = "### A\ntext"
+            llm._record_usage("anthropic", "m", 0, 0, 0, 0, 0.0, True)
+            llm._record_usage("anthropic", "m", 0, 0, 0, 0, 0.0, True)
+
+    analysis = _fake_analysis()
+    analysis.build_flow = staticmethod(Flow)
+    out = tmp_path / "out"
+    run_analysis(analysis, _Args(str(tmp_path), out=str(out)))
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["llm"] == [] and manifest["cached_calls"] == 2

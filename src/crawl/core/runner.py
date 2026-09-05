@@ -51,22 +51,28 @@ def write_run_state(shared, out_dir, skip=frozenset()):
     results = {k: v for k, v in shared.items() if k not in skip}
     if not results:
         return None
-    text = json.dumps(results, indent=2, default=str)
-    path = os.path.join(out_dir, "run_state.json")
+    return _write_json(os.path.join(out_dir, "run_state.json"), results)
+
+
+def _write_json(path, obj):
+    """Serialise in full before the file is opened, so a serialisation error
+    cannot leave a truncated or empty file passing for a record."""
+    text = json.dumps(obj, indent=2, default=str)
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(text)
     return path
 
 
 def run_state_writer(out_dir, shared, input_keys):
-    """Remove a run_state.json left by an earlier failed run in out_dir (the
-    default output directory is the same run to run) and return the dump
+    """Remove the run_state.json and manifest.json an earlier run left in
+    out_dir (the default output directory is the same run to run, and either
+    would describe the wrong run beside this one's output) and return the dump
     callable keeping_results takes: `shared` minus the keys present before the
     flow ran and the analysis's INPUT_KEYS, which regenerate without an LLM
     call and can be most of a megabyte."""
-    stale = os.path.join(out_dir, "run_state.json")
-    if os.path.exists(stale):
-        os.remove(stale)
+    for stale in ("run_state.json", "manifest.json"):
+        if os.path.exists(os.path.join(out_dir, stale)):
+            os.remove(os.path.join(out_dir, stale))
     inputs = frozenset(shared) | input_keys
     return lambda s, o: write_run_state(s, o, skip=inputs)
 
@@ -99,25 +105,25 @@ def write_report(analysis, name, shared, out_dir):
     return out_dir
 
 
-def write_manifest(analysis, name, shared, out_dir, usage):
-    """Write manifest.json beside the report: which repo content reached the
-    model, as the analysis's own `sent(shared)` describes it (file paths for
-    most, commit hashes for git-history), with the provider and model pairs
-    this run called (`usage`, its slice of the usage log) and when. Repo
-    content leaves the machine on every run, and this is the record of what
-    did (coderay-3eu). Returns the path."""
-    seen = {(u["provider"], u["model"]) for u in usage}
+def write_manifest(analysis_name, repo_name, described, out_dir, usage):
+    """Write manifest.json beside the report: which repo content the prompts
+    carried, as the analysis's own sent(shared) describes it (`described`:
+    file paths for most, commit hashes for git-history); `llm`, the provider
+    and model pairs this run called live (`usage` is its slice of the usage
+    log); `cached_calls`, how many prompts the local response cache answered,
+    which never left the machine; and when. Repo content leaves the machine on
+    a live run, and this is the record of what did (coderay-3eu). Returns the
+    path."""
+    live = {(u["provider"], u["model"]) for u in usage if not u["cached"]}
     manifest = {
-        "analysis": analysis.NAME,
-        "repo": name,
+        "analysis": analysis_name,
+        "repo": repo_name,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "llm": [{"provider": p, "model": m} for p, m in sorted(seen)],
-        **analysis.sent(shared),
+        "llm": [{"provider": p, "model": m} for p, m in sorted(live)],
+        "cached_calls": sum(1 for u in usage if u["cached"]),
+        **described,
     }
-    path = os.path.join(out_dir, "manifest.json")
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write(json.dumps(manifest, indent=2))
-    return path
+    return _write_json(os.path.join(out_dir, "manifest.json"), manifest)
 
 
 def run_analysis(analysis, args):
@@ -140,7 +146,7 @@ def run_analysis(analysis, args):
         with env_defaults(getattr(analysis, "ENV_DEFAULTS", {})):
             analysis.build_flow().run(shared)
         write_report(analysis, name, shared, out_dir)
-        write_manifest(analysis, name, shared, out_dir, get_usage()[first_call:])
+        write_manifest(analysis.NAME, name, analysis.sent(shared), out_dir, get_usage()[first_call:])
 
     keeping_results(run_and_report, shared, out_dir, dump)
 
