@@ -147,7 +147,7 @@ def _cache_put(provider, model, max_out, prompt, response):
     os.makedirs(CACHE_DIR, mode=0o700, exist_ok=True)
     os.chmod(CACHE_DIR, 0o700)
     write_text_atomic(_cache_path(provider, model, max_out, prompt),
-                      json.dumps({"provider": provider, "model": model, "response": response}))
+                      json.dumps({"provider": provider, "model": model, "response": response}), mode=0o600)
 
 
 def call_llm(prompt: str) -> str:

@@ -201,3 +201,44 @@ def test_write_text_atomic_replaces_the_target_whole(tmp_path):
     assert write_text_atomic(str(target), "new") == str(target)
     assert target.read_text(encoding="utf-8") == "new"
     assert [p.name for p in tmp_path.iterdir()] == ["manifest.json"]
+
+
+def test_write_text_atomic_gives_the_file_the_umask_mode_unless_told_otherwise(tmp_path):
+    """The reports and records in output/ are the user's to read like index.html;
+    the response cache asks for owner-only, since it holds repo content."""
+    import os
+    import stat
+    from crawl.core.files import write_text_atomic
+    prior = os.umask(0o022)
+    try:
+        write_text_atomic(str(tmp_path / "manifest.json"), "{}")
+        write_text_atomic(str(tmp_path / "cache.json"), "{}", mode=0o600)
+    finally:
+        os.umask(prior)
+    assert stat.S_IMODE(os.stat(tmp_path / "manifest.json").st_mode) == 0o644
+    assert stat.S_IMODE(os.stat(tmp_path / "cache.json").st_mode) == 0o600
+
+
+def test_write_text_atomic_surfaces_the_original_error_when_the_cleanup_fails(tmp_path, monkeypatch):
+    import crawl.core.files as files
+    monkeypatch.setattr(files.os, "replace", lambda *a: (_ for _ in ()).throw(KeyboardInterrupt))
+    monkeypatch.setattr(files.os, "unlink", lambda *a: (_ for _ in ()).throw(OSError("busy")))
+    with pytest.raises(KeyboardInterrupt):
+        files.write_text_atomic(str(tmp_path / "x.json"), "x")
+    assert not (tmp_path / "x.json").exists()
+
+
+def test_write_text_atomic_names_its_temporary_after_the_target(tmp_path, monkeypatch):
+    """A leftover after a hard kill should be recognisable as ours."""
+    import crawl.core.files as files
+    seen = []
+    real = files.tempfile.mkstemp
+
+    def spy(*a, **k):
+        fd, p = real(*a, **k)
+        seen.append(p)
+        return fd, p
+
+    monkeypatch.setattr(files.tempfile, "mkstemp", spy)
+    files.write_text_atomic(str(tmp_path / "run_state.json"), "{}")
+    assert seen and files.os.path.basename(seen[0]).startswith("run_state.json.")

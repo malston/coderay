@@ -11,6 +11,8 @@ import json
 import os
 import sys
 
+from .files import write_text_atomic
+
 _PER_MILLION = {
     # cache_read/cache_write are 0.1x/1.25x of input ($0.20 = 2.00*0.1, $2.50 =
     # 2.00*1.25) -- if input ever changes, update these two together with it.
@@ -53,8 +55,7 @@ def _save_override(provider, model, per_million):
     overrides = _load_overrides()
     overrides[f"{provider}:{model}"] = per_million
     os.makedirs(CONFIG_DIR, exist_ok=True)
-    with open(OVERRIDE_FILE, "w", encoding="utf-8") as f:
-        json.dump(overrides, f, indent=2)
+    write_text_atomic(OVERRIDE_FILE, json.dumps(overrides, indent=2))
 
 
 def get_price(provider, model):

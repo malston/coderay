@@ -97,10 +97,8 @@ def write_report(analysis, name, shared, out_dir):
     The one write path for a real run and for the golden fixtures, so the two
     cannot drift. Returns out_dir."""
     os.makedirs(out_dir, exist_ok=True)
-    with open(os.path.join(out_dir, "index.md"), "w", encoding="utf-8") as fh:
-        fh.write(render_markdown(analysis, name, shared))
-    with open(os.path.join(out_dir, "index.html"), "w", encoding="utf-8") as fh:
-        fh.write(render_html(analysis, name, shared))
+    write_text_atomic(os.path.join(out_dir, "index.md"), render_markdown(analysis, name, shared))
+    write_text_atomic(os.path.join(out_dir, "index.html"), render_html(analysis, name, shared))
     return out_dir
 
 
