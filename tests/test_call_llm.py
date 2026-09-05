@@ -788,3 +788,19 @@ def test_truncated_response_is_its_own_error_and_says_how_to_raise_the_cap(monke
     monkeypatch.setenv("LLM_MAX_OUTPUT_TOKENS", "16384")
     with pytest.raises(ResponseTruncated, match=r"LLM_MAX_OUTPUT_TOKENS.*16384"):
         call_llm("prompt")
+
+
+# coderay-5wu.21: .env.example ships LLM_MAX_OUTPUT_TOKENS blank, and sourcing
+# the template exports the empty string.
+def test_a_blank_max_output_tokens_means_unset(monkeypatch):
+    from crawl.core.call_llm import DEFAULT_MAX_OUTPUT_TOKENS, max_output_tokens
+    monkeypatch.setenv("LLM_MAX_OUTPUT_TOKENS", "")
+    assert max_output_tokens() == DEFAULT_MAX_OUTPUT_TOKENS
+
+
+@pytest.mark.parametrize("bad", ["lots", "1.5", "0", "-3"])
+def test_a_bad_max_output_tokens_names_the_variable_and_stops_before_any_call(monkeypatch, bad):
+    from crawl.core.call_llm import max_output_tokens
+    monkeypatch.setenv("LLM_MAX_OUTPUT_TOKENS", bad)
+    with pytest.raises(SystemExit, match=f"LLM_MAX_OUTPUT_TOKENS.*{bad!r}"):
+        max_output_tokens()

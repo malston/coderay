@@ -70,8 +70,18 @@ def _truncated(detail):
 
 
 def max_output_tokens():
-    """The max-output-tokens cap call_llm() would use right now, without calling it."""
-    return int(os.environ.get("LLM_MAX_OUTPUT_TOKENS", str(DEFAULT_MAX_OUTPUT_TOKENS)))
+    """The max-output-tokens cap call_llm() would use right now, without calling
+    it. An empty LLM_MAX_OUTPUT_TOKENS means unset, since .env.example ships it
+    blank; anything but a positive whole number stops the run with the
+    variable named, before a call is paid for."""
+    raw = os.environ.get("LLM_MAX_OUTPUT_TOKENS") or str(DEFAULT_MAX_OUTPUT_TOKENS)
+    try:
+        n = int(raw)
+    except ValueError:
+        n = 0
+    if n <= 0:
+        raise SystemExit(f"LLM_MAX_OUTPUT_TOKENS must be a positive whole number of tokens, got {raw!r}")
+    return n
 
 
 def _record_usage(provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, duration_s, cached):
