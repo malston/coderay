@@ -514,6 +514,8 @@ def _parse_pep508(spec):
     rest = spec[m.end():]
     if rest[:1] not in ('', ' ', '\t', '[', '<', '>', '=', '!', '~', ';'):
         return None
+    if rest.lstrip().startswith('@'):
+        return None   # `name @ url` direct reference, not a version constraint
     if rest.startswith('['):
         close = rest.find(']')
         if close == -1:
@@ -532,11 +534,16 @@ def _parse_package_json(text):
 
 
 # `go mod tidy` splits requires into two blocks -- direct first, then every
-# `// indirect` transitive one -- so both must be scanned (finditer, not
-# search) alongside the single-line `require x y` form outside any block.
-_GO_MOD_REQUIRE_BLOCK_RE = re.compile(r'require\s*\((.*?)\n\)', re.DOTALL)
-_GO_MOD_ENTRY_RE = re.compile(r'^\s*(\S+)\s+(\S+)(\s+//\s*indirect)?\s*$', re.MULTILINE)
-_GO_MOD_SINGLE_RE = re.compile(r'^require\s+(?!\()(\S+)\s+(\S+)(\s+//\s*indirect)?\s*$', re.MULTILINE)
+# `// indirect` transitive one -- so both must be handled, plus the
+# single-line `require x y` form outside any block. Parsed line by line
+# rather than with a block-spanning regex: a `//`-commented-out `require (`
+# must never open a block, and a trailing comment other than exactly
+# `// indirect` must still leave the entry itself intact (coderay-5wu.18
+# review).
+_GO_MOD_REQUIRE_OPEN_RE = re.compile(r'^require\s*\(\s*$')
+_GO_MOD_REQUIRE_CLOSE_RE = re.compile(r'^\)\s*$')
+_GO_MOD_BLOCK_ENTRY_RE = re.compile(r'^(\S+)\s+(\S+)$')
+_GO_MOD_SINGLE_RE = re.compile(r'^require\s+(?!\()(\S+)\s+(\S+)$')
 
 
 def _parse_go_mod(text):
@@ -546,31 +553,47 @@ def _parse_go_mod(text):
     equivalent of "a real dependency of the project, just not of what it
     ships"."""
     deps = {}
-    for block in _GO_MOD_REQUIRE_BLOCK_RE.finditer(text):
-        for entry in _GO_MOD_ENTRY_RE.finditer(block.group(1)):
-            if entry.group(3):
-                continue
-            deps[entry.group(1)] = entry.group(2)
-    for entry in _GO_MOD_SINGLE_RE.finditer(text):
-        if entry.group(3):
+    in_block = False
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith('//'):
+            continue   # blank or a whole-line comment; never opens or closes a block
+        code, _sep, comment = line.partition('//')
+        code = code.strip()
+        if not code:
             continue
-        deps[entry.group(1)] = entry.group(2)
+        if in_block:
+            if _GO_MOD_REQUIRE_CLOSE_RE.match(code):
+                in_block = False
+                continue
+            entry = _GO_MOD_BLOCK_ENTRY_RE.match(code)
+            if entry and comment.strip() != 'indirect':
+                deps[entry.group(1)] = entry.group(2)
+            continue
+        if _GO_MOD_REQUIRE_OPEN_RE.match(code):
+            in_block = True
+            continue
+        entry = _GO_MOD_SINGLE_RE.match(code)
+        if entry and comment.strip() != 'indirect':
+            deps[entry.group(1)] = entry.group(2)
     return deps
 
 
 def _parse_pyproject(text):
     """PEP 621's `[project.dependencies]` and `[project.optional-dependencies]`
     only. Poetry's `[tool.poetry.dependencies]` is a different, non-PEP-621
-    shape and is out of scope for this bead."""
+    shape and is not read here."""
     data = tomllib.loads(text)   # raises tomllib.TOMLDecodeError (a ValueError) on malformed input
     project = data.get('project')
     if not isinstance(project, dict):
         return {}
     deps = {}
-    for spec in project.get('dependencies') or []:
-        parsed = _parse_pep508(spec)
-        if parsed:
-            deps[parsed[0]] = parsed[1]
+    dependencies = project.get('dependencies')
+    if isinstance(dependencies, list):
+        for spec in dependencies:
+            parsed = _parse_pep508(spec)
+            if parsed:
+                deps[parsed[0]] = parsed[1]
     optional = project.get('optional-dependencies')
     if isinstance(optional, dict):
         for group in optional.values():
@@ -582,12 +605,30 @@ def _parse_pyproject(text):
     return deps
 
 
+_OPTION_FLAG_RE = re.compile(r'\s+-')   # a pip option flag (e.g. --hash=...) glued after the spec
+
+
 def _parse_requirements(text):
+    """Line-based, joining a `\\`-continued line (pip-compile's
+    `--generate-hashes` output wraps each pin across lines) before parsing,
+    and dropping a trailing option flag glued onto the same line (the
+    `--hash=...` that same output appends after every pin)."""
     deps = {}
-    for line in text.splitlines():
-        line = line.split('#', 1)[0].strip()
+    logical_lines = []
+    buffer = ""
+    for raw in text.splitlines():
+        line = buffer + raw.split('#', 1)[0]
+        buffer = ""
+        if line.rstrip().endswith('\\'):
+            buffer = line.rstrip()[:-1]
+            continue
+        logical_lines.append(line.strip())
+    if buffer:
+        logical_lines.append(buffer.strip())
+    for line in logical_lines:
         if not line or line.startswith(_REQUIREMENTS_SKIP_PREFIXES):
             continue
+        line = _OPTION_FLAG_RE.split(line, maxsplit=1)[0].strip()
         parsed = _parse_pep508(line)
         if parsed:
             deps[parsed[0]] = parsed[1]
@@ -602,6 +643,19 @@ MANIFEST_PARSERS = {
     'go_mod': _parse_go_mod,
     'pyproject': _parse_pyproject,
     'requirements': _parse_requirements,
+}
+
+# The exception type each parser raises on malformed input, scoped per kind
+# rather than a blanket `except ValueError` -- a future bug inside a
+# regex-based parser (go.mod, requirements.txt) that happened to raise
+# ValueError for an unrelated reason would otherwise be silently reclassified
+# as "malformed manifest" instead of surfacing as the parser bug it is
+# (coderay-5wu.18 review). Neither regex parser is expected to raise at all.
+_MANIFEST_PARSE_ERRORS = {
+    'package': (json.JSONDecodeError,),
+    'go_mod': (),
+    'pyproject': (tomllib.TOMLDecodeError,),
+    'requirements': (),
 }
 
 
@@ -619,9 +673,12 @@ def _read_manifest(full, repo, kind):
     text, ok = _read(full, MANIFEST_READ_LIMIT, repo)
     if not ok:
         return None, True, False
+    errors = _MANIFEST_PARSE_ERRORS[kind]
+    if not errors:
+        return MANIFEST_PARSERS[kind](text), False, False
     try:
         return MANIFEST_PARSERS[kind](text), False, False
-    except ValueError:
+    except errors:
         if len(text) >= MANIFEST_READ_LIMIT:
             return None, False, False
         return None, False, True

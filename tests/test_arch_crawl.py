@@ -982,9 +982,30 @@ def test_build_bundle_survives_a_package_json_that_is_valid_json_of_the_wrong_sh
     ("./local-package", None),
     ("-e .", None),
     ("https://example.com/foo.whl", None),
+    ("certifi @ https://example.com/certifi.whl", None),
 ])
 def test_parse_pep508_extracts_name_and_constraint(spec, expected):
     assert ac._parse_pep508(spec) == expected
+
+
+def test_parse_go_mod_keeps_a_direct_dep_with_a_non_indirect_trailing_comment():
+    """coderay-5wu.18 review. A require line whose trailing comment is
+    anything other than the literal `// indirect` used to fail the entry
+    regex entirely, silently dropping a real dependency."""
+    text = "require (\n\tgithub.com/foo/bar v1.2.3 // pinned for CVE-2024\n)\n"
+    assert ac._parse_go_mod(text) == {"github.com/foo/bar": "v1.2.3"}
+    assert ac._parse_go_mod("require github.com/foo/bar v1.2.3 // pinned\n") == {
+        "github.com/foo/bar": "v1.2.3"}
+
+
+def test_parse_go_mod_ignores_a_standalone_comment_line_inside_a_block():
+    text = "require (\n\t// note\n\tgithub.com/foo/bar v1.2.3\n)\n"
+    assert ac._parse_go_mod(text) == {"github.com/foo/bar": "v1.2.3"}
+
+
+def test_parse_go_mod_does_not_open_a_block_from_a_commented_out_require():
+    text = "// require (\n//\tfake.com/x v9\n// )\nrequire (\n\treal.com/y v1\n)\n"
+    assert ac._parse_go_mod(text) == {"real.com/y": "v1"}
 
 
 def test_parse_go_mod_excludes_indirect_and_covers_both_forms():
@@ -1024,9 +1045,28 @@ def test_parse_pyproject_reads_project_dependencies_and_optional_groups():
     assert ac._parse_pyproject(text) == {"requests": ">=2.0", "click": "", "pytest": "==8.0"}
 
 
+@pytest.mark.parametrize("bad_deps", ['"requests"', '{ foo = "1.0" }'])
+def test_parse_pyproject_ignores_a_dependencies_field_of_the_wrong_shape(bad_deps):
+    """coderay-5wu.18 review. project.dependencies must be an array per PEP
+    621; tomllib parses a bare string or a table without complaint, and
+    iterating it unguarded fabricated a garbage dependency per character
+    or per table key."""
+    text = f'[project]\nname = "app"\ndependencies = {bad_deps}\n'
+    assert ac._parse_pyproject(text) == {}
+
+
 def test_parse_pyproject_ignores_poetry_only_tables():
     text = '[tool.poetry.dependencies]\npython = "^3.11"\n'
     assert ac._parse_pyproject(text) == {}
+
+
+def test_parse_requirements_drops_pip_compile_hash_flags_and_continuations():
+    """coderay-5wu.18 review. `pip-compile --generate-hashes` output trails
+    each pin with a backslash continuation and one or more --hash flags;
+    both used to end up glued onto the constraint."""
+    text = "django==4.2 \\\n    --hash=sha256:abc\n"
+    assert ac._parse_requirements(text) == {"django": "==4.2"}
+    assert ac._parse_requirements("Django==4.0 --hash=sha256:abc\n") == {"Django": "==4.0"}
 
 
 def test_parse_requirements_skips_comments_blanks_and_option_lines():
