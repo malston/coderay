@@ -772,6 +772,25 @@ def test_build_bundle_flags_sdk_capped_and_the_budget_slice_together(tmp_path, m
     assert stats["sdk_import_files"] == ["a.ts"]
 
 
+def test_build_bundle_reports_sdk_capped_false_when_the_budget_slice_cut_every_sdk_line(tmp_path, monkeypatch):
+    """coderay-6ts.8 review. git-grep hitting its own cap (sdk_capped=True)
+    and the bundle budget then cutting every surviving line before the model
+    saw any of it (sdk_lines=0) are both individually true, but stats must
+    not report them as if the model saw capped-but-present evidence -- "0 SDK
+    imports (capped, more exist)" is a contradiction. Computed once here,
+    rather than gated separately at each render site, so the invariant can't
+    drift between the footer and the console line."""
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n"})
+    monkeypatch.setattr(ac, "_sdk_grep", lambda repo, max_lines=ac.SDK_GREP_MAX_LINES:
+                         ("a.ts:1: stripe\nb.ts:2: stripe", None, True))
+    full_bundle, full_stats = ac.build_bundle(repo)
+    assert full_stats["sdk_capped"] is True
+    cutoff = full_bundle.index("a.ts:1: stripe")
+    _bundle, stats = ac.build_bundle(repo, max_chars=cutoff)
+    assert stats["sdk_lines"] == 0
+    assert stats["sdk_capped"] is False
+
+
 def test_build_bundle_counts_only_files_whose_text_reached_the_bundle(tmp_path):
     """An empty or unreadable config file is classified, then skipped by the
     parts loop. Counting it makes the footer claim coverage that is not there

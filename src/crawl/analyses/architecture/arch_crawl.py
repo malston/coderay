@@ -887,7 +887,11 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
         "integrations": len(isubs),
         "sdk_lines": sdk_in_bundle.count("\n") + 1 if sdk_in_bundle else 0,
         "sdk_unavailable": sdk_unavailable,
-        "sdk_capped": sdk_capped,
+        # False when the budget slice cut every surviving SDK line before the
+        # model saw it (coderay-6ts.8 review): computed once here rather than
+        # at each render site, so "capped" can never mean anything but "the
+        # model saw evidence that was itself capped."
+        "sdk_capped": sdk_capped and bool(sdk_in_bundle),
         "files": sorted(files),
         "sdk_import_files": sdk_files,
         "integration_dirs": isubs,
