@@ -50,6 +50,18 @@ def _era_for(month, eras):
     return None  # coderay-q2r.40: not the last era, which mislabels a gap
 
 
+def _excluding_pure_renames(candidates, repo_path):
+    """bulk_changes runs with --no-renames so a directory move shows up as a
+    plain deletion (coderay-q2r.44); a move isn't a killed feature, and
+    neither NameEras' survey nor Graveyard's eulogies should describe one as a
+    real deletion (coderay-6ts.1). Called last, after every cheap in-memory
+    filter has already narrowed `candidates`: is_pure_rename shells out to
+    `git show`, so checking it before a candidate count/noise filter would
+    run that subprocess on entries the cheap filters would have dropped
+    anyway."""
+    return [c for c in candidates if not gl.is_pure_rename(repo_path, c["hash"])]
+
+
 # Step 1. Crawl the log; pull the bulk-change rosters once.
 class FetchHistory(Node):
     def prep(self, shared):
@@ -86,7 +98,8 @@ class NameEras(Node):
 
     def prep(self, shared):
         commits = shared["commits"]
-        big_dels = [c for c in shared["bulk_dels"] if c["count"] >= 10]
+        big_dels = _excluding_pure_renames(
+            [c for c in shared["bulk_dels"] if c["count"] >= 10], shared["repo_path"])
         prompt = fill(
             load_prompt("name-eras.md"),
             heatmap_summary=gl.heatmap_summary(commits),
@@ -213,12 +226,10 @@ class Graveyard(Node):
         max_graves = shared.get("max_graves", 6)
         repo_path = shared["repo_path"]
         candidates = sorted(
-            (c for c in shared["bulk_dels"]
-             if c["count"] >= min_files and not _is_noise_deletion(c)
-             # bulk_changes runs with --no-renames so a directory move shows up
-             # here as a plain deletion (coderay-q2r.44); a move isn't a killed
-             # feature, so it must not get a eulogy written for it.
-             and not gl.is_pure_rename(repo_path, c["hash"])),
+            _excluding_pure_renames(
+                [c for c in shared["bulk_dels"]
+                 if c["count"] >= min_files and not _is_noise_deletion(c)],
+                repo_path),
             key=lambda c: c["count"], reverse=True,
         )
         # Keep the graves distinct: at most one per source area so we don't

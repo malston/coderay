@@ -55,7 +55,7 @@ def test_fetch_history_populates_the_commit_lists(tmp_path):
 
 def test_name_eras_stores_the_parsed_eras(monkeypatch, tmp_path):
     _fake_llm(monkeypatch, lambda p: "```json\n" + json.dumps(ERAS) + "\n```")
-    shared = {"commits": [{"month": "2019-01", "files": ["a.py"]}],
+    shared = {"repo_path": "unused", "commits": [{"month": "2019-01", "files": ["a.py"]}],
               "bulk_dels": [], "bulk_adds": []}
     n.NameEras().run(shared)
     assert shared["eras"] == ERAS
@@ -73,7 +73,7 @@ def test_name_eras_retries_an_era_missing_a_required_field(monkeypatch, tmp_path
         return "```json\n" + json.dumps(ERAS) + "\n```"
 
     _fake_llm(monkeypatch, reply)
-    shared = {"commits": [{"month": "2019-01", "files": ["a.py"]}],
+    shared = {"repo_path": "unused", "commits": [{"month": "2019-01", "files": ["a.py"]}],
               "bulk_dels": [], "bulk_adds": []}
     n.NameEras().run(shared)
     assert len(calls) == 3
@@ -83,7 +83,7 @@ def test_name_eras_retries_an_era_missing_a_required_field(monkeypatch, tmp_path
 def test_name_eras_unwraps_a_model_that_nests_the_list(monkeypatch):
     """Some models answer {"eras": [...]} rather than a bare list."""
     _fake_llm(monkeypatch, lambda p: '```json\n' + json.dumps({"eras": ERAS}) + '\n```')
-    shared = {"commits": [{"month": "2019-01", "files": ["a.py"]}],
+    shared = {"repo_path": "unused", "commits": [{"month": "2019-01", "files": ["a.py"]}],
               "bulk_dels": [], "bulk_adds": []}
     n.NameEras().run(shared)
     assert shared["eras"] == ERAS
@@ -102,7 +102,7 @@ def test_name_eras_survives_a_reply_that_is_a_list_of_scalars(monkeypatch):
         return "```json\n[1, 2, 3]\n```" if len(calls) < 3 else "```json\n" + json.dumps(ERAS) + "\n```"
 
     _fake_llm(monkeypatch, reply)
-    shared = {"commits": [{"month": "2019-01", "files": ["a.py"]}],
+    shared = {"repo_path": "unused", "commits": [{"month": "2019-01", "files": ["a.py"]}],
               "bulk_dels": [], "bulk_adds": []}
     n.NameEras().run(shared)
     assert len(calls) == 3
@@ -222,7 +222,7 @@ def test_fetch_history_warns_when_the_clone_is_shallow(tmp_path, capsys):
     assert "shallow" not in capsys.readouterr().out.lower()
 
 
-SHARED_ONE_COMMIT = {"commits": [{"month": "2019-01", "files": ["a.py"]}],
+SHARED_ONE_COMMIT = {"repo_path": "unused", "commits": [{"month": "2019-01", "files": ["a.py"]}],
                      "bulk_dels": [], "bulk_adds": []}
 
 
@@ -343,9 +343,42 @@ def test_sent_gathers_the_commits_listed_and_the_diffs_shown():
 def test_name_eras_records_the_bulk_change_commits_whose_subjects_it_sent(monkeypatch):
     """coderay-3eu: the survey prompt carries a verbatim line per bulk change
     (hash, date, count, scope, subject), up to twenty of each kind."""
+    # The fabricated hash below isn't a real commit, so a real is_pure_rename
+    # (a `git show`) would fail; this test is about commits_sent tracking, not
+    # rename detection, which has its own dedicated tests below.
+    monkeypatch.setattr(n.gl, "is_pure_rename", lambda repo_path, commit_hash: False)
     _fake_llm(monkeypatch, lambda p: "```json\n" + json.dumps(ERAS) + "\n```")
     big = {"hash": "d" * 40, "date": "2019-02-01", "count": 12, "scope": "core", "subject": "drop", "month": "2019-02"}
     add = {"hash": "a" * 40, "date": "2019-01-01", "count": 30, "scope": "core", "subject": "add", "month": "2019-01"}
-    shared = {"commits": [{"month": "2019-01", "files": ["a.py"]}], "bulk_dels": [big], "bulk_adds": [add]}
+    shared = {"repo_path": "unused", "commits": [{"month": "2019-01", "files": ["a.py"]}],
+              "bulk_dels": [big], "bulk_adds": [add]}
     n.NameEras().run(shared)
     assert shared["survey_commits_sent"] == ["d" * 40, "a" * 40]
+
+
+def test_name_eras_excludes_a_directory_move_disguised_as_a_bulk_deletion(monkeypatch, tmp_path):
+    """coderay-6ts.1. bulk_dels sees a directory move as a plain deletion
+    (bulk_changes runs with --no-renames); Graveyard already filters this via
+    is_pure_rename, but NameEras' survey didn't, so the same move could reach
+    the era-naming prompt described as a real deletion."""
+    old = {f"old/f{i}.py": f"x{i}\n" for i in range(10)}
+    new = {f"new/f{i}.py": f"x{i}\n" for i in range(10)}
+    repo = _repo(tmp_path, [("add", old, []), ("move the directory", new, list(old))])
+    _fake_llm(monkeypatch, lambda p: "```json\n" + json.dumps(ERAS) + "\n```")
+    shared = {"repo_path": repo,
+              "commits": [{"month": "2019-01", "files": ["a.py"]}],
+              "bulk_dels": n.gl.bulk_changes(repo, "D", min_files=5),
+              "bulk_adds": []}
+    n.NameEras().run(shared)
+    assert shared["survey_commits_sent"] == []
+
+
+def test_name_eras_tolerates_an_empty_bulk_dels_list(monkeypatch, tmp_path):
+    """_excluding_pure_renames must not call is_pure_rename (a git subprocess)
+    when there is nothing to filter."""
+    repo = _repo(tmp_path, [("first", {"a.py": "1\n"}, [])])
+    _fake_llm(monkeypatch, lambda p: "```json\n" + json.dumps(ERAS) + "\n```")
+    shared = {"repo_path": repo, "commits": [{"month": "2019-01", "files": ["a.py"]}],
+              "bulk_dels": [], "bulk_adds": []}
+    n.NameEras().run(shared)
+    assert shared["survey_commits_sent"] == []
