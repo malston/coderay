@@ -10,7 +10,7 @@ from crawl.core import OverviewNode
 from crawl.core.render import Section, Theme, esc, md
 from crawl.core.runner import repo_name_of, run_analysis
 from crawl.core.text import codebase_budget_argument
-from .arch_crawl import DEFAULT_MAX_CHARS, _count_note
+from .arch_crawl import DEFAULT_MAX_CHARS, _count_note, manifest_problem_notes
 from .nodes import BuildBundle, Inventory, TechStack, TraceRequest
 
 NAME = "architecture"
@@ -53,18 +53,7 @@ def _footer(shared):
     excluded = found - config_files
     unreadable_config = _count_note(stats.get("config_files_unreadable", 0),
                                     "config file", "{be} unreadable or refused")
-    malformed = _count_note(stats.get("package_json_malformed", 0),
-                            "package.json file", "could not be parsed as JSON")
-    unreadable_package = _count_note(stats.get("package_json_unreadable", 0),
-                                     "package.json file", "{be} unreadable or refused")
-    truncated_package = _count_note(stats.get("package_json_truncated", 0),
-                                    "package.json file", "{be} truncated by the read limit; only what fit was parsed")
-    other_malformed = _count_note(stats.get("manifest_malformed", 0),
-                                  "other manifest file", "could not be parsed")
-    other_unreadable = _count_note(stats.get("manifest_unreadable", 0),
-                                   "other manifest file", "{be} unreadable or refused")
-    other_truncated = _count_note(stats.get("manifest_truncated", 0),
-                                  "other manifest file", "{be} truncated by the read limit; only what fit was parsed")
+    manifest_notes = manifest_problem_notes(stats.get("manifest_problems", {}))
     unreadable_env = _count_note(stats.get("env_files_unreadable", 0),
                                  "env file", "{be} unreadable or refused")
     return (f"Overlaid from {config_files} config files, "
@@ -74,12 +63,7 @@ def _footer(shared):
                f"{'were' if excluded != 1 else 'was'} found but did not reach the bundle "
                "(empty)." if excluded > 0 else "")
             + (f" {unreadable_config}." if unreadable_config else "")
-            + (f" {malformed}." if malformed else "")
-            + (f" {unreadable_package}." if unreadable_package else "")
-            + (f" {truncated_package}." if truncated_package else "")
-            + (f" {other_malformed}." if other_malformed else "")
-            + (f" {other_unreadable}." if other_unreadable else "")
-            + (f" {other_truncated}." if other_truncated else "")
+            + "".join(f" {manifest_note}." for manifest_note in manifest_notes)
             + (f" {unreadable_env}." if unreadable_env else "")
             + (f" SDK import evidence unavailable ({esc(note)}); connections are configured, not proven live." if note else "")
             + (" SDK import evidence was capped; more imports may exist than are shown."

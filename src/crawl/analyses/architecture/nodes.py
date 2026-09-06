@@ -47,18 +47,7 @@ class BuildBundle(Node):
         shared["sdk_import_files"] = stats["sdk_import_files"]
         shared["integration_dirs"] = stats["integration_dirs"]
         excluded = stats.get("config_files_found", stats["config_files"]) - stats["config_files"]
-        malformed = ac._count_note(stats.get("package_json_malformed", 0),
-                                   "package.json file", "could not be parsed as JSON")
-        unreadable_package = ac._count_note(stats.get("package_json_unreadable", 0),
-                                            "package.json file", "{be} unreadable or refused")
-        truncated_package = ac._count_note(stats.get("package_json_truncated", 0),
-                                           "package.json file", "{be} truncated by the read limit; only what fit was parsed")
-        other_malformed = ac._count_note(stats.get("manifest_malformed", 0),
-                                         "other manifest file", "could not be parsed")
-        other_unreadable = ac._count_note(stats.get("manifest_unreadable", 0),
-                                          "other manifest file", "{be} unreadable or refused")
-        other_truncated = ac._count_note(stats.get("manifest_truncated", 0),
-                                         "other manifest file", "{be} truncated by the read limit; only what fit was parsed")
+        manifest_notes = ac.manifest_problem_notes(stats.get("manifest_problems", {}))
         unreadable_env = ac._count_note(stats.get("env_files_unreadable", 0),
                                         "env file", "{be} unreadable or refused")
         unreadable_config = ac._count_note(stats.get("config_files_unreadable", 0),
@@ -66,12 +55,7 @@ class BuildBundle(Node):
         print(f"  Bundle: {stats['config_files']} config files, {stats['env_vars']} env vars, "
               f"{stats['deps']} deps, {stats['integrations']} integrations, {stats['sdk_lines']} SDK imports"
               + (f" ({excluded} more config files found but not in the bundle)" if excluded > 0 else "")
-              + (f" ({malformed})" if malformed else "")
-              + (f" ({unreadable_package})" if unreadable_package else "")
-              + (f" ({truncated_package})" if truncated_package else "")
-              + (f" ({other_malformed})" if other_malformed else "")
-              + (f" ({other_unreadable})" if other_unreadable else "")
-              + (f" ({other_truncated})" if other_truncated else "")
+              + "".join(f" ({note})" for note in manifest_notes)
               + (f" ({unreadable_env})" if unreadable_env else "")
               + (f" ({unreadable_config})" if unreadable_config else "")
               + (" (capped, more exist)" if stats.get("sdk_capped") else "")
