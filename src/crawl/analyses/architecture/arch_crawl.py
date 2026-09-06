@@ -810,7 +810,7 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
     # inside it, or before it starts entirely; without this, the stats line
     # claims imports the LLM never saw (coderay-5wu.8). A character slice can
     # also land mid-entry, so only whole lines that fit entirely within budget
-    # are kept -- a cut filename is not real evidence (PR #70 review).
+    # are kept -- a cut filename is not real evidence.
     if sdk:
         sdk_text_start = sdk_offset + len(sdk_header)
         budget = max_chars - sdk_text_start
