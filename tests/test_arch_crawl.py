@@ -678,7 +678,7 @@ def test_sdk_lines_reflects_only_what_survived_the_budget_slice(tmp_path):
 
 
 def test_sdk_lines_drops_a_partial_line_the_budget_slice_cuts_mid_entry(tmp_path, monkeypatch):
-    """PR #70 review. The budget slice is by character, so max_chars landing
+    """The budget slice is by character, so max_chars landing
     inside an SDK entry left a truncated fragment counted as a whole import
     and its cut filename in sdk_import_files -- a file that was never fully
     disclosed, and never even a real path in the target repo."""
