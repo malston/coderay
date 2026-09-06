@@ -62,7 +62,11 @@ def test_build_bundle_prints_when_a_package_json_was_truncated(tmp_path, capsys)
     repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n",
                             "package.json": json.dumps({"dependencies": huge_deps})})
     n.BuildBundle().run({"repo_path": repo})
-    assert "package.json file was truncated by the read limit" in capsys.readouterr().out
+    # coderay-6ts.12 review. Must match the footer's wording exactly (the
+    # earlier _count_note fix, coderay-6ts.14, exists specifically to stop
+    # these two surfaces drifting apart).
+    assert "package.json file was truncated by the read limit; only what fit was parsed" \
+        in capsys.readouterr().out
 
 
 def test_build_bundle_prints_when_a_pyproject_toml_was_malformed(tmp_path, capsys):

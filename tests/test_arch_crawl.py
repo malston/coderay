@@ -635,6 +635,21 @@ def test_build_bundle_counts_a_go_mod_truncated_mid_require_block(tmp_path):
     assert stats["deps"] > 0   # the partial dict still contributes what it parsed
 
 
+def test_build_bundle_does_not_flag_a_requirements_txt_landing_exactly_on_the_read_limit(tmp_path):
+    """coderay-6ts.12 review. len(text) >= MANIFEST_READ_LIMIT is true for a
+    file that happens to be exactly the limit, not just one _read actually
+    cut -- a false positive distinct from a real truncation."""
+    line = "pkg==1.0.0\n"
+    reps = ac.MANIFEST_READ_LIMIT // len(line)
+    text = line * reps
+    text += "#" * (ac.MANIFEST_READ_LIMIT - len(text))
+    assert len(text) == ac.MANIFEST_READ_LIMIT
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n", "requirements.txt": text})
+    assert len(open(os.path.join(repo, "requirements.txt")).read()) == ac.MANIFEST_READ_LIMIT
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["manifest_truncated"] == 0
+
+
 def test_build_bundle_counts_a_requirements_txt_truncated_mid_line(tmp_path):
     """coderay-6ts.12. requirements.txt is line-based and never raises either."""
     lines = "\n".join(f"pkg-{i}==1.0.0" for i in range(20_000))

@@ -52,13 +52,13 @@ class BuildBundle(Node):
         unreadable_package = ac._count_note(stats.get("package_json_unreadable", 0),
                                             "package.json file", "{be} unreadable or refused")
         truncated_package = ac._count_note(stats.get("package_json_truncated", 0),
-                                           "package.json file", "{be} truncated by the read limit")
+                                           "package.json file", "{be} truncated by the read limit; only what fit was parsed")
         other_malformed = ac._count_note(stats.get("manifest_malformed", 0),
                                          "other manifest file", "could not be parsed")
         other_unreadable = ac._count_note(stats.get("manifest_unreadable", 0),
                                           "other manifest file", "{be} unreadable or refused")
         other_truncated = ac._count_note(stats.get("manifest_truncated", 0),
-                                         "other manifest file", "{be} truncated by the read limit")
+                                         "other manifest file", "{be} truncated by the read limit; only what fit was parsed")
         unreadable_env = ac._count_note(stats.get("env_files_unreadable", 0),
                                         "env file", "{be} unreadable or refused")
         unreadable_config = ac._count_note(stats.get("config_files_unreadable", 0),

@@ -683,10 +683,17 @@ def _read_manifest(full, repo, kind):
     malformed=False, `found`=None, which build_bundle's `if found:` also
     skipped in total silence.
     """
-    text, ok = _read(full, MANIFEST_READ_LIMIT, repo)
+    # Probe one char past the limit: len(text) == MANIFEST_READ_LIMIT is also
+    # what a file that just happens to be exactly that long reads back as, so
+    # comparing against the plain read can't tell that apart from a real cut
+    # (coderay-6ts.12 review). Trimmed back to the limit before parsing, so
+    # parsed content is unaffected.
+    text, ok = _read(full, MANIFEST_READ_LIMIT + 1, repo)
     if not ok:
         return None, True, False, False
-    truncated = len(text) >= MANIFEST_READ_LIMIT
+    truncated = len(text) > MANIFEST_READ_LIMIT
+    if truncated:
+        text = text[:MANIFEST_READ_LIMIT]
     errors = _MANIFEST_PARSE_ERRORS[kind]
     if not errors:
         return MANIFEST_PARSERS[kind](text), False, False, truncated
