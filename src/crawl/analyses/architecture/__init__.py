@@ -10,7 +10,7 @@ from crawl.core import OverviewNode
 from crawl.core.render import Section, Theme, esc, md
 from crawl.core.runner import repo_name_of, run_analysis
 from crawl.core.text import codebase_budget_argument
-from .arch_crawl import DEFAULT_MAX_CHARS
+from .arch_crawl import DEFAULT_MAX_CHARS, _count_note
 from .nodes import BuildBundle, Inventory, TechStack, TraceRequest
 
 NAME = "architecture"
@@ -51,34 +51,30 @@ def _footer(shared):
     config_files = stats.get("config_files", 0)
     found = stats.get("config_files_found", config_files)
     excluded = found - config_files
-    malformed = stats.get("package_json_malformed", 0)
-    unreadable_package = stats.get("package_json_unreadable", 0)
-    other_malformed = stats.get("manifest_malformed", 0)
-    other_unreadable = stats.get("manifest_unreadable", 0)
-    unreadable_env = stats.get("env_files_unreadable", 0)
-    unreadable_config = stats.get("config_files_unreadable", 0)
+    unreadable_config = _count_note(stats.get("config_files_unreadable", 0),
+                                    "config file", "{be} unreadable or refused")
+    malformed = _count_note(stats.get("package_json_malformed", 0),
+                            "package.json file", "could not be parsed as JSON")
+    unreadable_package = _count_note(stats.get("package_json_unreadable", 0),
+                                     "package.json file", "{be} unreadable or refused")
+    other_malformed = _count_note(stats.get("manifest_malformed", 0),
+                                  "other manifest file", "could not be parsed")
+    other_unreadable = _count_note(stats.get("manifest_unreadable", 0),
+                                   "other manifest file", "{be} unreadable or refused")
+    unreadable_env = _count_note(stats.get("env_files_unreadable", 0),
+                                 "env file", "{be} unreadable or refused")
     return (f"Overlaid from {config_files} config files, "
             f"{stats.get('deps', 0)} dependencies, "
             f"{stats.get('integrations', 0)} integrations."
             + (f" {excluded} more config file{'s' if excluded != 1 else ''} "
                f"{'were' if excluded != 1 else 'was'} found but did not reach the bundle "
                "(empty)." if excluded > 0 else "")
-            + (f" {unreadable_config} config file{'s' if unreadable_config != 1 else ''} "
-               f"{'were' if unreadable_config != 1 else 'was'} unreadable or refused."
-               if unreadable_config else "")
-            + (f" {malformed} package.json file{'s' if malformed != 1 else ''} could not be parsed as JSON."
-               if malformed else "")
-            + (f" {unreadable_package} package.json file{'s' if unreadable_package != 1 else ''} "
-               f"{'were' if unreadable_package != 1 else 'was'} unreadable or refused."
-               if unreadable_package else "")
-            + (f" {other_malformed} other manifest file{'s' if other_malformed != 1 else ''} could not be parsed."
-               if other_malformed else "")
-            + (f" {other_unreadable} other manifest file{'s' if other_unreadable != 1 else ''} "
-               f"{'were' if other_unreadable != 1 else 'was'} unreadable or refused."
-               if other_unreadable else "")
-            + (f" {unreadable_env} env file{'s' if unreadable_env != 1 else ''} "
-               f"{'were' if unreadable_env != 1 else 'was'} unreadable or refused."
-               if unreadable_env else "")
+            + (f" {unreadable_config}." if unreadable_config else "")
+            + (f" {malformed}." if malformed else "")
+            + (f" {unreadable_package}." if unreadable_package else "")
+            + (f" {other_malformed}." if other_malformed else "")
+            + (f" {other_unreadable}." if other_unreadable else "")
+            + (f" {unreadable_env}." if unreadable_env else "")
             + (f" SDK import evidence unavailable ({esc(note)}); connections are configured, not proven live." if note else "")
             + (" SDK import evidence was capped; more imports may exist than are shown." if stats.get("sdk_capped") else ""))
 

@@ -42,7 +42,7 @@ def test_build_bundle_prints_when_config_files_were_found_but_not_included(tmp_p
 def test_build_bundle_prints_when_a_package_json_was_malformed(tmp_path, capsys):
     repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n", "package.json": "{not json"})
     n.BuildBundle().run({"repo_path": repo})
-    assert "package.json malformed" in capsys.readouterr().out
+    assert "package.json file could not be parsed as JSON" in capsys.readouterr().out
 
 
 def test_build_bundle_prints_when_a_package_json_was_unreadable(tmp_path, capsys):
@@ -51,13 +51,13 @@ def test_build_bundle_prints_when_a_package_json_was_unreadable(tmp_path, capsys
     repo = _repo(tmp_path / "repo", {"docker-compose.yml": "services: {}\n"})
     os.symlink(outside, os.path.join(repo, "package.json"))
     n.BuildBundle().run({"repo_path": repo})
-    assert "package.json unreadable" in capsys.readouterr().out
+    assert "package.json file was unreadable or refused" in capsys.readouterr().out
 
 
 def test_build_bundle_prints_when_a_pyproject_toml_was_malformed(tmp_path, capsys):
     repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n", "pyproject.toml": "not [ valid toml"})
     n.BuildBundle().run({"repo_path": repo})
-    assert "other manifests malformed" in capsys.readouterr().out
+    assert "other manifest file could not be parsed" in capsys.readouterr().out
 
 
 def test_build_bundle_prints_when_a_go_mod_was_unreadable(tmp_path, capsys):
@@ -66,7 +66,7 @@ def test_build_bundle_prints_when_a_go_mod_was_unreadable(tmp_path, capsys):
     repo = _repo(tmp_path / "repo", {"docker-compose.yml": "services: {}\n"})
     os.symlink(outside, os.path.join(repo, "go.mod"))
     n.BuildBundle().run({"repo_path": repo})
-    assert "other manifests unreadable" in capsys.readouterr().out
+    assert "other manifest file was unreadable or refused" in capsys.readouterr().out
 
 
 def test_build_bundle_prints_when_an_env_file_was_unreadable(tmp_path, capsys):
@@ -75,7 +75,7 @@ def test_build_bundle_prints_when_an_env_file_was_unreadable(tmp_path, capsys):
     repo = _repo(tmp_path / "repo", {"docker-compose.yml": "services: {}\n"})
     os.symlink(outside, os.path.join(repo, ".env"))
     n.BuildBundle().run({"repo_path": repo})
-    assert "env files unreadable" in capsys.readouterr().out
+    assert "env file was unreadable or refused" in capsys.readouterr().out
 
 
 def test_build_bundle_prints_when_a_config_file_was_unreadable(tmp_path, capsys):
@@ -88,7 +88,7 @@ def test_build_bundle_prints_when_a_config_file_was_unreadable(tmp_path, capsys)
                                      "id_rsa": "BEGIN-HUNTER2-PRIVATE-KEY\n"})
     os.symlink(os.path.join(repo, "id_rsa"), os.path.join(repo, "docker-compose.yml"))
     n.BuildBundle().run({"repo_path": repo})
-    assert "config files unreadable" in capsys.readouterr().out
+    assert "config file was unreadable or refused" in capsys.readouterr().out
 
 
 def test_build_bundle_prints_when_sdk_imports_were_capped(tmp_path, capsys, monkeypatch):
