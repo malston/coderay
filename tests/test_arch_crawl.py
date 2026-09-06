@@ -494,7 +494,8 @@ def test_build_bundle_overlays_the_four_sources_and_counts_them(tmp_path):
     bundle, stats = ac.build_bundle(repo)
 
     assert stats == {"config_files": 4, "config_files_found": 4, "package_json_malformed": 0,
-                     "package_json_unreadable": 0, "manifest_unreadable": 0, "manifest_malformed": 0,
+                     "package_json_unreadable": 0, "package_json_truncated": 0,
+                     "manifest_unreadable": 0, "manifest_malformed": 0, "manifest_truncated": 0,
                      "env_files_unreadable": 0, "config_files_unreadable": 0,
                      "truncated": False,
                      "env_vars": 2, "deps": 2, "integrations": 0, "sdk_lines": 0,
@@ -610,6 +611,43 @@ def test_build_bundle_does_not_count_a_package_json_truncated_by_its_own_read_li
     assert len(open(os.path.join(repo, "package.json")).read()) > 200_000
     _bundle, stats = ac.build_bundle(repo)
     assert stats["package_json_malformed"] == 0
+    # coderay-6ts.12 review. A truncated manifest that then fails to parse
+    # returned unreadable=False, malformed=False, found=None -- invisible in
+    # every stat, the same silent-collapse class this bead covers.
+    assert stats["package_json_truncated"] == 1
+
+
+def test_build_bundle_counts_a_go_mod_truncated_mid_require_block(tmp_path):
+    """coderay-6ts.12. go.mod's parser is regex-based and never raises, so a
+    require block cut by MANIFEST_READ_LIMIT previously parsed to a partial-
+    but-plausible dependency dict with zero signal anywhere that it was cut."""
+    lines = "\n".join(f'\tgithub.com/pkg/dep{i} v1.{i}.0' for i in range(15_000))
+    text = f"module example.com/app\n\nrequire (\n{lines}\n)\n"
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services: {}\n",
+        "go.mod": text,
+    })
+    assert len(open(os.path.join(repo, "go.mod")).read()) > 200_000
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["manifest_unreadable"] == 0
+    assert stats["manifest_malformed"] == 0
+    assert stats["manifest_truncated"] == 1
+    assert stats["deps"] > 0   # the partial dict still contributes what it parsed
+
+
+def test_build_bundle_counts_a_requirements_txt_truncated_mid_line(tmp_path):
+    """coderay-6ts.12. requirements.txt is line-based and never raises either."""
+    lines = "\n".join(f"pkg-{i}==1.0.0" for i in range(20_000))
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services: {}\n",
+        "requirements.txt": lines,
+    })
+    assert len(open(os.path.join(repo, "requirements.txt")).read()) > 200_000
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["manifest_unreadable"] == 0
+    assert stats["manifest_malformed"] == 0
+    assert stats["manifest_truncated"] == 1
+    assert stats["deps"] > 0
 
 
 def test_build_bundle_lists_the_integration_directories(tmp_path):

@@ -54,6 +54,17 @@ def test_build_bundle_prints_when_a_package_json_was_unreadable(tmp_path, capsys
     assert "package.json file was unreadable or refused" in capsys.readouterr().out
 
 
+def test_build_bundle_prints_when_a_package_json_was_truncated(tmp_path, capsys):
+    """coderay-6ts.12. Give the truncated case the same console signal every
+    other manifest problem gets."""
+    import json
+    huge_deps = {f"pkg-{i}": "^1.0.0" for i in range(20_000)}
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n",
+                            "package.json": json.dumps({"dependencies": huge_deps})})
+    n.BuildBundle().run({"repo_path": repo})
+    assert "package.json file was truncated by the read limit" in capsys.readouterr().out
+
+
 def test_build_bundle_prints_when_a_pyproject_toml_was_malformed(tmp_path, capsys):
     repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n", "pyproject.toml": "not [ valid toml"})
     n.BuildBundle().run({"repo_path": repo})
