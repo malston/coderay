@@ -591,6 +591,8 @@ def _parse_pyproject(text):
     dependencies = project.get('dependencies')
     if isinstance(dependencies, list):
         for spec in dependencies:
+            if not isinstance(spec, str):
+                continue   # a bare number or inline table: not a spec _parse_pep508 can strip()
             parsed = _parse_pep508(spec)
             if parsed:
                 deps[parsed[0]] = parsed[1]
@@ -599,6 +601,8 @@ def _parse_pyproject(text):
         for group in optional.values():
             if isinstance(group, list):
                 for spec in group:
+                    if not isinstance(spec, str):
+                        continue
                     parsed = _parse_pep508(spec)
                     if parsed:
                         deps[parsed[0]] = parsed[1]

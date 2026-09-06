@@ -1060,6 +1060,21 @@ def test_parse_pyproject_ignores_poetry_only_tables():
     assert ac._parse_pyproject(text) == {}
 
 
+def test_parse_pyproject_skips_a_non_string_dependency_entry_instead_of_crashing():
+    """coderay-6ts.15. A dependency array can hold a non-string element
+    (a bare number, an inline table) and still parse fine under tomllib; only
+    _parse_pep508's own spec.strip() raised, escaping _MANIFEST_PARSE_ERRORS'
+    narrower catch and aborting the whole architecture run instead of just
+    skipping the malformed entry. Same hole in the optional-dependencies loop."""
+    text = (
+        '[project]\nname = "app"\n'
+        'dependencies = [42, "requests>=2.0"]\n'
+        '[project.optional-dependencies]\n'
+        'dev = [{ foo = "bar" }, "pytest==8.0"]\n'
+    )
+    assert ac._parse_pyproject(text) == {"requests": ">=2.0", "pytest": "==8.0"}
+
+
 def test_parse_requirements_drops_pip_compile_hash_flags_and_continuations():
     """coderay-5wu.18 review. `pip-compile --generate-hashes` output trails
     each pin with a backslash continuation and one or more --hash flags;
@@ -1120,6 +1135,20 @@ def test_build_bundle_tolerates_a_malformed_pyproject_toml(tmp_path):
     _bundle, stats = ac.build_bundle(repo)
     assert stats["deps"] == 0
     assert stats["manifest_malformed"] == 1
+
+
+def test_build_bundle_tolerates_a_non_string_pyproject_dependency_entry(tmp_path):
+    """coderay-6ts.15. Valid TOML, valid manifest -- only one dependency entry
+    is the wrong shape. build_bundle must not abort the whole run over it, and
+    the manifest itself is well-formed, not `manifest_malformed`."""
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services: {}\n",
+        "pyproject.toml": '[project]\nname = "app"\ndependencies = [42, "stripe>=5.0"]\n',
+    })
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["deps"] == 1
+    assert stats["manifest_malformed"] == 0
+    assert "stripe @ >=5.0" in _bundle
 
 
 def test_build_bundle_counts_a_refused_go_mod_as_unreadable(tmp_path):
