@@ -1060,6 +1060,21 @@ def test_parse_pyproject_ignores_poetry_only_tables():
     assert ac._parse_pyproject(text) == {}
 
 
+def test_parse_pyproject_skips_a_non_string_dependency_entry_instead_of_crashing():
+    """coderay-6ts.15. A dependency array can hold a non-string element
+    (a bare number, an inline table) and still parse fine under tomllib; only
+    _parse_pep508's own spec.strip() raised, escaping _MANIFEST_PARSE_ERRORS'
+    narrower catch and aborting the whole architecture run instead of just
+    skipping the malformed entry. Same hole in the optional-dependencies loop."""
+    text = (
+        '[project]\nname = "app"\n'
+        'dependencies = [42, "requests>=2.0"]\n'
+        '[project.optional-dependencies]\n'
+        'dev = [{ foo = "bar" }, "pytest==8.0"]\n'
+    )
+    assert ac._parse_pyproject(text) == {"requests": ">=2.0", "pytest": "==8.0"}
+
+
 def test_parse_requirements_drops_pip_compile_hash_flags_and_continuations():
     """coderay-5wu.18 review. `pip-compile --generate-hashes` output trails
     each pin with a backslash continuation and one or more --hash flags;
