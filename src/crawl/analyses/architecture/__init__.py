@@ -56,12 +56,16 @@ def _footer(shared):
     other_malformed = stats.get("manifest_malformed", 0)
     other_unreadable = stats.get("manifest_unreadable", 0)
     unreadable_env = stats.get("env_files_unreadable", 0)
+    unreadable_config = stats.get("config_files_unreadable", 0)
     return (f"Overlaid from {config_files} config files, "
             f"{stats.get('deps', 0)} dependencies, "
             f"{stats.get('integrations', 0)} integrations."
             + (f" {excluded} more config file{'s' if excluded != 1 else ''} "
                f"{'were' if excluded != 1 else 'was'} found but did not reach the bundle "
-               "(empty, unreadable, or refused)." if excluded > 0 else "")
+               "(empty)." if excluded > 0 else "")
+            + (f" {unreadable_config} config file{'s' if unreadable_config != 1 else ''} "
+               f"{'were' if unreadable_config != 1 else 'was'} unreadable or refused."
+               if unreadable_config else "")
             + (f" {malformed} package.json file{'s' if malformed != 1 else ''} could not be parsed as JSON."
                if malformed else "")
             + (f" {unreadable_package} package.json file{'s' if unreadable_package != 1 else ''} "

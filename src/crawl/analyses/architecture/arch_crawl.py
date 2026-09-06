@@ -701,6 +701,7 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
     package_json_malformed = 0
     manifest_unreadable = 0   # go.mod / pyproject.toml / requirements.txt combined
     manifest_malformed = 0    # pyproject.toml only -- go.mod and requirements.txt never raise
+    config_files_unreadable = 0   # compose / k8s / gateway / iac buckets
     for dirpath, _dn, filenames in _walk(repo):
         for f in filenames:
             rel = os.path.relpath(os.path.join(dirpath, f), repo)
@@ -738,7 +739,10 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
                     deps.update(found)
                     manifest_files.append(rel)
             else:
-                text, _ok = _read(full, repo=repo)
+                text, ok = _read(full, repo=repo)
+                if not ok:
+                    config_files_unreadable += 1
+                    continue
                 buckets[kind].append((rel, _redact(text)))
 
     parts = []          # (files this section discloses, text)
@@ -833,6 +837,7 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
         "manifest_unreadable": manifest_unreadable,
         "manifest_malformed": manifest_malformed,
         "env_files_unreadable": env_files_unreadable,
+        "config_files_unreadable": config_files_unreadable,
         "truncated": len(whole) > max_chars,
         "env_vars": len(env_names),
         "deps": len(deps),
