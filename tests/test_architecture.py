@@ -4,6 +4,7 @@ import os
 import pytest
 
 from crawl.analyses import ANALYSES, architecture
+from budget_cli import BAD_BUDGET_VALUES, assert_rejects_bad_budget, assert_rejects_bad_budget_env, parse_with_budget
 
 
 def test_architecture_is_registered():
@@ -46,13 +47,7 @@ def test_init_shared_carries_the_repo_path_and_budget():
 # coderay-mlb: the codebase budget is settable from the command line and the
 # environment, like tour's.
 def _parse(argv, monkeypatch, env=None):
-    monkeypatch.delenv("CODEBASE_BUDGET", raising=False)
-    if env is not None:
-        monkeypatch.setenv("CODEBASE_BUDGET", env)
-    parser = argparse.ArgumentParser(prog="crawl architecture")
-    parser.add_argument("repo_path")
-    architecture.add_arguments(parser)
-    return parser.parse_args(["repo", *argv])
+    return parse_with_budget(architecture.add_arguments, "crawl architecture", argv, monkeypatch, env)
 
 
 def test_codebase_budget_defaults_to_the_architecture_constant(monkeypatch):
@@ -62,20 +57,13 @@ def test_codebase_budget_defaults_to_the_architecture_constant(monkeypatch):
     assert architecture.init_shared(args)["codebase_budget"] == DEFAULT_MAX_CHARS
 
 
-@pytest.mark.parametrize("bad", ["abc", "1.5", "0", "-7"])
+@pytest.mark.parametrize("bad", BAD_BUDGET_VALUES)
 def test_codebase_budget_rejects_a_bad_value_at_parse_time(monkeypatch, capsys, bad):
-    with pytest.raises(SystemExit) as e:
-        _parse(["--codebase-budget", bad], monkeypatch)
-    assert e.value.code == 2
-    err = capsys.readouterr().err
-    assert "--codebase-budget" in err and "CODEBASE_BUDGET" in err and repr(bad) in err
+    assert_rejects_bad_budget(architecture.add_arguments, "crawl architecture", monkeypatch, capsys, bad)
 
 
 def test_codebase_budget_rejects_a_bad_env_value_at_parse_time(monkeypatch, capsys):
-    with pytest.raises(SystemExit) as e:
-        _parse([], monkeypatch, env="lots")
-    assert e.value.code == 2
-    assert "CODEBASE_BUDGET" in capsys.readouterr().err
+    assert_rejects_bad_budget_env(architecture.add_arguments, "crawl architecture", monkeypatch, capsys)
 
 
 def test_build_bundle_prep_reads_the_budget_from_shared():
