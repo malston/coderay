@@ -3,6 +3,7 @@ import argparse
 import pytest
 
 from crawl.analyses import ANALYSES, schema
+from budget_cli import BAD_BUDGET_VALUES, assert_rejects_bad_budget, assert_rejects_bad_budget_env, parse_with_budget
 
 
 def test_schema_is_registered():
@@ -39,26 +40,71 @@ def test_the_migration_section_renders_a_note_rather_than_vanishing():
     assert "only 2 migrations found" in migration.md_skip_note({"migration_names": ["a", "b"]})
 
 
-def test_add_arguments_adds_the_schema_override_flag():
-    """The only analysis with a flag of its own."""
+def test_add_arguments_adds_the_schema_override_and_budget_flags():
     parser = argparse.ArgumentParser()
     parser.add_argument("repo_path")
     parser.add_argument("--out", default=None)
     schema.add_arguments(parser)
     args = parser.parse_args(["/tmp/repo", "--schema", "db/schema.rb"])
     assert args.schema == "db/schema.rb"
+    assert args.codebase_budget == schema.SCHEMA_BUDGET
 
 
 def test_init_shared_carries_the_repo_path_and_the_override():
-    args = argparse.Namespace(repo_path="/tmp/toy_repo", out=None, schema="db/schema.rb")
+    args = argparse.Namespace(repo_path="/tmp/toy_repo", out=None, schema="db/schema.rb",
+                              codebase_budget=600_000)
     assert schema.init_shared(args) == {"repo_path": "/tmp/toy_repo",
-                                        "schema_override": "db/schema.rb"}
+                                        "schema_override": "db/schema.rb",
+                                        "codebase_budget": 600_000}
 
 
 def test_init_shared_tolerates_an_args_without_the_flag():
     """run_analysis is shared, and other callers build args without --schema."""
-    args = argparse.Namespace(repo_path="/tmp/toy_repo", out=None)
+    args = argparse.Namespace(repo_path="/tmp/toy_repo", out=None, codebase_budget=600_000)
     assert schema.init_shared(args)["schema_override"] is None
+
+
+# coderay-mlb: the codebase budget is settable from the command line and the
+# environment, like tour's.
+def _parse(argv, monkeypatch, env=None):
+    return parse_with_budget(schema.add_arguments, "crawl schema", argv, monkeypatch, env)
+
+
+def test_codebase_budget_defaults_to_the_schema_constant(monkeypatch):
+    args = _parse([], monkeypatch)
+    assert args.codebase_budget == schema.SCHEMA_BUDGET
+    assert schema.init_shared(args)["codebase_budget"] == schema.SCHEMA_BUDGET
+
+
+@pytest.mark.parametrize("bad", BAD_BUDGET_VALUES)
+def test_codebase_budget_rejects_a_bad_value_at_parse_time(monkeypatch, capsys, bad):
+    assert_rejects_bad_budget(schema.add_arguments, "crawl schema", monkeypatch, capsys, bad)
+
+
+def test_codebase_budget_rejects_a_bad_env_value_at_parse_time(monkeypatch, capsys):
+    assert_rejects_bad_budget_env(schema.add_arguments, "crawl schema", monkeypatch, capsys)
+
+
+def test_find_schema_prep_reads_the_budget_from_shared():
+    from crawl.analyses.schema.nodes import FindSchema
+    node = FindSchema()
+    assert node.prep({"repo_path": "/tmp/x", "codebase_budget": 4242}) == ("/tmp/x", None, 4242)
+    assert node.prep({"repo_path": "/tmp/x"}) == ("/tmp/x", None, schema.SCHEMA_BUDGET)
+
+
+def test_find_schema_exec_hands_the_budget_to_find_schema(monkeypatch):
+    import crawl.analyses.schema.nodes as schema_nodes
+    from crawl.analyses.schema.nodes import FindSchema
+    seen = {}
+
+    def fake_find_schema(repo, override, budget):
+        seen["repo"], seen["override"], seen["budget"] = repo, override, budget
+        return {"kind": None, "path": None, "files": [], "text": "x"}
+
+    monkeypatch.setattr(schema_nodes.sf, "find_schema", fake_find_schema)
+    monkeypatch.setattr(schema_nodes.sf, "find_migrations", lambda repo: (None, []))
+    FindSchema().exec(("/tmp/x", None, 4242))
+    assert seen == {"repo": "/tmp/x", "override": None, "budget": 4242}
 
 
 def test_build_flow_starts_at_find_schema():

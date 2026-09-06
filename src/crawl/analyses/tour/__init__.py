@@ -1,13 +1,12 @@
 """tour: the default analysis. Crawls a repo, extracts a deterministic import
 graph, identifies abstractions, relates them, and writes a multi-chapter tour."""
-import argparse
 import os
 import time
 from datetime import date
 
 from crawl.core import ensure_priced, get_usage, reset_usage, resolve_provider_and_model
 from crawl.core.env import env_defaults
-from crawl.core.text import positive_int
+from crawl.core.text import codebase_budget_argument
 from crawl.core.runner import keeping_results, run_flow, run_state_writer, write_manifest
 from crawl.analyses.tour.flow import create_tour_flow
 from crawl.analyses.tour.nodes import CODEBASE_BUDGET, PipelineState
@@ -28,26 +27,10 @@ NAME = "tour"
 def build_flow():
     return create_tour_flow()
 
-def _budget(value):
-    """A positive whole number of characters. argparse runs this over a string
-    default too, so a bad CODEBASE_BUDGET in the environment fails at parse
-    time with the same message as a bad flag."""
-    try:
-        return positive_int(value)
-    except ValueError as e:
-        raise argparse.ArgumentTypeError(
-            f"{e} of characters (--codebase-budget or the CODEBASE_BUDGET environment variable)") from None
-
-
 def add_arguments(parser) -> None:
     parser.add_argument("--instructions", default="beginner-tutorial", choices=available_lenses())
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument(
-        "--codebase-budget", type=_budget,
-        default=os.environ.get("CODEBASE_BUDGET") or str(CODEBASE_BUDGET),
-        help="characters of selected source sent to the model; caps how many whole "
-             "files are included, never how much of each. Default: the CODEBASE_BUDGET "
-             f"environment variable, else {CODEBASE_BUDGET:,}")
+    parser.add_argument("--codebase-budget", **codebase_budget_argument(CODEBASE_BUDGET))
 
 # A chapter can run past the 16384-token default on a large abstraction
 # (coderay-q2r.46); backend raises its cap the same way.

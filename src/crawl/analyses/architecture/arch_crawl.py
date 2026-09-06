@@ -684,7 +684,10 @@ def _read_manifest(full, repo, kind):
         return None, False, True
 
 
-def build_bundle(repo, max_chars=500_000):
+DEFAULT_MAX_CHARS = 500_000
+
+
+def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
     """Return (bundle_text, stats)."""
     buckets = {k: [] for k in ('compose', 'k8s', 'gateway', 'iac')}
     env_names, deps = set(), {}

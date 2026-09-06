@@ -3,6 +3,8 @@
 Lives apart from the renderer so the LLM layer can use it in its own error
 messages without importing the renderer, which imports the LLM layer.
 """
+import argparse
+import os
 import unicodedata
 
 
@@ -30,3 +32,24 @@ def positive_int(raw):
     if n <= 0:
         raise ValueError(f"{raw!r} is not a positive whole number")
     return n
+
+
+def codebase_budget_argument(default):
+    """Keyword arguments for an analysis's --codebase-budget flag: a positive
+    whole number of characters, defaulting to the CODEBASE_BUDGET environment
+    variable, else `default`. argparse runs the type callable over a string
+    default too, so a bad CODEBASE_BUDGET in the environment fails at parse
+    time with the same message as a bad flag."""
+    def _type(value):
+        try:
+            return positive_int(value)
+        except ValueError as e:
+            raise argparse.ArgumentTypeError(
+                f"{e} of characters (--codebase-budget or the CODEBASE_BUDGET "
+                "environment variable)") from None
+    return {
+        "type": _type,
+        "default": os.environ.get("CODEBASE_BUDGET") or str(default),
+        "help": ("characters of selected source sent to the model. Default: the "
+                  f"CODEBASE_BUDGET environment variable, else {default:,}"),
+    }

@@ -29,7 +29,10 @@ def load_prompt(name):
     return read_prompt(PROMPTS_DIR, name)
 
 
-def bundle(repo, include=None, exclude=None, max_chars=650_000):
+DEFAULT_MAX_CHARS = 650_000
+
+
+def bundle(repo, include=None, exclude=None, max_chars=DEFAULT_MAX_CHARS):
     """Every kept file, whole, with a header, until the budget is spent.
 
     The port source concatenated the entire repo with no cap (coderay-q2r.47).
@@ -60,10 +63,12 @@ class FetchRepo(Node):
             "repo_path": shared["repo_path"],
             "include": shared.get("include") or None,
             "exclude": shared.get("exclude") or None,
+            "codebase_budget": shared.get("codebase_budget", DEFAULT_MAX_CHARS),
         }
 
     def exec(self, ctx):
-        return bundle(ctx["repo_path"], include=ctx["include"], exclude=ctx["exclude"])
+        return bundle(ctx["repo_path"], include=ctx["include"], exclude=ctx["exclude"],
+                      max_chars=ctx["codebase_budget"])
 
     def post(self, shared, prep_res, exec_res):
         codebase, stats = exec_res

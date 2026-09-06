@@ -24,10 +24,11 @@ def load_prompt(name):
 
 class BuildBundle(Node):
     def prep(self, shared):
-        return shared["repo_path"]
+        return shared["repo_path"], shared.get("codebase_budget", bc.DEFAULT_MAX_CHARS)
 
-    def exec(self, repo):
-        return bc.build_bundle(repo)
+    def exec(self, ctx):
+        repo, budget = ctx
+        return bc.build_bundle(repo, max_chars=budget)
 
     def post(self, shared, prep_res, exec_res):
         bundle, stats = exec_res

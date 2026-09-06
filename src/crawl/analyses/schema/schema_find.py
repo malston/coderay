@@ -57,15 +57,15 @@ def embedded_sql(go_text):
     return "\n".join(lit.strip() for lit in string_literals(go_text) if _DDL_STATEMENT.match(lit))
 
 
-def _join_within_budget(blocks, marker):
-    """Concatenate (rel, text) blocks under SCHEMA_BUDGET, whole blocks and fewer
-    of them rather than shorter ones (coderay-q2r.29); `marker` is the target
+def _join_within_budget(blocks, marker, budget=SCHEMA_BUDGET):
+    """Concatenate (rel, text) blocks under `budget`, whole blocks and fewer of
+    them rather than shorter ones (coderay-q2r.29); `marker` is the target
     language's comment lead so the model reads the header as a comment.
     Returns (text, kept_rels)."""
     parts, total, kept = [], 0, []
     for rel, text in blocks[:MAX_SCHEMA_FILES]:
         block = f"{marker} ===== {rel} =====\n{text}"
-        if total + len(block) > SCHEMA_BUDGET and parts:
+        if total + len(block) > budget and parts:
             break
         parts.append(block)
         total += len(block)
@@ -101,16 +101,17 @@ def _one_file(kind, repo, path, text):
     return {"kind": kind, "path": rel, "files": [rel], "text": text}
 
 
-def find_schema(repo, override=None):
+def find_schema(repo, override=None, budget=SCHEMA_BUDGET):
     """Return {kind, path, files, text}: `path` names the schema for a reader (a
     sentence for the models and embedded-SQL cases), `files` lists what was
-    read for the manifest. `override` forces a specific file."""
+    read for the manifest. `override` forces a specific file. `budget` caps the
+    text in characters."""
     if override:
         # No containment check: --schema is the user pointing at their own file,
         # and an absolute path is an advertised feature of the flag. Unlike a
         # path the crawl or the model produced, this one is not untrusted input.
         p = override if os.path.isabs(override) else os.path.join(repo, override)
-        return _one_file("override", repo, p, _read(p, limit=SCHEMA_BUDGET))
+        return _one_file("override", repo, p, _read(p, limit=budget))
 
     prisma, rails, sql, models, go_files = [], [], [], [], []
     for dirpath, _dirnames, filenames in _walk(repo):
@@ -130,18 +131,18 @@ def find_schema(repo, override=None):
     if prisma:
         # Prefer the largest schema.prisma (the app's, not a package fixture).
         path = max(prisma, key=lambda p: os.path.getsize(p))
-        return _one_file("prisma", repo, path, _read(path, repo, SCHEMA_BUDGET))
+        return _one_file("prisma", repo, path, _read(path, repo, budget))
     if rails:
         path = rails[0]
-        return _one_file("rails", repo, path, _read(path, repo, SCHEMA_BUDGET))
+        return _one_file("rails", repo, path, _read(path, repo, budget))
     if sql:
         path = max(sql, key=lambda p: os.path.getsize(p))
-        return _one_file("sql", repo, path, _read(path, repo, SCHEMA_BUDGET))
+        return _one_file("sql", repo, path, _read(path, repo, budget))
     if models:
         # No single-file schema: concatenate the model files (Django/SQLAlchemy).
         models = sorted(models, key=lambda p: os.path.getsize(p), reverse=True)
         text, kept = _join_within_budget(
-            [(os.path.relpath(m, repo), _read(m, repo, SCHEMA_BUDGET)) for m in models], "#")
+            [(os.path.relpath(m, repo), _read(m, repo, budget)) for m in models], "#", budget)
         note = "" if len(kept) == len(models) else f" of {len(models)} found"
         return {"kind": "models", "path": f"{len(kept)} models.py files{note}", "files": kept, "text": text}
 
@@ -166,7 +167,8 @@ def find_schema(repo, override=None):
         # The file creating the most tables first; a file of ALTERs follows,
         # since the columns it adds are part of the schema too.
         embedded.sort(key=lambda e: (-e[0], e[1]))
-        text, kept = _join_within_budget([(os.path.relpath(full, repo), ddl) for _c, full, ddl in embedded], "--")
+        text, kept = _join_within_budget(
+            [(os.path.relpath(full, repo), ddl) for _c, full, ddl in embedded], "--", budget)
         note = "" if len(kept) == len(embedded) else f" of {len(embedded)} found"
         return {"kind": "embedded-sql",
                 "path": f"{len(kept)} Go file{'s' if len(kept) != 1 else ''} with embedded SQL ({', '.join(kept)}){note}",

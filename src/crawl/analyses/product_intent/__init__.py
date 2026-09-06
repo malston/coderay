@@ -5,7 +5,9 @@ import sys
 from pocketflow import Flow
 
 from crawl.core.runner import run_analysis
-from .nodes import FetchRepo, PainScene, VariantSentence, CompetitivePositioning, SurprisesAndAbsences
+from crawl.core.text import codebase_budget_argument
+from .nodes import (DEFAULT_MAX_CHARS, FetchRepo, PainScene, VariantSentence,
+                    CompetitivePositioning, SurprisesAndAbsences)
 # This analysis hand-builds its page from structured data, so it keeps its own
 # renderer; crawl.core.render defers to these.
 from .render import render_html, render_markdown  # noqa: F401
@@ -23,6 +25,7 @@ def add_arguments(parser):
     parser.add_argument("--exclude", action="append", default=[],
                         help=".gitignore-style pattern: drop matching paths. "
                              "Repeatable.")
+    parser.add_argument("--codebase-budget", **codebase_budget_argument(DEFAULT_MAX_CHARS))
 
 def sent(shared):
     """What left the machine: every source file the bundle carried whole (coderay-3eu)."""
@@ -34,6 +37,7 @@ def init_shared(args):
         "repo_path": args.repo_path,
         "include": list(getattr(args, "include", []) or []),
         "exclude": list(getattr(args, "exclude", []) or []),
+        "codebase_budget": args.codebase_budget,
     }
 
 def build_flow():

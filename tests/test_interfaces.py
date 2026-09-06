@@ -4,6 +4,7 @@ import os
 import pytest
 
 from crawl.analyses import ANALYSES, interfaces
+from budget_cli import BAD_BUDGET_VALUES, assert_rejects_bad_budget, assert_rejects_bad_budget_env, parse_with_budget
 
 
 def test_interfaces_is_registered():
@@ -63,18 +64,62 @@ def test_interfaces_raises_more_output_tokens():
     assert interfaces.ENV_DEFAULTS == {"LLM_MAX_OUTPUT_TOKENS": "32768"}
 
 
-def test_add_arguments_adds_no_flags_of_its_own():
+def test_add_arguments_adds_only_codebase_budget():
     parser = argparse.ArgumentParser()
     parser.add_argument("repo_path")
     parser.add_argument("--out", default=None)
     before = {a.dest for a in parser._actions}
     interfaces.add_arguments(parser)
-    assert {a.dest for a in parser._actions} == before
+    assert {a.dest for a in parser._actions} - before == {"codebase_budget"}
 
 
-def test_init_shared_carries_the_repo_path():
-    args = argparse.Namespace(repo_path="/tmp/toy_repo", out=None)
-    assert interfaces.init_shared(args) == {"repo_path": "/tmp/toy_repo"}
+def test_init_shared_carries_the_repo_path_and_budget():
+    args = argparse.Namespace(repo_path="/tmp/toy_repo", out=None, codebase_budget=900_000)
+    assert interfaces.init_shared(args) == {"repo_path": "/tmp/toy_repo", "codebase_budget": 900_000}
+
+
+# coderay-mlb: the codebase budget is settable from the command line and the
+# environment, like tour's.
+def _parse(argv, monkeypatch, env=None):
+    return parse_with_budget(interfaces.add_arguments, "crawl interfaces", argv, monkeypatch, env)
+
+
+def test_codebase_budget_defaults_to_the_interfaces_constant(monkeypatch):
+    from crawl.analyses.interfaces.routes_find import DEFAULT_MAX_CHARS
+    args = _parse([], monkeypatch)
+    assert args.codebase_budget == DEFAULT_MAX_CHARS
+    assert interfaces.init_shared(args)["codebase_budget"] == DEFAULT_MAX_CHARS
+
+
+@pytest.mark.parametrize("bad", BAD_BUDGET_VALUES)
+def test_codebase_budget_rejects_a_bad_value_at_parse_time(monkeypatch, capsys, bad):
+    assert_rejects_bad_budget(interfaces.add_arguments, "crawl interfaces", monkeypatch, capsys, bad)
+
+
+def test_codebase_budget_rejects_a_bad_env_value_at_parse_time(monkeypatch, capsys):
+    assert_rejects_bad_budget_env(interfaces.add_arguments, "crawl interfaces", monkeypatch, capsys)
+
+
+def test_find_routes_prep_reads_the_budget_from_shared():
+    from crawl.analyses.interfaces.routes_find import DEFAULT_MAX_CHARS
+    from crawl.analyses.interfaces.nodes import FindRoutes
+    node = FindRoutes()
+    assert node.prep({"repo_path": "/tmp/x", "codebase_budget": 4242}) == ("/tmp/x", 4242)
+    assert node.prep({"repo_path": "/tmp/x"}) == ("/tmp/x", DEFAULT_MAX_CHARS)
+
+
+def test_find_routes_exec_hands_the_budget_to_crawl_routes(monkeypatch):
+    import crawl.analyses.interfaces.nodes as interfaces_nodes
+    from crawl.analyses.interfaces.nodes import FindRoutes
+    seen = {}
+
+    def fake_crawl_routes(repo, max_chars):
+        seen["repo"], seen["max_chars"] = repo, max_chars
+        return "routes", [], []
+
+    monkeypatch.setattr(interfaces_nodes.rf, "crawl_routes", fake_crawl_routes)
+    FindRoutes().exec(("/tmp/x", 4242))
+    assert seen == {"repo": "/tmp/x", "max_chars": 4242}
 
 
 def test_build_flow_starts_at_find_routes():

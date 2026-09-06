@@ -5,6 +5,7 @@ import pytest
 
 from crawl.analyses import ANALYSES
 from crawl.analyses import backend
+from budget_cli import BAD_BUDGET_VALUES, assert_rejects_bad_budget, assert_rejects_bad_budget_env, parse_with_budget
 
 def test_backend_is_registered():
     assert ANALYSES["backend"] is backend
@@ -23,17 +24,63 @@ def test_backend_declares_the_card_family_contract():
 def test_backend_raises_more_output_tokens():
     assert backend.ENV_DEFAULTS == {"LLM_MAX_OUTPUT_TOKENS": "32768"}
 
-def test_add_arguments_adds_no_flags_of_its_own():
+def test_add_arguments_adds_only_codebase_budget():
     parser = argparse.ArgumentParser()
     parser.add_argument("repo_path")
     parser.add_argument("--out", default=None)
     before = {a.dest for a in parser._actions}
     backend.add_arguments(parser)
-    assert {a.dest for a in parser._actions} == before
+    assert {a.dest for a in parser._actions} - before == {"codebase_budget"}
 
-def test_init_shared_carries_the_repo_path():
-    args = argparse.Namespace(repo_path="/tmp/toy_repo", out=None)
-    assert backend.init_shared(args) == {"repo_path": "/tmp/toy_repo"}
+def test_init_shared_carries_the_repo_path_and_budget():
+    args = argparse.Namespace(repo_path="/tmp/toy_repo", out=None, codebase_budget=650_000)
+    assert backend.init_shared(args) == {"repo_path": "/tmp/toy_repo", "codebase_budget": 650_000}
+
+
+# coderay-mlb: the codebase budget is settable from the command line and the
+# environment, like tour's.
+def _parse(argv, monkeypatch, env=None):
+    return parse_with_budget(backend.add_arguments, "crawl backend", argv, monkeypatch, env)
+
+
+def test_codebase_budget_defaults_to_the_backend_constant(monkeypatch):
+    from crawl.analyses.backend.backend_crawl import DEFAULT_MAX_CHARS
+    args = _parse([], monkeypatch)
+    assert args.codebase_budget == DEFAULT_MAX_CHARS
+    assert backend.init_shared(args)["codebase_budget"] == DEFAULT_MAX_CHARS
+
+
+@pytest.mark.parametrize("bad", BAD_BUDGET_VALUES)
+def test_codebase_budget_rejects_a_bad_value_at_parse_time(monkeypatch, capsys, bad):
+    assert_rejects_bad_budget(backend.add_arguments, "crawl backend", monkeypatch, capsys, bad)
+
+
+def test_codebase_budget_rejects_a_bad_env_value_at_parse_time(monkeypatch, capsys):
+    assert_rejects_bad_budget_env(backend.add_arguments, "crawl backend", monkeypatch, capsys)
+
+
+def test_build_bundle_prep_reads_the_budget_from_shared():
+    from crawl.analyses.backend.backend_crawl import DEFAULT_MAX_CHARS
+    from crawl.analyses.backend.nodes import BuildBundle
+    node = BuildBundle()
+    assert node.prep({"repo_path": "/tmp/x", "codebase_budget": 4242}) == ("/tmp/x", 4242)
+    # A shared dict built without going through init_shared (as unit tests do)
+    # still gets the crawl module's own default.
+    assert node.prep({"repo_path": "/tmp/x"}) == ("/tmp/x", DEFAULT_MAX_CHARS)
+
+
+def test_build_bundle_exec_hands_the_budget_to_build_bundle(monkeypatch):
+    import crawl.analyses.backend.nodes as backend_nodes
+    from crawl.analyses.backend.nodes import BuildBundle
+    seen = {}
+
+    def fake_build_bundle(repo, max_chars):
+        seen["repo"], seen["max_chars"] = repo, max_chars
+        return "bundle", {"counts": {}}
+
+    monkeypatch.setattr(backend_nodes.bc, "build_bundle", fake_build_bundle)
+    BuildBundle().exec(("/tmp/x", 4242))
+    assert seen == {"repo": "/tmp/x", "max_chars": 4242}
 
 def test_build_flow_starts_at_build_bundle():
     from crawl.analyses.backend.nodes import BuildBundle

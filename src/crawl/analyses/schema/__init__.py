@@ -8,6 +8,8 @@ from pocketflow import Flow
 from crawl.core import OverviewNode
 from crawl.core.render import Section, Theme, esc, md
 from crawl.core.runner import repo_name_of, run_analysis
+from crawl.core.text import codebase_budget_argument
+from .schema_find import SCHEMA_BUDGET
 from .nodes import (FindSchema, SchemaTour, TraceFlows, TableDeepDive,
                     MigrationActs, MIGRATION_FLOOR)
 
@@ -90,6 +92,7 @@ def add_arguments(parser):
     parser.add_argument("--schema", default=None,
                         help="path to the schema file, relative to the repo "
                              "(overrides autodetect)")
+    parser.add_argument("--codebase-budget", **codebase_budget_argument(SCHEMA_BUDGET))
 
 def sent(shared):
     """What left the machine: the schema files read, and the names (not the
@@ -100,7 +103,8 @@ def sent(shared):
 
 def init_shared(args):
     return {"repo_path": args.repo_path,
-            "schema_override": getattr(args, "schema", None)}
+            "schema_override": getattr(args, "schema", None),
+            "codebase_budget": args.codebase_budget}
 
 def build_flow():
     find, tour = FindSchema(), SchemaTour()

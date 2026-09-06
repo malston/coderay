@@ -4,6 +4,7 @@ import os
 import pytest
 
 from crawl.analyses import ANALYSES, product_intent
+from budget_cli import BAD_BUDGET_VALUES, assert_rejects_bad_budget, assert_rejects_bad_budget_env, parse_with_budget
 
 
 def test_product_intent_is_registered_under_its_hyphenated_name():
@@ -40,14 +41,61 @@ def test_add_arguments_adds_repeatable_include_and_exclude():
 
 def test_init_shared_carries_the_repo_path_and_the_filters():
     args = argparse.Namespace(repo_path="/tmp/toy_repo", out=None,
-                              include=["src/**"], exclude=["**/gen/**"])
+                              include=["src/**"], exclude=["**/gen/**"], codebase_budget=650_000)
     assert product_intent.init_shared(args) == {
-        "repo_path": "/tmp/toy_repo", "include": ["src/**"], "exclude": ["**/gen/**"]}
+        "repo_path": "/tmp/toy_repo", "include": ["src/**"], "exclude": ["**/gen/**"],
+        "codebase_budget": 650_000}
 
 
 def test_init_shared_tolerates_an_args_without_the_filters():
-    shared = product_intent.init_shared(argparse.Namespace(repo_path="/tmp/toy_repo", out=None))
+    shared = product_intent.init_shared(
+        argparse.Namespace(repo_path="/tmp/toy_repo", out=None, codebase_budget=650_000))
     assert shared["include"] == [] and shared["exclude"] == []
+
+
+# coderay-mlb: the codebase budget is settable from the command line and the
+# environment, like tour's.
+def _parse(argv, monkeypatch, env=None):
+    return parse_with_budget(product_intent.add_arguments, "crawl product-intent", argv, monkeypatch, env)
+
+
+def test_codebase_budget_defaults_to_the_product_intent_constant(monkeypatch):
+    from crawl.analyses.product_intent.nodes import DEFAULT_MAX_CHARS
+    args = _parse([], monkeypatch)
+    assert args.codebase_budget == DEFAULT_MAX_CHARS
+    assert product_intent.init_shared(args)["codebase_budget"] == DEFAULT_MAX_CHARS
+
+
+@pytest.mark.parametrize("bad", BAD_BUDGET_VALUES)
+def test_codebase_budget_rejects_a_bad_value_at_parse_time(monkeypatch, capsys, bad):
+    assert_rejects_bad_budget(product_intent.add_arguments, "crawl product-intent", monkeypatch, capsys, bad)
+
+
+def test_codebase_budget_rejects_a_bad_env_value_at_parse_time(monkeypatch, capsys):
+    assert_rejects_bad_budget_env(product_intent.add_arguments, "crawl product-intent", monkeypatch, capsys)
+
+
+def test_fetch_repo_prep_reads_the_budget_from_shared():
+    from crawl.analyses.product_intent.nodes import DEFAULT_MAX_CHARS, FetchRepo
+    node = FetchRepo()
+    ctx = node.prep({"repo_path": "/tmp/x", "codebase_budget": 4242})
+    assert ctx["codebase_budget"] == 4242
+    ctx = node.prep({"repo_path": "/tmp/x"})
+    assert ctx["codebase_budget"] == DEFAULT_MAX_CHARS
+
+
+def test_fetch_repo_exec_hands_the_budget_to_bundle(monkeypatch):
+    import crawl.analyses.product_intent.nodes as pi_nodes
+    from crawl.analyses.product_intent.nodes import FetchRepo
+    seen = {}
+
+    def fake_bundle(repo, include, exclude, max_chars):
+        seen.update(repo=repo, include=include, exclude=exclude, max_chars=max_chars)
+        return "text", {"included": 0, "dropped": 0, "unreadable": 0, "files": []}
+
+    monkeypatch.setattr(pi_nodes, "bundle", fake_bundle)
+    FetchRepo().exec({"repo_path": "/tmp/x", "include": None, "exclude": None, "codebase_budget": 4242})
+    assert seen == {"repo": "/tmp/x", "include": None, "exclude": None, "max_chars": 4242}
 
 
 def test_build_flow_is_the_four_text_passes_after_the_crawl():

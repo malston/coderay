@@ -90,11 +90,12 @@ def tables_from_headers(md, known=None):
 
 class FindSchema(Node):
     def prep(self, shared):
-        return shared["repo_path"], shared.get("schema_override")
+        return (shared["repo_path"], shared.get("schema_override"),
+                shared.get("codebase_budget", sf.SCHEMA_BUDGET))
 
     def exec(self, inputs):
-        repo, override = inputs
-        schema = sf.find_schema(repo, override)
+        repo, override, budget = inputs
+        schema = sf.find_schema(repo, override, budget)
         mig_dir, mig_names = sf.find_migrations(repo)
         return schema, mig_dir, mig_names
 

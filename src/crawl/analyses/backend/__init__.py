@@ -8,6 +8,8 @@ from pocketflow import Flow
 from crawl.core import OverviewNode
 from crawl.core.render import Section, Theme, esc
 from crawl.core.runner import repo_name_of, run_analysis
+from crawl.core.text import codebase_budget_argument
+from .backend_crawl import DEFAULT_MAX_CHARS
 from .nodes import BuildBundle, Pipeline, LayerCode, Trace
 
 NAME = "backend"
@@ -73,7 +75,7 @@ def sent(shared):
 
 
 def init_shared(args):
-    return {"repo_path": args.repo_path}
+    return {"repo_path": args.repo_path, "codebase_budget": args.codebase_budget}
 
 def build_flow():
     bundle, pipeline = BuildBundle(), Pipeline()
@@ -100,7 +102,7 @@ def overview_spec(shared):
     }
 
 def add_arguments(parser) -> None:
-    """The backend analysis takes no flags beyond the common repo_path/--out."""
+    parser.add_argument("--codebase-budget", **codebase_budget_argument(DEFAULT_MAX_CHARS))
 
 def run(args) -> None:
     # Exit code 1, no usage line, matching tour's run(): run(args) has no
