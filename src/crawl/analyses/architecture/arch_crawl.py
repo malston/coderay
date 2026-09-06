@@ -664,7 +664,7 @@ _MANIFEST_PARSE_ERRORS = {
 
 
 def _read_manifest(full, repo, kind):
-    """Read and parse one dependency manifest. Returns (deps, unreadable, malformed).
+    """Read and parse one dependency manifest. Returns (deps, unreadable, malformed, truncated).
 
     `unreadable` mirrors `_read`'s `ok=False`. `malformed` is True only when
     the manifest was read in full and its own parser still rejected it --
@@ -673,19 +673,36 @@ def _read_manifest(full, repo, kind):
     generalized here to every kind whose parser can raise (json.loads and
     tomllib.loads; go.mod and requirements.txt are regex-based and never
     raise, so `malformed` is always False for them).
+
+    `truncated` fires whenever the read hit MANIFEST_READ_LIMIT, independent
+    of whether the parser raised (coderay-6ts.12). Before this, a manifest
+    cut mid-stream had zero signal in two cases: go.mod/requirements.txt
+    never raise, so a cut mid-require-block or mid-line silently parsed to a
+    partial-but-plausible dependency dict; and even a JSON/TOML manifest,
+    when truncation made it fail to parse, returned unreadable=False,
+    malformed=False, `found`=None, which build_bundle's `if found:` also
+    skipped in total silence.
     """
-    text, ok = _read(full, MANIFEST_READ_LIMIT, repo)
+    # Probe one char past the limit: len(text) == MANIFEST_READ_LIMIT is also
+    # what a file that just happens to be exactly that long reads back as, so
+    # comparing against the plain read can't tell that apart from a real cut
+    # (coderay-6ts.12 review). Trimmed back to the limit before parsing, so
+    # parsed content is unaffected.
+    text, ok = _read(full, MANIFEST_READ_LIMIT + 1, repo)
     if not ok:
-        return None, True, False
+        return None, True, False, False
+    truncated = len(text) > MANIFEST_READ_LIMIT
+    if truncated:
+        text = text[:MANIFEST_READ_LIMIT]
     errors = _MANIFEST_PARSE_ERRORS[kind]
     if not errors:
-        return MANIFEST_PARSERS[kind](text), False, False
+        return MANIFEST_PARSERS[kind](text), False, False, truncated
     try:
-        return MANIFEST_PARSERS[kind](text), False, False
+        return MANIFEST_PARSERS[kind](text), False, False, truncated
     except errors:
-        if len(text) >= MANIFEST_READ_LIMIT:
-            return None, False, False
-        return None, False, True
+        if truncated:
+            return None, False, False, True
+        return None, False, True, False
 
 
 def _count_note(n, noun, verb):
@@ -716,8 +733,10 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
     env_files_unreadable = 0
     package_json_unreadable = 0
     package_json_malformed = 0
+    package_json_truncated = 0
     manifest_unreadable = 0   # go.mod / pyproject.toml / requirements.txt combined
     manifest_malformed = 0    # pyproject.toml only -- go.mod and requirements.txt never raise
+    manifest_truncated = 0    # go.mod / pyproject.toml / requirements.txt combined
     config_files_unreadable = 0   # compose / k8s / gateway / iac buckets
     for dirpath, _dn, filenames in _walk(repo):
         for f in filenames:
@@ -736,7 +755,7 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
                     env_names.update(names)
                     env_files.append(rel)
             elif kind in MANIFEST_PARSERS:
-                found, unreadable, malformed = _read_manifest(full, repo, kind)
+                found, unreadable, malformed, truncated = _read_manifest(full, repo, kind)
                 if unreadable:
                     if kind == 'package':
                         package_json_unreadable += 1
@@ -749,6 +768,11 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
                     else:
                         manifest_malformed += 1
                     continue
+                if truncated:
+                    if kind == 'package':
+                        package_json_truncated += 1
+                    else:
+                        manifest_truncated += 1
                 # A JSON/TOML manifest of the wrong shape (a list, say) parses fine and
                 # simply yields no dependencies -- docs/ and examples/ are walked, and a
                 # package.json there can hold anything.
@@ -851,8 +875,10 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
         "config_files_found": sum(len(v) for v in buckets.values()),
         "package_json_malformed": package_json_malformed,
         "package_json_unreadable": package_json_unreadable,
+        "package_json_truncated": package_json_truncated,
         "manifest_unreadable": manifest_unreadable,
         "manifest_malformed": manifest_malformed,
+        "manifest_truncated": manifest_truncated,
         "env_files_unreadable": env_files_unreadable,
         "config_files_unreadable": config_files_unreadable,
         "truncated": len(whole) > max_chars,
