@@ -1137,6 +1137,20 @@ def test_build_bundle_tolerates_a_malformed_pyproject_toml(tmp_path):
     assert stats["manifest_malformed"] == 1
 
 
+def test_build_bundle_tolerates_a_non_string_pyproject_dependency_entry(tmp_path):
+    """coderay-6ts.15. Valid TOML, valid manifest -- only one dependency entry
+    is the wrong shape. build_bundle must not abort the whole run over it, and
+    the manifest itself is well-formed, not `manifest_malformed`."""
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services: {}\n",
+        "pyproject.toml": '[project]\nname = "app"\ndependencies = [42, "stripe>=5.0"]\n',
+    })
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["deps"] == 1
+    assert stats["manifest_malformed"] == 0
+    assert "stripe @ >=5.0" in _bundle
+
+
 def test_build_bundle_counts_a_refused_go_mod_as_unreadable(tmp_path):
     outside = tmp_path / "outside.mod"
     outside.write_text("module example.com/app\n\nrequire github.com/x/y v1.0.0\n", encoding="utf-8")
