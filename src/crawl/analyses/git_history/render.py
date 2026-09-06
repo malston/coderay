@@ -70,20 +70,27 @@ def _pct_num(v):
         return None
 
 
+def _clamp_pct(n):
+    """A parsed percent, clamped to [0, 100] -- shared so a model's
+    out-of-range value (150, -5) renders the same clamped figure in the HTML
+    bars (_pct) and the markdown cast/mood lines (_pct_label, coderay-6ts.2)."""
+    return max(0, min(100, n))
+
+
 def _pct(v):
     """A bar's fill percentage, clamped to [0, 100]; 0 when unparseable."""
     n = _pct_num(v)
-    return 0 if n is None else max(0, min(100, n))
+    return 0 if n is None else _clamp_pct(n)
 
 
 def _pct_label(v):
     """The markdown `(NN%)` figure for a cast/mood entry: `?` when the model
-    left `pct` out or it doesn't parse as a number, otherwise the number
-    formatted without repeating a '%' the model already appended."""
+    left `pct` out or it doesn't parse as a number, otherwise the clamped
+    number formatted without repeating a '%' the model already appended."""
     if v is None:
         return "?"
     n = _pct_num(v)
-    return "?" if n is None else f"{n:g}"
+    return "?" if n is None else f"{_clamp_pct(n):g}"
 
 
 def _profiles_by_era(shared):

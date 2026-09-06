@@ -20,6 +20,28 @@ def test_pct_clamps_and_falls_back_to_zero_on_real_garbage():
     assert r._pct(None) == 0
 
 
+def test_pct_label_formats_a_plain_number():
+    assert r._pct_label(45) == "45"
+    assert r._pct_label("45") == "45"
+
+
+def test_pct_label_strips_a_percent_sign_the_model_appended():
+    assert r._pct_label("45%") == "45"
+
+
+def test_pct_label_returns_a_question_mark_for_missing_or_unparseable_input():
+    assert r._pct_label(None) == "?"
+    assert r._pct_label("not a number") == "?"
+
+
+def test_pct_label_clamps_to_0_100_like_pct_does():
+    """coderay-6ts.2. _pct clamps an out-of-range model value to [0, 100];
+    _pct_label (the markdown cast/mood twin) did not, so the same input
+    rendered differently between the HTML bars and the markdown lines."""
+    assert r._pct_label(150) == "100"
+    assert r._pct_label(-5) == "0"
+
+
 def test_bars_renders_a_percent_sign_only_once():
     html = r._bars([{"name": "Refactors", "pct": "45%"}])
     assert "45%" in html
