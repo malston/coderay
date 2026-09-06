@@ -39,26 +39,84 @@ def test_the_migration_section_renders_a_note_rather_than_vanishing():
     assert "only 2 migrations found" in migration.md_skip_note({"migration_names": ["a", "b"]})
 
 
-def test_add_arguments_adds_the_schema_override_flag():
-    """The only analysis with a flag of its own."""
+def test_add_arguments_adds_the_schema_override_and_budget_flags():
     parser = argparse.ArgumentParser()
     parser.add_argument("repo_path")
     parser.add_argument("--out", default=None)
     schema.add_arguments(parser)
     args = parser.parse_args(["/tmp/repo", "--schema", "db/schema.rb"])
     assert args.schema == "db/schema.rb"
+    assert args.codebase_budget == schema.SCHEMA_BUDGET
 
 
 def test_init_shared_carries_the_repo_path_and_the_override():
-    args = argparse.Namespace(repo_path="/tmp/toy_repo", out=None, schema="db/schema.rb")
+    args = argparse.Namespace(repo_path="/tmp/toy_repo", out=None, schema="db/schema.rb",
+                              codebase_budget=600_000)
     assert schema.init_shared(args) == {"repo_path": "/tmp/toy_repo",
-                                        "schema_override": "db/schema.rb"}
+                                        "schema_override": "db/schema.rb",
+                                        "codebase_budget": 600_000}
 
 
 def test_init_shared_tolerates_an_args_without_the_flag():
     """run_analysis is shared, and other callers build args without --schema."""
-    args = argparse.Namespace(repo_path="/tmp/toy_repo", out=None)
+    args = argparse.Namespace(repo_path="/tmp/toy_repo", out=None, codebase_budget=600_000)
     assert schema.init_shared(args)["schema_override"] is None
+
+
+# coderay-mlb: the codebase budget is settable from the command line and the
+# environment, like tour's.
+def _parse(argv, monkeypatch, env=None):
+    monkeypatch.delenv("CODEBASE_BUDGET", raising=False)
+    if env is not None:
+        monkeypatch.setenv("CODEBASE_BUDGET", env)
+    parser = argparse.ArgumentParser(prog="crawl schema")
+    parser.add_argument("repo_path")
+    schema.add_arguments(parser)
+    return parser.parse_args(["repo", *argv])
+
+
+def test_codebase_budget_defaults_to_the_schema_constant(monkeypatch):
+    args = _parse([], monkeypatch)
+    assert args.codebase_budget == schema.SCHEMA_BUDGET
+    assert schema.init_shared(args)["codebase_budget"] == schema.SCHEMA_BUDGET
+
+
+@pytest.mark.parametrize("bad", ["abc", "1.5", "0", "-7"])
+def test_codebase_budget_rejects_a_bad_value_at_parse_time(monkeypatch, capsys, bad):
+    with pytest.raises(SystemExit) as e:
+        _parse(["--codebase-budget", bad], monkeypatch)
+    assert e.value.code == 2
+    err = capsys.readouterr().err
+    assert "--codebase-budget" in err and "CODEBASE_BUDGET" in err and repr(bad) in err
+
+
+def test_codebase_budget_rejects_a_bad_env_value_at_parse_time(monkeypatch, capsys):
+    with pytest.raises(SystemExit) as e:
+        _parse([], monkeypatch, env="lots")
+    assert e.value.code == 2
+    assert "CODEBASE_BUDGET" in capsys.readouterr().err
+
+
+def test_find_schema_prep_reads_the_budget_from_shared():
+    from crawl.analyses.schema.nodes import FindSchema
+    node = FindSchema()
+    assert node.prep({"repo_path": "/tmp/x", "codebase_budget": 4242}) == ("/tmp/x", None, 4242)
+    assert node.prep({"repo_path": "/tmp/x"}) == ("/tmp/x", None, schema.SCHEMA_BUDGET)
+
+
+def test_find_schema_exec_hands_the_budget_to_find_schema(monkeypatch):
+    import crawl.analyses.schema.nodes as schema_nodes
+    from crawl.analyses.schema.nodes import FindSchema
+    seen = {}
+
+    def fake_find_schema(repo, override, budget):
+        seen["repo"], seen["override"], seen["budget"] = repo, override, budget
+        return {"kind": None, "path": None, "files": [], "text": "x"}
+
+    monkeypatch.setattr(schema_nodes.sf, "find_schema", fake_find_schema)
+    monkeypatch.setattr(schema_nodes.sf, "find_migrations", lambda repo: (None, []))
+    FindSchema().exec(("/tmp/x", None, 4242))
+    assert seen == {"repo": "/tmp/x", "override": None, "budget": 4242}
 
 
 def test_build_flow_starts_at_find_schema():

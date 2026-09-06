@@ -158,7 +158,10 @@ def _read(path, repo=None):
         return ""
 
 
-def crawl_routes(repo, max_chars=900_000):
+DEFAULT_MAX_CHARS = 900_000
+
+
+def crawl_routes(repo, max_chars=DEFAULT_MAX_CHARS):
     """Concatenate the surface files with path headers, capped at max_chars.
     tRPC aggregators and Rails/Django manifests come first (they list many
     endpoints per file), so a cap trims single Next.js handlers, not the map.

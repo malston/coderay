@@ -366,18 +366,16 @@ def test_embedded_sql_ties_break_alphabetically_and_only_go_files_are_candidates
     assert found["path"] == "2 Go files with embedded SQL (pkg/a.go, pkg/b.go)"
 
 
-def test_embedded_sql_keeps_whole_files_and_drops_the_tail_under_the_budget(tmp_path, monkeypatch):
+def test_embedded_sql_keeps_whole_files_and_drops_the_tail_under_the_budget(tmp_path):
     """Same rule as the model files: whole blocks, fewer of them, and the path
     says how many were found. The first block is kept even when it alone
     exceeds the budget, so a single large schema is never silently empty."""
-    monkeypatch.setattr(sf, "SCHEMA_BUDGET", 600)
     ddl = "CREATE TABLE IF NOT EXISTS t%d (\n" + "  c TEXT,\n" * 20 + "  id TEXT\n)"
     files = {f"pkg/m{i}.go": "package a\n_ = `" + ddl % i + "`\n" for i in range(4)}
-    found = sf.find_schema(_repo(tmp_path, files))
+    found = sf.find_schema(_repo(tmp_path, files), budget=600)
     assert found["path"].startswith("2 Go files with embedded SQL") and found["path"].endswith(" of 4 found")
     assert len(found["files"]) == 2 and all(f"===== {f} =====" in found["text"] for f in found["files"])
-    monkeypatch.setattr(sf, "SCHEMA_BUDGET", 50)
-    found = sf.find_schema(_repo(tmp_path / "one", {"pkg/m.go": files["pkg/m0.go"]}))
+    found = sf.find_schema(_repo(tmp_path / "one", {"pkg/m.go": files["pkg/m0.go"]}), budget=50)
     assert "CREATE TABLE IF NOT EXISTS t0" in found["text"] and found["path"].startswith("1 Go file with")
 
 

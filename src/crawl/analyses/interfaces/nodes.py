@@ -54,10 +54,11 @@ def first_card(md):
 
 class FindRoutes(Node):
     def prep(self, shared):
-        return shared["repo_path"]
+        return shared["repo_path"], shared.get("codebase_budget", rf.DEFAULT_MAX_CHARS)
 
-    def exec(self, repo):
-        routes, files, kept = rf.crawl_routes(repo)
+    def exec(self, ctx):
+        repo, budget = ctx
+        routes, files, kept = rf.crawl_routes(repo, max_chars=budget)
         return routes, files, kept
 
     def post(self, shared, prep_res, exec_res):

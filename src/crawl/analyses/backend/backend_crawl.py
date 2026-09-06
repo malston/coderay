@@ -98,7 +98,10 @@ def _priority(rel):
     return (0 if any(h in b for h in CORE_HINTS) else 1)
 
 
-def build_bundle(repo, max_chars=650_000, per_layer_sample=18):
+DEFAULT_MAX_CHARS = 650_000
+
+
+def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS, per_layer_sample=18):
     files_by_layer = {k: [] for k in LAYERS}
     counts = Counter()
     # list_files carries the repo containment and credential-name checks every
