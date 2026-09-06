@@ -119,6 +119,52 @@ def test_scope_of_caps_the_shared_prefix_at_the_depth_limit(files, expected):
     assert gl.scope_of(files) == expected
 
 
+def test_bulk_changes_never_surfaces_a_merge_commit(tmp_path):
+    """coderay-6ts.7. is_pure_rename assumes commit_hash is never a merge
+    commit, since every caller sources it from bulk_changes, and plain
+    `git log --diff-filter --name-only` (no -m/--cc) shows no diff for a
+    merge commit. Confirms that assumption directly: a bulk deletion that
+    reaches main only via a merge is attributed to the ordinary commit that
+    did the deleting, never to the merge commit's own hash."""
+    repo = str(tmp_path)
+    run = lambda *a: subprocess.run(["git", "-C", repo, *a], check=True, capture_output=True)
+    run("init", "-q")
+    run("config", "user.email", "t@example.com")
+    run("config", "user.name", "Tester")
+    base_branch = subprocess.run(["git", "-C", repo, "symbolic-ref", "--short", "HEAD"],
+                                 capture_output=True, text=True, check=True).stdout.strip()
+
+    files = [f"area/f{i}.py" for i in range(10)]
+    for rel in files:
+        p = pathlib.Path(repo, rel)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("x\n", encoding="utf-8")
+    run("add", "-A")
+    run("commit", "-qm", "add files")
+
+    run("checkout", "-qb", "feature")
+    for rel in files:
+        os.remove(pathlib.Path(repo, rel))
+    run("add", "-A")
+    run("commit", "-qm", "remove files")
+    remove_hash = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"],
+                                 capture_output=True, text=True, check=True).stdout.strip()
+
+    run("checkout", "-q", base_branch)
+    pathlib.Path(repo, "unrelated.py").write_text("y\n", encoding="utf-8")
+    run("add", "-A")
+    run("commit", "-qm", "unrelated change on the base branch")
+
+    run("merge", "--no-edit", "feature")
+    merge_hash = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"],
+                                capture_output=True, text=True, check=True).stdout.strip()
+    assert merge_hash != remove_hash  # sanity: the merge really did create a new commit
+
+    hashes = [c["hash"] for c in gl.bulk_changes(repo, "D", min_files=5)]
+    assert remove_hash in hashes
+    assert merge_hash not in hashes
+
+
 def test_bulk_changes_lists_only_the_deleted_files(tmp_path):
     """--diff-filter=D restricts which PATHS are listed, not just which commits,
     so the file list is exactly the deletion."""

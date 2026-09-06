@@ -318,6 +318,14 @@ def is_pure_rename(repo_path, commit_hash):
     `bulk_changes` runs with `--no-renames` so a directory move is visible as
     a bulk deletion (coderay-q2r.44) -- but a move isn't a killed feature,
     and the graveyard must not write one a eulogy for having been renamed.
+
+    Assumes `commit_hash` is never a merge commit: every caller sources it
+    from `bulk_changes`, and plain `git log --diff-filter --name-only`
+    (no `-m`/`--cc`) never emits a diff for a merge commit, so one never
+    reaches `bulk_changes`' output in the first place (coderay-6ts.7). A
+    merge commit's `-M --diff-filter=D` semantics differ from a plain
+    commit's (multiple base diffs, not one), so `is_pure_rename` must not be
+    pointed at one without reviewing that difference first.
     """
     raw = subprocess.check_output(
         ["git", "-C", repo_path, "show", "-M", "--diff-filter=D", "--name-only",
