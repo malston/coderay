@@ -495,7 +495,7 @@ def test_build_bundle_overlays_the_four_sources_and_counts_them(tmp_path):
 
     assert stats == {"config_files": 4, "config_files_found": 4, "package_json_malformed": 0,
                      "package_json_unreadable": 0, "manifest_unreadable": 0, "manifest_malformed": 0,
-                     "env_files_unreadable": 0,
+                     "env_files_unreadable": 0, "config_files_unreadable": 0,
                      "truncated": False,
                      "env_vars": 2, "deps": 2, "integrations": 0, "sdk_lines": 0,
                      "sdk_unavailable": "not a git repository", "sdk_capped": False,
@@ -805,8 +805,15 @@ def test_build_bundle_refuses_a_config_file_symlinked_to_an_in_repo_credential_f
                                      "id_rsa": "BEGIN-HUNTER2-PRIVATE-KEY\n"})
     os.symlink(os.path.join(repo, "id_rsa"), os.path.join(repo, "docker-compose.yml"))
 
-    bundle, _stats = ac.build_bundle(repo)
+    bundle, stats = ac.build_bundle(repo)
     assert "HUNTER2" not in bundle
+    # coderay-6ts.16. A refused config file was previously counted as an
+    # ordinary bucket entry (text="", ok discarded), indistinguishable from a
+    # genuinely empty file: env files and manifests already get their own
+    # "unreadable" counter for exactly this, the four config-file buckets did
+    # not.
+    assert stats["config_files_unreadable"] == 1
+    assert stats["config_files_found"] == 0
 
 
 def test_build_bundle_skips_a_virtualenv_named_env_but_still_reads_examples(tmp_path):
