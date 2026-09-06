@@ -688,6 +688,23 @@ def _read_manifest(full, repo, kind):
         return None, False, True
 
 
+def _count_note(n, noun, verb):
+    """'<n> <noun>(s) <verb>', pluralizing `noun` and, if `verb` carries a
+    `{be}` placeholder, agreeing was/were too; '' when `n` is falsy.
+
+    Shared by BuildBundle's console line and the footer (coderay-6ts.14):
+    both hand-rolled the same pluralization six times over, and the wording
+    had already drifted between them (the footer said "unreadable or
+    refused", the console line just "unreadable"). One clause, one place to
+    fix either. `verb` with no `{be}` placeholder (e.g. "could not be
+    parsed") needs no agreement and passes through unchanged.
+    """
+    if not n:
+        return ""
+    plural = n != 1
+    return f"{n} {noun}{'s' if plural else ''} {verb.format(be='were' if plural else 'was')}"
+
+
 DEFAULT_MAX_CHARS = 500_000
 
 

@@ -1067,6 +1067,28 @@ def test_parse_pyproject_ignores_poetry_only_tables():
     assert ac._parse_pyproject(text) == {}
 
 
+def test_count_note_is_empty_for_a_falsy_count():
+    assert ac._count_note(0, "config file", "{be} unreadable or refused") == ""
+
+
+def test_count_note_singular():
+    assert ac._count_note(1, "config file", "{be} unreadable or refused") \
+        == "1 config file was unreadable or refused"
+
+
+def test_count_note_plural():
+    assert ac._count_note(2, "config file", "{be} unreadable or refused") \
+        == "2 config files were unreadable or refused"
+
+
+def test_count_note_tolerates_a_verb_phrase_with_no_be_placeholder():
+    """coderay-6ts.14. Not every clause needs was/were agreement ('could not
+    be parsed' doesn't conjugate); a verb phrase with no {be} placeholder
+    must not raise on .format()."""
+    assert ac._count_note(2, "package.json file", "could not be parsed as JSON") \
+        == "2 package.json files could not be parsed as JSON"
+
+
 def test_parse_pyproject_skips_a_non_string_dependency_entry_instead_of_crashing():
     """coderay-6ts.15. A dependency array can hold a non-string element
     (a bare number, an inline table) and still parse fine under tomllib; only
