@@ -343,9 +343,28 @@ def test_sent_gathers_the_commits_listed_and_the_diffs_shown():
 def test_name_eras_records_the_bulk_change_commits_whose_subjects_it_sent(monkeypatch):
     """coderay-3eu: the survey prompt carries a verbatim line per bulk change
     (hash, date, count, scope, subject), up to twenty of each kind."""
+    monkeypatch.setattr(n.gl, "is_pure_rename", lambda repo_path, commit_hash: False)
     _fake_llm(monkeypatch, lambda p: "```json\n" + json.dumps(ERAS) + "\n```")
     big = {"hash": "d" * 40, "date": "2019-02-01", "count": 12, "scope": "core", "subject": "drop", "month": "2019-02"}
     add = {"hash": "a" * 40, "date": "2019-01-01", "count": 30, "scope": "core", "subject": "add", "month": "2019-01"}
     shared = {"commits": [{"month": "2019-01", "files": ["a.py"]}], "bulk_dels": [big], "bulk_adds": [add]}
     n.NameEras().run(shared)
     assert shared["survey_commits_sent"] == ["d" * 40, "a" * 40]
+
+
+def test_name_eras_excludes_a_directory_move_disguised_as_a_bulk_deletion(monkeypatch, tmp_path):
+    """coderay-6ts.1. bulk_dels sees a directory move as a plain deletion
+    (bulk_changes runs with --no-renames); Graveyard already filters this via
+    is_pure_rename, but NameEras' survey didn't, so the same move could reach
+    the era-naming prompt described as a real deletion."""
+    old = {f"old/f{i}.py": f"x{i}\n" for i in range(10)}
+    new = {f"new/f{i}.py": f"x{i}\n" for i in range(10)}
+    repo = _repo(tmp_path, [("add", old, []), ("move the directory", new, list(old))])
+    from crawl.analyses.git_history import gitlog as gl
+    _fake_llm(monkeypatch, lambda p: "```json\n" + json.dumps(ERAS) + "\n```")
+    shared = {"repo_path": repo,
+              "commits": [{"month": "2019-01", "files": ["a.py"]}],
+              "bulk_dels": gl.bulk_changes(repo, "D", min_files=5),
+              "bulk_adds": []}
+    n.NameEras().run(shared)
+    assert shared["survey_commits_sent"] == []
