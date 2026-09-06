@@ -195,6 +195,35 @@ def test_graveyard_still_digs_up_a_real_deletion_alongside_a_move(monkeypatch, t
     assert len(shared["graves"]) == 1
 
 
+def test_graveyard_checks_is_pure_rename_lazily_after_max_graves_and_area_dedup(monkeypatch, tmp_path):
+    """coderay-6ts.3. is_pure_rename shells out to `git show`; running it for
+    every count/noise-filtered candidate wastes subprocess calls on entries
+    max_graves or area-dedup would drop anyway. It must run only on
+    candidates that would otherwise survive to become a grave."""
+    areas = {f"area{a}/f{i}.py": "x\n" for a in range(3) for i in range(10)}
+    repo = _repo(tmp_path, [("add", areas, [])] +
+                 [(f"drop {a}", {}, [f"area{a}/f{i}.py" for i in range(10)]) for a in range(3)])
+    from crawl.analyses.git_history import gitlog as gl
+    real_is_pure_rename = gl.is_pure_rename
+    calls = []
+
+    def counting(repo_path, commit_hash):
+        calls.append(commit_hash)
+        return real_is_pure_rename(repo_path, commit_hash)
+
+    monkeypatch.setattr(n.gl, "is_pure_rename", counting)
+    _fake_llm(monkeypatch, lambda p: "entry")
+    shared = {"repo_path": repo, "eras": ERAS,
+              "bulk_dels": gl.bulk_changes(repo, "D", min_files=5),
+              "grave_min_files": 8, "max_graves": 1}
+    n.Graveyard().run(shared)
+    assert len(shared["graves"]) == 1
+    # 3 candidates pass the count/noise filter; max_graves=1 stops the loop
+    # after the first is accepted, so only that one should ever reach
+    # is_pure_rename.
+    assert len(calls) == 1
+
+
 def test_is_noise_deletion_checks_skip_dirs_by_forward_slash_not_os_sep(monkeypatch):
     """coderay-q2r.44. Git paths are always forward-slash; splitting on the
     platform's `os.sep` mis-detects the skip-list on Windows (backslash).

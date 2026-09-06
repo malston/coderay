@@ -53,12 +53,16 @@ def _era_for(month, eras):
 def _excluding_pure_renames(candidates, repo_path):
     """bulk_changes runs with --no-renames so a directory move shows up as a
     plain deletion (coderay-q2r.44); a move isn't a killed feature, and
-    neither NameEras' survey nor Graveyard's eulogies should describe one as a
-    real deletion (coderay-6ts.1). Called last, after every cheap in-memory
-    filter has already narrowed `candidates`: is_pure_rename shells out to
-    `git show`, so checking it before a candidate count/noise filter would
-    run that subprocess on entries the cheap filters would have dropped
-    anyway."""
+    NameEras' survey must not describe one as a real deletion (coderay-6ts.1).
+    Called last, after every cheap in-memory filter has already narrowed
+    `candidates`: is_pure_rename shells out to `git show`, so checking it
+    before a candidate count/noise filter would run that subprocess on
+    entries the cheap filters would have dropped anyway.
+
+    Graveyard does its own is_pure_rename check inline instead of calling
+    this (coderay-6ts.3): its candidates are further trimmed by max_graves
+    and one-per-area dedup, both cheaper than a subprocess call, so it checks
+    is_pure_rename only on a candidate that has already survived both."""
     return [c for c in candidates if not gl.is_pure_rename(repo_path, c["hash"])]
 
 
@@ -226,22 +230,25 @@ class Graveyard(Node):
         max_graves = shared.get("max_graves", 6)
         repo_path = shared["repo_path"]
         candidates = sorted(
-            _excluding_pure_renames(
-                [c for c in shared["bulk_dels"]
-                 if c["count"] >= min_files and not _is_noise_deletion(c)],
-                repo_path),
+            (c for c in shared["bulk_dels"]
+             if c["count"] >= min_files and not _is_noise_deletion(c)),
             key=lambda c: c["count"], reverse=True,
         )
         # Keep the graves distinct: at most one per source area so we don't
         # return six variants of one deletion. `scope` is already the shared
         # prefix capped at two path components (gitlog.scope_of), so it IS
-        # the area.
+        # the area. is_pure_rename (a `git show` subprocess) is checked last,
+        # only for a candidate that has already survived max_graves and area
+        # dedup, both cheaper in-memory checks (coderay-6ts.3): a candidate
+        # dropped by either never reaches the subprocess call.
         graves, seen_areas = [], set()
         for c in candidates:
             if len(graves) >= max_graves:  # coderay-q2r.40: checked first, so 0 means none
                 break
             area = c["scope"]
             if area in seen_areas:
+                continue
+            if gl.is_pure_rename(repo_path, c["hash"]):
                 continue
             seen_areas.add(area)
             graves.append(c)
