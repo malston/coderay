@@ -272,6 +272,8 @@ def test_the_footer_says_when_sdk_import_evidence_was_capped():
     assert "capped" not in architecture._footer({"arch_stats": {**stats, "sdk_capped": False}})
 
 
+
+
 def test_the_footer_escapes_the_unavailable_note():
     """Defence in depth: the crawler never passes git text through, and the
     footer escapes what it is handed anyway, since it lands in HTML."""
