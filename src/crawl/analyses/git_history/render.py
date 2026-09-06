@@ -87,8 +87,6 @@ def _pct_label(v):
     """The markdown `(NN%)` figure for a cast/mood entry: `?` when the model
     left `pct` out or it doesn't parse as a number, otherwise the clamped
     number formatted without repeating a '%' the model already appended."""
-    if v is None:
-        return "?"
     n = _pct_num(v)
     return "?" if n is None else f"{_clamp_pct(n):g}"
 
