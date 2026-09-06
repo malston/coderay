@@ -194,12 +194,23 @@ def test_the_footer_says_when_config_files_were_found_but_not_included():
     assert "did not reach the bundle" not in quiet_footer
 
 
+def _problems(**by_kind):
+    """A manifest_problems dict with only the given kind(s) populated, e.g.
+    _problems(package={"malformed": 2}) -- every other kind and field
+    defaults to 0."""
+    zero = {"unreadable": 0, "malformed": 0, "truncated": 0}
+    problems = {kind: dict(zero) for kind in ("package", "go_mod", "pyproject", "requirements")}
+    for kind, counts in by_kind.items():
+        problems[kind].update(counts)
+    return problems
+
+
 def test_the_footer_says_when_a_package_json_was_malformed():
     stats = {"config_files": 1, "config_files_found": 1, "deps": 0, "integrations": 0,
-             "package_json_malformed": 2}
+             "manifest_problems": _problems(package={"malformed": 2})}
     footer = architecture._footer({"arch_stats": stats})
     assert "2 package.json files could not be parsed as JSON" in footer
-    quiet_footer = architecture._footer({"arch_stats": {**stats, "package_json_malformed": 0}})
+    quiet_footer = architecture._footer({"arch_stats": {**stats, "manifest_problems": _problems()}})
     assert "could not be parsed" not in quiet_footer
 
 
@@ -208,10 +219,10 @@ def test_the_footer_says_when_a_package_json_was_unreadable():
     a refused/unreadable manifest needs its own note or it has zero
     visibility anywhere."""
     stats = {"config_files": 1, "config_files_found": 1, "deps": 0, "integrations": 0,
-             "package_json_unreadable": 1}
+             "manifest_problems": _problems(package={"unreadable": 1})}
     footer = architecture._footer({"arch_stats": stats})
     assert "1 package.json file was unreadable or refused" in footer
-    quiet_footer = architecture._footer({"arch_stats": {**stats, "package_json_unreadable": 0}})
+    quiet_footer = architecture._footer({"arch_stats": {**stats, "manifest_problems": _problems()}})
     assert "unreadable or refused" not in quiet_footer
 
 
@@ -219,38 +230,53 @@ def test_the_footer_says_when_a_package_json_was_truncated(tmp_path):
     """coderay-6ts.12. A truncated manifest had zero visibility in stats or
     the footer; give it the same signal every other manifest problem gets."""
     stats = {"config_files": 1, "config_files_found": 1, "deps": 0, "integrations": 0,
-             "package_json_truncated": 1}
+             "manifest_problems": _problems(package={"truncated": 1})}
     footer = architecture._footer({"arch_stats": stats})
     assert "1 package.json file was truncated by the read limit" in footer
-    quiet_footer = architecture._footer({"arch_stats": {**stats, "package_json_truncated": 0}})
+    quiet_footer = architecture._footer({"arch_stats": {**stats, "manifest_problems": _problems()}})
     assert "truncated by the read limit" not in quiet_footer
 
 
-def test_the_footer_says_when_another_manifest_was_truncated(tmp_path):
+def test_the_footer_names_the_specific_kind_of_manifest_that_was_truncated(tmp_path):
+    """coderay-6ts.13. go.mod, pyproject.toml and requirements.txt each get
+    named specifically -- none of them collapse into an anonymous "other
+    manifest" bucket the way they used to."""
     stats = {"config_files": 1, "config_files_found": 1, "deps": 0, "integrations": 0,
-             "manifest_truncated": 1}
+             "manifest_problems": _problems(go_mod={"truncated": 1})}
     footer = architecture._footer({"arch_stats": stats})
-    assert "1 other manifest file was truncated by the read limit" in footer
-    quiet_footer = architecture._footer({"arch_stats": {**stats, "manifest_truncated": 0}})
+    assert "1 go.mod file was truncated by the read limit" in footer
+    quiet_footer = architecture._footer({"arch_stats": {**stats, "manifest_problems": _problems()}})
     assert "truncated by the read limit" not in quiet_footer
 
 
-def test_the_footer_says_when_another_manifest_was_malformed():
+def test_the_footer_names_the_specific_kind_of_manifest_that_was_malformed():
+    """Only package.json and pyproject.toml can ever be malformed (go.mod and
+    requirements.txt are regex-based and never raise), and each gets its own
+    format named -- "as JSON" vs "as TOML" -- not a generic "could not be
+    parsed"."""
     stats = {"config_files": 1, "config_files_found": 1, "deps": 0, "integrations": 0,
-             "manifest_malformed": 2}
+             "manifest_problems": _problems(pyproject={"malformed": 2})}
     footer = architecture._footer({"arch_stats": stats})
-    assert "2 other manifest files could not be parsed" in footer
-    quiet_footer = architecture._footer({"arch_stats": {**stats, "manifest_malformed": 0}})
+    assert "2 pyproject.toml files could not be parsed as TOML" in footer
+    quiet_footer = architecture._footer({"arch_stats": {**stats, "manifest_problems": _problems()}})
     assert "could not be parsed" not in quiet_footer
 
 
-def test_the_footer_says_when_another_manifest_was_unreadable():
+def test_the_footer_names_the_specific_kind_of_manifest_that_was_unreadable():
     stats = {"config_files": 1, "config_files_found": 1, "deps": 0, "integrations": 0,
-             "manifest_unreadable": 1}
+             "manifest_problems": _problems(requirements={"unreadable": 1})}
     footer = architecture._footer({"arch_stats": stats})
-    assert "1 other manifest file was unreadable or refused" in footer
-    quiet_footer = architecture._footer({"arch_stats": {**stats, "manifest_unreadable": 0}})
+    assert "1 requirements.txt file was unreadable or refused" in footer
+    quiet_footer = architecture._footer({"arch_stats": {**stats, "manifest_problems": _problems()}})
     assert "unreadable or refused" not in quiet_footer
+
+
+def test_the_footer_names_every_kind_with_a_problem_when_more_than_one_has_one():
+    stats = {"config_files": 1, "config_files_found": 1, "deps": 0, "integrations": 0,
+             "manifest_problems": _problems(package={"unreadable": 1}, go_mod={"truncated": 1})}
+    footer = architecture._footer({"arch_stats": stats})
+    assert "1 package.json file was unreadable or refused" in footer
+    assert "1 go.mod file was truncated by the read limit" in footer
 
 
 def test_the_footer_says_when_an_env_file_was_unreadable():

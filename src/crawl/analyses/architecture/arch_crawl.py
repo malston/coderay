@@ -649,6 +649,25 @@ MANIFEST_PARSERS = {
     'requirements': _parse_requirements,
 }
 
+# The file name a reader knows each kind by, for a footer/console clause
+# naming it specifically (coderay-6ts.13) rather than "package.json" vs. an
+# anonymous "other manifest file" for everything else.
+_MANIFEST_LABELS = {
+    'package': 'package.json',
+    'go_mod': 'go.mod',
+    'pyproject': 'pyproject.toml',
+    'requirements': 'requirements.txt',
+}
+
+# go.mod and requirements.txt are regex-based and never raise (see
+# _MANIFEST_PARSE_ERRORS below), so only package.json and pyproject.toml can
+# ever be "malformed"; a future parser that raises without an entry here
+# falls back to the generic phrasing in manifest_problem_notes.
+_MANIFEST_MALFORMED_VERB = {
+    'package': "could not be parsed as JSON",
+    'pyproject': "could not be parsed as TOML",
+}
+
 # The exception type each parser raises on malformed input, scoped per kind
 # rather than a blanket `except ValueError` -- a future bug inside a
 # regex-based parser (go.mod, requirements.txt) that happened to raise
@@ -722,6 +741,25 @@ def _count_note(n, noun, verb):
     return f"{n} {noun}{'s' if plural else ''} {verb.format(be='were' if plural else 'was')}"
 
 
+def manifest_problem_notes(manifest_problems):
+    """A `_count_note` clause per (kind, problem) with a nonzero count, e.g.
+    "1 go.mod file was unreadable or refused" -- ordered by MANIFEST_PARSERS'
+    own kind order, then unreadable/malformed/truncated, so every manifest
+    kind is named specifically instead of collapsing into an anonymous
+    "other manifest" bucket (coderay-6ts.13)."""
+    notes = []
+    for kind in MANIFEST_PARSERS:
+        label = _MANIFEST_LABELS[kind]
+        counts = manifest_problems.get(kind, {})
+        notes.append(_count_note(counts.get("unreadable", 0),
+                                 f"{label} file", "{be} unreadable or refused"))
+        notes.append(_count_note(counts.get("malformed", 0), f"{label} file",
+                                 _MANIFEST_MALFORMED_VERB.get(kind, "could not be parsed")))
+        notes.append(_count_note(counts.get("truncated", 0), f"{label} file",
+                                 "{be} truncated by the read limit; only what fit was parsed"))
+    return [note for note in notes if note]
+
+
 DEFAULT_MAX_CHARS = 500_000
 
 
@@ -731,12 +769,12 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
     env_names, deps = set(), {}
     env_files, manifest_files = [], []  # what contributed names and dependency lists
     env_files_unreadable = 0
-    package_json_unreadable = 0
-    package_json_malformed = 0
-    package_json_truncated = 0
-    manifest_unreadable = 0   # go.mod / pyproject.toml / requirements.txt combined
-    manifest_malformed = 0    # pyproject.toml only -- go.mod and requirements.txt never raise
-    manifest_truncated = 0    # go.mod / pyproject.toml / requirements.txt combined
+    # One breakdown per manifest kind rather than package.json getting its own
+    # counters and the other three kinds pooling into an anonymous "manifest"
+    # bucket (coderay-6ts.13) -- every kind is nameable when something goes
+    # wrong with it, not just package.json.
+    manifest_problems = {kind: {"unreadable": 0, "malformed": 0, "truncated": 0}
+                         for kind in MANIFEST_PARSERS}
     config_files_unreadable = 0   # compose / k8s / gateway / iac buckets
     for dirpath, _dn, filenames in _walk(repo):
         for f in filenames:
@@ -757,22 +795,13 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
             elif kind in MANIFEST_PARSERS:
                 found, unreadable, malformed, truncated = _read_manifest(full, repo, kind)
                 if unreadable:
-                    if kind == 'package':
-                        package_json_unreadable += 1
-                    else:
-                        manifest_unreadable += 1
+                    manifest_problems[kind]["unreadable"] += 1
                     continue
                 if malformed:
-                    if kind == 'package':
-                        package_json_malformed += 1
-                    else:
-                        manifest_malformed += 1
+                    manifest_problems[kind]["malformed"] += 1
                     continue
                 if truncated:
-                    if kind == 'package':
-                        package_json_truncated += 1
-                    else:
-                        manifest_truncated += 1
+                    manifest_problems[kind]["truncated"] += 1
                 # A JSON/TOML manifest of the wrong shape (a list, say) parses fine and
                 # simply yields no dependencies -- docs/ and examples/ are walked, and a
                 # package.json there can hold anything.
@@ -873,12 +902,7 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
         # (coderay-q2r.27).
         "config_files": included,
         "config_files_found": sum(len(v) for v in buckets.values()),
-        "package_json_malformed": package_json_malformed,
-        "package_json_unreadable": package_json_unreadable,
-        "package_json_truncated": package_json_truncated,
-        "manifest_unreadable": manifest_unreadable,
-        "manifest_malformed": manifest_malformed,
-        "manifest_truncated": manifest_truncated,
+        "manifest_problems": manifest_problems,
         "env_files_unreadable": env_files_unreadable,
         "config_files_unreadable": config_files_unreadable,
         "truncated": len(whole) > max_chars,

@@ -493,9 +493,10 @@ def test_build_bundle_overlays_the_four_sources_and_counts_them(tmp_path):
     })
     bundle, stats = ac.build_bundle(repo)
 
-    assert stats == {"config_files": 4, "config_files_found": 4, "package_json_malformed": 0,
-                     "package_json_unreadable": 0, "package_json_truncated": 0,
-                     "manifest_unreadable": 0, "manifest_malformed": 0, "manifest_truncated": 0,
+    zero_problems = {"unreadable": 0, "malformed": 0, "truncated": 0}
+    assert stats == {"config_files": 4, "config_files_found": 4,
+                     "manifest_problems": {"package": dict(zero_problems), "go_mod": dict(zero_problems),
+                                          "pyproject": dict(zero_problems), "requirements": dict(zero_problems)},
                      "env_files_unreadable": 0, "config_files_unreadable": 0,
                      "truncated": False,
                      "env_vars": 2, "deps": 2, "integrations": 0, "sdk_lines": 0,
@@ -557,7 +558,7 @@ def test_build_bundle_tolerates_a_malformed_package_json(tmp_path):
     })
     _bundle, stats = ac.build_bundle(repo)
     assert stats["deps"] == 1
-    assert stats["package_json_malformed"] == 1
+    assert stats["manifest_problems"]["package"]["malformed"] == 1
 
 
 def test_build_bundle_does_not_count_an_unreadable_package_json_as_malformed(tmp_path):
@@ -569,7 +570,7 @@ def test_build_bundle_does_not_count_an_unreadable_package_json_as_malformed(tmp
     os.symlink(outside, os.path.join(repo, "package.json"))
     _bundle, stats = ac.build_bundle(repo)
     assert stats["deps"] == 0
-    assert stats["package_json_malformed"] == 0
+    assert stats["manifest_problems"]["package"]["malformed"] == 0
 
 
 def test_build_bundle_counts_a_refused_package_json_somewhere(tmp_path):
@@ -583,8 +584,8 @@ def test_build_bundle_counts_a_refused_package_json_somewhere(tmp_path):
     repo = _repo(tmp_path / "repo", {"docker-compose.yml": "services: {}\n"})
     os.symlink(outside, os.path.join(repo, "package.json"))
     _bundle, stats = ac.build_bundle(repo)
-    assert stats["package_json_unreadable"] == 1
-    assert stats["package_json_malformed"] == 0
+    assert stats["manifest_problems"]["package"]["unreadable"] == 1
+    assert stats["manifest_problems"]["package"]["malformed"] == 0
 
 
 def test_build_bundle_counts_a_refused_env_file_somewhere(tmp_path):
@@ -610,11 +611,11 @@ def test_build_bundle_does_not_count_a_package_json_truncated_by_its_own_read_li
     })
     assert len(open(os.path.join(repo, "package.json")).read()) > 200_000
     _bundle, stats = ac.build_bundle(repo)
-    assert stats["package_json_malformed"] == 0
+    assert stats["manifest_problems"]["package"]["malformed"] == 0
     # coderay-6ts.12 review. A truncated manifest that then fails to parse
     # returned unreadable=False, malformed=False, found=None -- invisible in
     # every stat, the same silent-collapse class this bead covers.
-    assert stats["package_json_truncated"] == 1
+    assert stats["manifest_problems"]["package"]["truncated"] == 1
 
 
 def test_build_bundle_counts_a_go_mod_truncated_mid_require_block(tmp_path):
@@ -629,9 +630,9 @@ def test_build_bundle_counts_a_go_mod_truncated_mid_require_block(tmp_path):
     })
     assert len(open(os.path.join(repo, "go.mod")).read()) > 200_000
     _bundle, stats = ac.build_bundle(repo)
-    assert stats["manifest_unreadable"] == 0
-    assert stats["manifest_malformed"] == 0
-    assert stats["manifest_truncated"] == 1
+    assert stats["manifest_problems"]["go_mod"]["unreadable"] == 0
+    assert stats["manifest_problems"]["go_mod"]["malformed"] == 0
+    assert stats["manifest_problems"]["go_mod"]["truncated"] == 1
     assert stats["deps"] > 0   # the partial dict still contributes what it parsed
 
 
@@ -647,7 +648,7 @@ def test_build_bundle_does_not_flag_a_requirements_txt_landing_exactly_on_the_re
     repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n", "requirements.txt": text})
     assert len(open(os.path.join(repo, "requirements.txt")).read()) == ac.MANIFEST_READ_LIMIT
     _bundle, stats = ac.build_bundle(repo)
-    assert stats["manifest_truncated"] == 0
+    assert stats["manifest_problems"]["requirements"]["truncated"] == 0
 
 
 def test_build_bundle_counts_a_requirements_txt_truncated_mid_line(tmp_path):
@@ -659,9 +660,9 @@ def test_build_bundle_counts_a_requirements_txt_truncated_mid_line(tmp_path):
     })
     assert len(open(os.path.join(repo, "requirements.txt")).read()) > 200_000
     _bundle, stats = ac.build_bundle(repo)
-    assert stats["manifest_unreadable"] == 0
-    assert stats["manifest_malformed"] == 0
-    assert stats["manifest_truncated"] == 1
+    assert stats["manifest_problems"]["requirements"]["unreadable"] == 0
+    assert stats["manifest_problems"]["requirements"]["malformed"] == 0
+    assert stats["manifest_problems"]["requirements"]["truncated"] == 1
     assert stats["deps"] > 0
 
 
@@ -1161,6 +1162,44 @@ def test_count_note_tolerates_a_verb_phrase_with_no_be_placeholder():
         == "2 package.json files could not be parsed as JSON"
 
 
+def _zero_problems():
+    return {kind: {"unreadable": 0, "malformed": 0, "truncated": 0} for kind in ac.MANIFEST_PARSERS}
+
+
+def test_manifest_problem_notes_is_empty_when_nothing_went_wrong():
+    assert ac.manifest_problem_notes(_zero_problems()) == []
+
+
+def test_manifest_problem_notes_names_the_specific_kind():
+    """coderay-6ts.13. Every kind gets its own note, not an anonymous "other
+    manifest" bucket."""
+    problems = _zero_problems()
+    problems["go_mod"]["unreadable"] = 1
+    assert ac.manifest_problem_notes(problems) == ["1 go.mod file was unreadable or refused"]
+
+
+def test_manifest_problem_notes_names_the_parse_format_for_malformed():
+    """Only package.json and pyproject.toml can ever be malformed; each names
+    its own format rather than a generic "could not be parsed"."""
+    problems = _zero_problems()
+    problems["package"]["malformed"] = 1
+    problems["pyproject"]["malformed"] = 2
+    notes = ac.manifest_problem_notes(problems)
+    assert "1 package.json file could not be parsed as JSON" in notes
+    assert "2 pyproject.toml files could not be parsed as TOML" in notes
+
+
+def test_manifest_problem_notes_orders_by_manifest_parsers_kind_order_then_problem_type():
+    problems = _zero_problems()
+    problems["requirements"]["truncated"] = 1
+    problems["package"]["unreadable"] = 1
+    notes = ac.manifest_problem_notes(problems)
+    assert notes == [
+        "1 package.json file was unreadable or refused",
+        "1 requirements.txt file was truncated by the read limit; only what fit was parsed",
+    ]
+
+
 def test_parse_pyproject_skips_a_non_string_dependency_entry_instead_of_crashing():
     """coderay-6ts.15. A dependency array can hold a non-string element
     (a bare number, an inline table) and still parse fine under tomllib; only
@@ -1235,20 +1274,20 @@ def test_build_bundle_tolerates_a_malformed_pyproject_toml(tmp_path):
     })
     _bundle, stats = ac.build_bundle(repo)
     assert stats["deps"] == 0
-    assert stats["manifest_malformed"] == 1
+    assert stats["manifest_problems"]["pyproject"]["malformed"] == 1
 
 
 def test_build_bundle_tolerates_a_non_string_pyproject_dependency_entry(tmp_path):
     """coderay-6ts.15. Valid TOML, valid manifest -- only one dependency entry
     is the wrong shape. build_bundle must not abort the whole run over it, and
-    the manifest itself is well-formed, not `manifest_malformed`."""
+    the manifest itself is well-formed, not malformed."""
     repo = _repo(tmp_path, {
         "docker-compose.yml": "services: {}\n",
         "pyproject.toml": '[project]\nname = "app"\ndependencies = [42, "stripe>=5.0"]\n',
     })
     _bundle, stats = ac.build_bundle(repo)
     assert stats["deps"] == 1
-    assert stats["manifest_malformed"] == 0
+    assert stats["manifest_problems"]["pyproject"]["malformed"] == 0
     assert "stripe @ >=5.0" in _bundle
 
 
@@ -1259,8 +1298,8 @@ def test_build_bundle_counts_a_refused_go_mod_as_unreadable(tmp_path):
     os.symlink(outside, os.path.join(repo, "go.mod"))
     _bundle, stats = ac.build_bundle(repo)
     assert stats["deps"] == 0
-    assert stats["manifest_unreadable"] == 1
-    assert stats["manifest_malformed"] == 0
+    assert stats["manifest_problems"]["go_mod"]["unreadable"] == 1
+    assert stats["manifest_problems"]["go_mod"]["malformed"] == 0
 
 
 def test_build_bundle_does_not_count_a_pyproject_truncated_by_its_own_read_limit_as_malformed(tmp_path):
@@ -1271,4 +1310,4 @@ def test_build_bundle_does_not_count_a_pyproject_truncated_by_its_own_read_limit
     })
     assert len(open(os.path.join(repo, "pyproject.toml")).read()) > 200_000
     _bundle, stats = ac.build_bundle(repo)
-    assert stats["manifest_malformed"] == 0
+    assert stats["manifest_problems"]["pyproject"]["malformed"] == 0

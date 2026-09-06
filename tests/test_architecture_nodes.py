@@ -70,18 +70,22 @@ def test_build_bundle_prints_when_a_package_json_was_truncated(tmp_path, capsys)
 
 
 def test_build_bundle_prints_when_a_pyproject_toml_was_malformed(tmp_path, capsys):
+    """coderay-6ts.13. Named specifically as pyproject.toml, not a generic
+    "other manifest"."""
     repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n", "pyproject.toml": "not [ valid toml"})
     n.BuildBundle().run({"repo_path": repo})
-    assert "other manifest file could not be parsed" in capsys.readouterr().out
+    assert "pyproject.toml file could not be parsed as TOML" in capsys.readouterr().out
 
 
 def test_build_bundle_prints_when_a_go_mod_was_unreadable(tmp_path, capsys):
+    """coderay-6ts.13. Named specifically as go.mod, not a generic "other
+    manifest"."""
     outside = tmp_path / "outside.mod"
     outside.write_text("module example.com/app\n\nrequire github.com/x/y v1.0.0\n", encoding="utf-8")
     repo = _repo(tmp_path / "repo", {"docker-compose.yml": "services: {}\n"})
     os.symlink(outside, os.path.join(repo, "go.mod"))
     n.BuildBundle().run({"repo_path": repo})
-    assert "other manifest file was unreadable or refused" in capsys.readouterr().out
+    assert "go.mod file was unreadable or refused" in capsys.readouterr().out
 
 
 def test_build_bundle_prints_when_an_env_file_was_unreadable(tmp_path, capsys):
