@@ -78,6 +78,19 @@ def test_build_bundle_prints_when_an_env_file_was_unreadable(tmp_path, capsys):
     assert "env files unreadable" in capsys.readouterr().out
 
 
+def test_build_bundle_prints_when_a_config_file_was_unreadable(tmp_path, capsys):
+    """coderay-6ts.16 review. Every sibling counter (package.json, other
+    manifests, env files) gets a console segment; config_files_unreadable
+    was missing one. A legitimate k8s manifest keeps the bundle non-empty
+    (an empty bundle raises SystemExit before this print statement runs),
+    alongside the refused compose file that trips the new counter."""
+    repo = _repo(tmp_path / "repo", {"deploy/k8s/api.yaml": "kind: Deployment\n",
+                                     "id_rsa": "BEGIN-HUNTER2-PRIVATE-KEY\n"})
+    os.symlink(os.path.join(repo, "id_rsa"), os.path.join(repo, "docker-compose.yml"))
+    n.BuildBundle().run({"repo_path": repo})
+    assert "config files unreadable" in capsys.readouterr().out
+
+
 def test_build_bundle_prints_when_sdk_imports_were_capped(tmp_path, capsys, monkeypatch):
     """coderay-5wu.7. The console line reports an exact count with no sign
     the git-grep line cap actually cut real evidence."""

@@ -60,6 +60,8 @@ class BuildBundle(Node):
                  if stats.get("manifest_unreadable") else "")
               + (f" ({stats['env_files_unreadable']} env files unreadable)"
                  if stats.get("env_files_unreadable") else "")
+              + (f" ({stats['config_files_unreadable']} config files unreadable)"
+                 if stats.get("config_files_unreadable") else "")
               + (" (capped, more exist)" if stats.get("sdk_capped") else "")
               + (f" (SDK imports unavailable: {stats['sdk_unavailable']})" if stats.get("sdk_unavailable") else ""))
 
