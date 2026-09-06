@@ -272,6 +272,19 @@ def test_the_footer_says_when_sdk_import_evidence_was_capped():
     assert "capped" not in architecture._footer({"arch_stats": {**stats, "sdk_capped": False}})
 
 
+def test_the_footer_omits_the_capped_note_when_the_budget_slice_cut_every_sdk_line(tmp_path):
+    """coderay-6ts.8. git-grep hitting its own cap (sdk_capped=True) and the
+    overall bundle budget then cutting every survivor before the model saw
+    it (sdk_lines=0) are both individually true, but together read as a
+    contradiction: '0 SDK imports' beside 'more imports may exist'. Gate the
+    note on sdk_lines > 0 -- it should describe what the model actually saw,
+    not a fact about an earlier pipeline step the budget wiped out anyway."""
+    stats = {"config_files": 9, "deps": 42, "integrations": 6, "sdk_lines": 0,
+             "sdk_capped": True}
+    assert "capped" not in architecture._footer({"arch_stats": stats})
+    assert "capped" in architecture._footer({"arch_stats": {**stats, "sdk_lines": 1}})
+
+
 def test_the_footer_escapes_the_unavailable_note():
     """Defence in depth: the crawler never passes git text through, and the
     footer escapes what it is handed anyway, since it lands in HTML."""

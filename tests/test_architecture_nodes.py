@@ -106,6 +106,22 @@ def test_build_bundle_prints_when_a_config_file_was_unreadable(tmp_path, capsys)
     assert "config file was unreadable or refused" in capsys.readouterr().out
 
 
+def test_build_bundle_omits_the_capped_note_when_the_budget_slice_cut_every_sdk_line(tmp_path, monkeypatch, capsys):
+    """coderay-6ts.8. git-grep hitting its own cap and the bundle budget then
+    cutting every survivor before the model saw it are both individually
+    true, but "0 SDK imports (capped, more exist)" reads as a contradiction."""
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n"})
+    monkeypatch.setattr(n.ac, "_sdk_grep", lambda repo, max_lines=n.ac.SDK_GREP_MAX_LINES:
+                         ("a.ts:1: stripe\nb.ts:2: stripe", None, True))
+    full_bundle, full_stats = n.ac.build_bundle(repo)
+    assert full_stats["sdk_capped"] is True
+    cutoff = full_bundle.index("a.ts:1: stripe")
+    n.BuildBundle().run({"repo_path": repo, "codebase_budget": cutoff})
+    out = capsys.readouterr().out
+    assert "0 SDK imports" in out
+    assert "capped" not in out
+
+
 def test_build_bundle_prints_when_sdk_imports_were_capped(tmp_path, capsys, monkeypatch):
     """coderay-5wu.7. The console line reports an exact count with no sign
     the git-grep line cap actually cut real evidence."""

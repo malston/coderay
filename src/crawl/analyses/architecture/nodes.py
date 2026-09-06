@@ -74,7 +74,10 @@ class BuildBundle(Node):
               + (f" ({other_truncated})" if other_truncated else "")
               + (f" ({unreadable_env})" if unreadable_env else "")
               + (f" ({unreadable_config})" if unreadable_config else "")
-              + (" (capped, more exist)" if stats.get("sdk_capped") else "")
+              # Gated on sdk_lines > 0 (coderay-6ts.8), matching the footer: a
+              # capped git-grep whose lines were then all cut by the bundle
+              # budget shouldn't read as "0 SDK imports (capped, more exist)".
+              + (" (capped, more exist)" if stats.get("sdk_capped") and stats.get("sdk_lines") else "")
               + (f" (SDK imports unavailable: {stats['sdk_unavailable']})" if stats.get("sdk_unavailable") else ""))
 
 

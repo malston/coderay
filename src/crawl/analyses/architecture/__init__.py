@@ -82,7 +82,13 @@ def _footer(shared):
             + (f" {other_truncated}." if other_truncated else "")
             + (f" {unreadable_env}." if unreadable_env else "")
             + (f" SDK import evidence unavailable ({esc(note)}); connections are configured, not proven live." if note else "")
-            + (" SDK import evidence was capped; more imports may exist than are shown." if stats.get("sdk_capped") else ""))
+            + (" SDK import evidence was capped; more imports may exist than are shown."
+               # Gated on sdk_lines > 0 (coderay-6ts.8): git-grep hitting its own
+               # cap and the bundle budget then cutting every surviving line
+               # before the model saw it are both individually true, but "0 SDK
+               # imports" beside "more imports may exist" reads as a
+               # contradiction -- describe what the model actually saw.
+               if stats.get("sdk_capped") and stats.get("sdk_lines") else ""))
 
 def _md_preamble(shared):
     verdict = shared.get("shape_verdict")
