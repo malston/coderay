@@ -642,43 +642,41 @@ def _parse_requirements(text):
 # One parser per manifest kind `_classify` can return for a dependency file.
 # Every value here is read and dispatched through `_read_manifest`, so a new
 # manifest kind is just one more `_classify` branch plus one more entry here.
-MANIFEST_PARSERS = {
-    'package': _parse_package_json,
-    'go_mod': _parse_go_mod,
-    'pyproject': _parse_pyproject,
-    'requirements': _parse_requirements,
-}
-
-# The file name a reader knows each kind by, for a footer/console clause
-# naming it specifically (coderay-6ts.13) rather than "package.json" vs. an
-# anonymous "other manifest file" for everything else.
-_MANIFEST_LABELS = {
-    'package': 'package.json',
-    'go_mod': 'go.mod',
-    'pyproject': 'pyproject.toml',
-    'requirements': 'requirements.txt',
-}
-
-# go.mod and requirements.txt are regex-based and never raise (see
-# _MANIFEST_PARSE_ERRORS below), so only package.json and pyproject.toml can
-# ever be "malformed"; a future parser that raises without an entry here
-# falls back to the generic phrasing in manifest_problem_notes.
-_MANIFEST_MALFORMED_VERB = {
-    'package': "could not be parsed as JSON",
-    'pyproject': "could not be parsed as TOML",
-}
-
-# The exception type each parser raises on malformed input, scoped per kind
-# rather than a blanket `except ValueError` -- a future bug inside a
-# regex-based parser (go.mod, requirements.txt) that happened to raise
-# ValueError for an unrelated reason would otherwise be silently reclassified
-# as "malformed manifest" instead of surfacing as the parser bug it is
-# (coderay-5wu.18 review). Neither regex parser is expected to raise at all.
-_MANIFEST_PARSE_ERRORS = {
-    'package': (json.JSONDecodeError,),
-    'go_mod': (),
-    'pyproject': (tomllib.TOMLDecodeError,),
-    'requirements': (),
+# One entry per manifest kind `_classify` can return for a dependency file --
+# every value here is read and dispatched through `_read_manifest`, so a new
+# manifest kind is one more `_classify` branch plus one more entry here
+# (coderay-6ts.13: previously four separate dicts keyed by the same four kind
+# strings, nothing enforcing they stayed in sync).
+#
+# `parser` is read and dispatched through `_read_manifest`. `label` is the
+# file name a reader knows the kind by, for a footer/console clause naming it
+# specifically. `errors` is the exception type(s) this kind's own parser
+# raises on malformed input, scoped per kind rather than a blanket `except
+# ValueError` -- a future bug inside a regex-based parser (go.mod,
+# requirements.txt) that happened to raise ValueError for an unrelated reason
+# would otherwise be silently reclassified as "malformed manifest" instead of
+# surfacing as the parser bug it is (coderay-5wu.18 review); neither regex
+# parser is expected to raise at all, so both list none. `malformed_verb` is
+# the format name a malformed-manifest note uses ("could not be parsed as
+# JSON"); a kind with no entry (or None) falls back to a generic "could not
+# be parsed" in manifest_problem_notes.
+MANIFEST_KINDS = {
+    'package': {
+        'parser': _parse_package_json, 'label': 'package.json',
+        'errors': (json.JSONDecodeError,), 'malformed_verb': "could not be parsed as JSON",
+    },
+    'go_mod': {
+        'parser': _parse_go_mod, 'label': 'go.mod',
+        'errors': (), 'malformed_verb': None,
+    },
+    'pyproject': {
+        'parser': _parse_pyproject, 'label': 'pyproject.toml',
+        'errors': (tomllib.TOMLDecodeError,), 'malformed_verb': "could not be parsed as TOML",
+    },
+    'requirements': {
+        'parser': _parse_requirements, 'label': 'requirements.txt',
+        'errors': (), 'malformed_verb': None,
+    },
 }
 
 
@@ -713,11 +711,12 @@ def _read_manifest(full, repo, kind):
     truncated = len(text) > MANIFEST_READ_LIMIT
     if truncated:
         text = text[:MANIFEST_READ_LIMIT]
-    errors = _MANIFEST_PARSE_ERRORS[kind]
+    kind_info = MANIFEST_KINDS[kind]
+    parser, errors = kind_info['parser'], kind_info['errors']
     if not errors:
-        return MANIFEST_PARSERS[kind](text), False, False, truncated
+        return parser(text), False, False, truncated
     try:
-        return MANIFEST_PARSERS[kind](text), False, False, truncated
+        return parser(text), False, False, truncated
     except errors:
         if truncated:
             return None, False, False, True
@@ -743,18 +742,17 @@ def _count_note(n, noun, verb):
 
 def manifest_problem_notes(manifest_problems):
     """A `_count_note` clause per (kind, problem) with a nonzero count, e.g.
-    "1 go.mod file was unreadable or refused" -- ordered by MANIFEST_PARSERS'
+    "1 go.mod file was unreadable or refused" -- ordered by MANIFEST_KINDS'
     own kind order, then unreadable/malformed/truncated, so every manifest
-    kind is named specifically instead of collapsing into an anonymous
-    "other manifest" bucket (coderay-6ts.13)."""
+    kind is named specifically (coderay-6ts.13)."""
     notes = []
-    for kind in MANIFEST_PARSERS:
-        label = _MANIFEST_LABELS[kind]
+    for kind, kind_info in MANIFEST_KINDS.items():
+        label = kind_info['label']
         counts = manifest_problems.get(kind, {})
         notes.append(_count_note(counts.get("unreadable", 0),
                                  f"{label} file", "{be} unreadable or refused"))
         notes.append(_count_note(counts.get("malformed", 0), f"{label} file",
-                                 _MANIFEST_MALFORMED_VERB.get(kind, "could not be parsed")))
+                                 kind_info['malformed_verb'] or "could not be parsed"))
         notes.append(_count_note(counts.get("truncated", 0), f"{label} file",
                                  "{be} truncated by the read limit; only what fit was parsed"))
     return [note for note in notes if note]
@@ -769,12 +767,10 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
     env_names, deps = set(), {}
     env_files, manifest_files = [], []  # what contributed names and dependency lists
     env_files_unreadable = 0
-    # One breakdown per manifest kind rather than package.json getting its own
-    # counters and the other three kinds pooling into an anonymous "manifest"
-    # bucket (coderay-6ts.13) -- every kind is nameable when something goes
-    # wrong with it, not just package.json.
+    # One breakdown per manifest kind, so every kind is nameable in a note
+    # when something goes wrong with it.
     manifest_problems = {kind: {"unreadable": 0, "malformed": 0, "truncated": 0}
-                         for kind in MANIFEST_PARSERS}
+                         for kind in MANIFEST_KINDS}
     config_files_unreadable = 0   # compose / k8s / gateway / iac buckets
     for dirpath, _dn, filenames in _walk(repo):
         for f in filenames:
@@ -792,7 +788,7 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
                 if names:
                     env_names.update(names)
                     env_files.append(rel)
-            elif kind in MANIFEST_PARSERS:
+            elif kind in MANIFEST_KINDS:
                 found, unreadable, malformed, truncated = _read_manifest(full, repo, kind)
                 if unreadable:
                     manifest_problems[kind]["unreadable"] += 1

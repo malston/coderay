@@ -1163,7 +1163,7 @@ def test_count_note_tolerates_a_verb_phrase_with_no_be_placeholder():
 
 
 def _zero_problems():
-    return {kind: {"unreadable": 0, "malformed": 0, "truncated": 0} for kind in ac.MANIFEST_PARSERS}
+    return {kind: {"unreadable": 0, "malformed": 0, "truncated": 0} for kind in ac.MANIFEST_KINDS}
 
 
 def test_manifest_problem_notes_is_empty_when_nothing_went_wrong():
@@ -1203,9 +1203,9 @@ def test_manifest_problem_notes_orders_by_manifest_parsers_kind_order_then_probl
 def test_parse_pyproject_skips_a_non_string_dependency_entry_instead_of_crashing():
     """coderay-6ts.15. A dependency array can hold a non-string element
     (a bare number, an inline table) and still parse fine under tomllib; only
-    _parse_pep508's own spec.strip() raised, escaping _MANIFEST_PARSE_ERRORS'
-    narrower catch and aborting the whole architecture run instead of just
-    skipping the malformed entry. Same hole in the optional-dependencies loop."""
+    _parse_pep508's own spec.strip() raised, escaping MANIFEST_KINDS' own
+    per-kind error tuple and aborting the whole architecture run instead of
+    just skipping the malformed entry. Same hole in the optional-dependencies loop."""
     text = (
         '[project]\nname = "app"\n'
         'dependencies = [42, "requests>=2.0"]\n'
