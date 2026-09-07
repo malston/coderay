@@ -50,10 +50,18 @@ def _era_for(month, eras):
     return None  # coderay-q2r.40: not the last era, which mislabels a gap
 
 
-def _excluding_pure_renames(candidates, repo_path):
+def _excluding_pure_renames(candidates, repo_path, diff_filter):
     """bulk_changes runs with --no-renames so a directory move shows up as a
-    plain deletion (coderay-q2r.44); a move isn't a killed feature, and
-    NameEras' survey must not describe one as a real deletion (coderay-6ts.1).
+    plain deletion on its old paths and a plain addition on its new ones
+    (coderay-q2r.44); a move isn't a killed feature or a real launch, and
+    NameEras' survey must not describe one as either (coderay-6ts.1,
+    coderay-ziw.2). `diff_filter` must match how `candidates` was collected
+    ("D" for bulk_dels, "A" for bulk_adds) -- is_pure_rename's own docstring
+    explains why the two aren't interchangeable. Required rather than
+    defaulted: is_pure_rename returns True vacuously for a commit with zero
+    paths of the given status, so a caller that forgets to state its status
+    would fail silently instead of loudly (coderay-ziw.2 review).
+
     Called last, after every cheap in-memory filter has already narrowed
     `candidates`: is_pure_rename shells out to `git show`, so checking it
     before a candidate count/noise filter would run that subprocess on
@@ -63,7 +71,7 @@ def _excluding_pure_renames(candidates, repo_path):
     this (coderay-6ts.3): its candidates are further trimmed by max_graves
     and one-per-area dedup, both cheaper than a subprocess call, so it checks
     is_pure_rename only on a candidate that has already survived both."""
-    return [c for c in candidates if not gl.is_pure_rename(repo_path, c["hash"])]
+    return [c for c in candidates if not gl.is_pure_rename(repo_path, c["hash"], diff_filter)]
 
 
 # Step 1. Crawl the log; pull the bulk-change rosters once.
@@ -103,16 +111,17 @@ class NameEras(Node):
     def prep(self, shared):
         commits = shared["commits"]
         big_dels = _excluding_pure_renames(
-            [c for c in shared["bulk_dels"] if c["count"] >= 10], shared["repo_path"])
+            [c for c in shared["bulk_dels"] if c["count"] >= 10], shared["repo_path"], "D")
+        big_adds = _excluding_pure_renames(shared["bulk_adds"], shared["repo_path"], "A")
         prompt = fill(
             load_prompt("name-eras.md"),
             heatmap_summary=gl.heatmap_summary(commits),
             pivots_summary=gl.pivots_summary(commits),
             deletions_summary=gl._changes_summary(big_dels) or "(none)",
-            additions_summary=gl._changes_summary(shared["bulk_adds"]) or "(none)",
+            additions_summary=gl._changes_summary(big_adds) or "(none)",
         )
         # The bulk-change lines carry each commit's subject verbatim (coderay-3eu).
-        listed = [c["hash"] for c in gl.top_changes(big_dels) + gl.top_changes(shared["bulk_adds"])]
+        listed = [c["hash"] for c in gl.top_changes(big_dels) + gl.top_changes(big_adds)]
         return prompt, listed
 
     def exec(self, inputs):
@@ -248,7 +257,7 @@ class Graveyard(Node):
             area = c["scope"]
             if area in seen_areas:
                 continue
-            if gl.is_pure_rename(repo_path, c["hash"]):
+            if gl.is_pure_rename(repo_path, c["hash"], "D"):
                 continue
             seen_areas.add(area)
             graves.append(c)

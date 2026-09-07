@@ -221,14 +221,14 @@ def test_is_pure_rename_true_for_a_directory_move(tmp_path):
     new = {f"new/f{i}.py": f"x{i}\n" for i in range(6)}
     repo = _repo(tmp_path, [("add", old, []), ("move the directory", new, list(old))])
     dels = gl.bulk_changes(repo, "D", min_files=5)
-    assert gl.is_pure_rename(repo, dels[0]["hash"]) is True
+    assert gl.is_pure_rename(repo, dels[0]["hash"], "D") is True
 
 
 def test_is_pure_rename_false_for_a_real_deletion(tmp_path):
     repo = _repo(tmp_path, [("add", {f"f{i}.py": "x\n" for i in range(6)}, []),
                             ("drop it", {}, [f"f{i}.py" for i in range(6)])])
     dels = gl.bulk_changes(repo, "D", min_files=5)
-    assert gl.is_pure_rename(repo, dels[0]["hash"]) is False
+    assert gl.is_pure_rename(repo, dels[0]["hash"], "D") is False
 
 
 def test_is_pure_rename_forces_detection_on_regardless_of_the_repos_config(tmp_path):
@@ -240,7 +240,7 @@ def test_is_pure_rename_forces_detection_on_regardless_of_the_repos_config(tmp_p
     repo = _repo(tmp_path, [("add", old, []), ("move the directory", new, list(old))])
     subprocess.run(["git", "-C", repo, "config", "diff.renames", "false"], check=True)
     dels = gl.bulk_changes(repo, "D", min_files=5)
-    assert gl.is_pure_rename(repo, dels[0]["hash"]) is True
+    assert gl.is_pure_rename(repo, dels[0]["hash"], "D") is True
 
 
 def test_is_pure_rename_false_for_a_mixed_move_and_delete(tmp_path):
@@ -252,7 +252,33 @@ def test_is_pure_rename_false_for_a_mixed_move_and_delete(tmp_path):
     repo = _repo(tmp_path, [("add", {**old, **unrelated}, []),
                             ("move and delete", new, list(old) + list(unrelated))])
     dels = gl.bulk_changes(repo, "D", min_files=5)
-    assert gl.is_pure_rename(repo, dels[0]["hash"]) is False
+    assert gl.is_pure_rename(repo, dels[0]["hash"], "D") is False
+
+
+def test_is_pure_rename_true_for_a_directory_move_under_the_addition_filter(tmp_path):
+    """coderay-ziw.2. bulk_changes(status='A') sees a directory move as a plain
+    addition on its new paths (--no-renames); is_pure_rename must be checked
+    with diff_filter="A" here, since a move has zero D-status paths and would
+    vacuously read as a pure rename under the "D" filter instead."""
+    old = {f"old/f{i}.py": f"x{i}\n" for i in range(6)}
+    new = {f"new/f{i}.py": f"x{i}\n" for i in range(6)}
+    repo = _repo(tmp_path, [("add", old, []), ("move the directory", new, list(old))])
+    adds = gl.bulk_changes(repo, "A", min_files=5)
+    move = next(c for c in adds if c["subject"] == "move the directory")
+    assert gl.is_pure_rename(repo, move["hash"], "A") is True
+
+
+def test_is_pure_rename_false_for_a_mixed_move_and_add(tmp_path):
+    """A commit that moves some files and adds genuinely new ones still leaves
+    a real addition behind once the renames are paired off."""
+    old = {f"old/f{i}.py": f"x{i}\n" for i in range(6)}
+    new = {f"new/f{i}.py": f"x{i}\n" for i in range(6)}
+    fresh = {f"fresh{i}.py": f"y{i}\n" for i in range(6)}
+    repo = _repo(tmp_path, [("add", old, []),
+                            ("move and add", {**new, **fresh}, list(old))])
+    adds = gl.bulk_changes(repo, "A", min_files=5)
+    move_and_add = next(c for c in adds if c["subject"] == "move and add")
+    assert gl.is_pure_rename(repo, move_and_add["hash"], "A") is False
 
 
 def test_scope_of_splits_and_joins_on_forward_slash_not_the_platform_separator(monkeypatch):

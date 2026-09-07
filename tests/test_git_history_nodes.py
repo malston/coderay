@@ -207,9 +207,9 @@ def test_graveyard_checks_is_pure_rename_lazily_after_max_graves_and_area_dedup(
     real_is_pure_rename = gl.is_pure_rename
     calls = []
 
-    def counting(repo_path, commit_hash):
+    def counting(repo_path, commit_hash, diff_filter):
         calls.append(commit_hash)
-        return real_is_pure_rename(repo_path, commit_hash)
+        return real_is_pure_rename(repo_path, commit_hash, diff_filter)
 
     monkeypatch.setattr(n.gl, "is_pure_rename", counting)
     _fake_llm(monkeypatch, lambda p: "entry")
@@ -375,7 +375,7 @@ def test_name_eras_records_the_bulk_change_commits_whose_subjects_it_sent(monkey
     # The fabricated hash below isn't a real commit, so a real is_pure_rename
     # (a `git show`) would fail; this test is about commits_sent tracking, not
     # rename detection, which has its own dedicated tests below.
-    monkeypatch.setattr(n.gl, "is_pure_rename", lambda repo_path, commit_hash: False)
+    monkeypatch.setattr(n.gl, "is_pure_rename", lambda repo_path, commit_hash, diff_filter: False)
     _fake_llm(monkeypatch, lambda p: "```json\n" + json.dumps(ERAS) + "\n```")
     big = {"hash": "d" * 40, "date": "2019-02-01", "count": 12, "scope": "core", "subject": "drop", "month": "2019-02"}
     add = {"hash": "a" * 40, "date": "2019-01-01", "count": 30, "scope": "core", "subject": "add", "month": "2019-01"}
@@ -400,6 +400,34 @@ def test_name_eras_excludes_a_directory_move_disguised_as_a_bulk_deletion(monkey
               "bulk_adds": []}
     n.NameEras().run(shared)
     assert shared["survey_commits_sent"] == []
+
+
+def test_name_eras_excludes_a_directory_move_but_keeps_a_real_launch_disguised_as_a_bulk_addition(monkeypatch, tmp_path):
+    """coderay-ziw.2. bulk_adds sees a directory move as a plain addition
+    (bulk_changes runs with --no-renames); the deletions side already filters
+    this via _excluding_pure_renames, but additions_summary and the sent-commits
+    list did not, so the same move could reach the era-naming prompt described
+    as a real feature launch.
+
+    is_pure_rename's own diff-filter is status-specific (coderay-ziw.2 review
+    round): a genuine bulk addition has no D-status paths at all, so checking
+    it under --diff-filter=D would misclassify it as a pure rename too. The
+    fix must check bulk_adds under --diff-filter=A, and this test proves a
+    real launch survives that check while a same-shaped move does not."""
+    old = {f"old/f{i}.py": f"x{i}\n" for i in range(10)}
+    new = {f"new/f{i}.py": f"x{i}\n" for i in range(10)}
+    launch = {f"feature/g{i}.py": f"y{i}\n" for i in range(10)}
+    repo = _repo(tmp_path, [("add", old, []), ("move the directory", new, list(old)), ("launch the feature", launch, [])])
+    _fake_llm(monkeypatch, lambda p: "```json\n" + json.dumps(ERAS) + "\n```")
+    bulk_adds = n.gl.bulk_changes(repo, "A", min_files=10)
+    add_hash = next(c["hash"] for c in bulk_adds if c["subject"] == "add")
+    launch_hash = next(c["hash"] for c in bulk_adds if c["subject"] == "launch the feature")
+    shared = {"repo_path": repo,
+              "commits": [{"month": "2019-01", "files": ["a.py"]}],
+              "bulk_dels": [],
+              "bulk_adds": bulk_adds}
+    n.NameEras().run(shared)
+    assert set(shared["survey_commits_sent"]) == {add_hash, launch_hash}
 
 
 def test_name_eras_tolerates_an_empty_bulk_dels_list(monkeypatch, tmp_path):
