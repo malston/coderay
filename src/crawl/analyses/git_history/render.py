@@ -11,6 +11,7 @@ card becomes a wall of text. Descriptions render full markdown, including the
 friendly ```mermaid diagrams and code blocks the prompts produce.
 """
 import html as _html
+import math as _math
 import re
 
 from crawl.core.render import md_heading, markdown_parser
@@ -61,13 +62,16 @@ def _esc(s):
 def _pct_num(v):
     """Parse a percent value the model may have written with its own '%'
     already appended (`"45%"`), which `float()` otherwise rejects outright.
-    None on anything unparseable."""
+    None on anything unparseable, NaN included -- `float()` parses "nan"
+    without raising, but NaN would slip past `_clamp_pct`'s min/max clamp
+    unchanged, since a NaN comparison never triggers the clamp's swap."""
     if isinstance(v, str):
         v = v.strip().rstrip("%")
     try:
-        return float(v)
+        n = float(v)
     except (TypeError, ValueError):
         return None
+    return None if _math.isnan(n) else n
 
 
 def _clamp_pct(n):
