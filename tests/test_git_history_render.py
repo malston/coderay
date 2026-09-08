@@ -42,6 +42,22 @@ def test_pct_label_clamps_to_0_100_like_pct_does():
     assert r._pct_label(-5) == "0"
 
 
+def test_pct_falls_back_to_zero_on_nan():
+    """coderay-ziw.3. `min(100, float('nan'))` returns 100 because NaN never
+    wins a comparison, so a model value that parses to NaN slipped past the
+    clamp and rendered as a full bar instead of falling back like other
+    unparseable input."""
+    assert r._pct(float("nan")) == 0
+    assert r._pct("nan") == 0
+
+
+def test_pct_label_falls_back_to_question_mark_on_nan():
+    """coderay-ziw.3. Same NaN-clamp bug as _pct, reached through the
+    markdown cast/mood twin."""
+    assert r._pct_label(float("nan")) == "?"
+    assert r._pct_label("nan") == "?"
+
+
 def test_bars_renders_a_percent_sign_only_once():
     html = r._bars([{"name": "Refactors", "pct": "45%"}])
     assert "45%" in html
