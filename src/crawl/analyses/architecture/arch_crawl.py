@@ -724,8 +724,6 @@ def _read_manifest(full, repo, kind):
         text = text[:MANIFEST_READ_LIMIT]
     kind_info = MANIFEST_KINDS[kind]
     parser, errors = kind_info['parser'], kind_info['errors']
-    if not errors:
-        return parser(text), False, False, truncated
     try:
         return parser(text), False, False, truncated
     except errors:
