@@ -56,6 +56,10 @@ def _footer(shared):
     manifest_notes = manifest_problem_notes(stats.get("manifest_problems", {}))
     unreadable_env = _count_note(stats.get("env_files_unreadable", 0),
                                  "env file", "{be} unreadable or refused")
+    truncated_env = _count_note(stats.get("env_files_truncated", 0),
+                                "env file", "{be} truncated by the read limit; only what fit was parsed")
+    truncated_config = _count_note(stats.get("config_files_truncated", 0),
+                                   "config file", "{be} truncated by the read limit; only what fit was parsed")
     return (f"Overlaid from {config_files} config files, "
             f"{stats.get('deps', 0)} dependencies, "
             f"{stats.get('integrations', 0)} integrations."
@@ -63,8 +67,10 @@ def _footer(shared):
                f"{'were' if excluded != 1 else 'was'} found but did not reach the bundle "
                "(empty)." if excluded > 0 else "")
             + (f" {unreadable_config}." if unreadable_config else "")
+            + (f" {truncated_config}." if truncated_config else "")
             + "".join(f" {manifest_note}." for manifest_note in manifest_notes)
             + (f" {unreadable_env}." if unreadable_env else "")
+            + (f" {truncated_env}." if truncated_env else "")
             + (f" SDK import evidence unavailable ({esc(note)}); connections are configured, not proven live." if note else "")
             + (" SDK import evidence was capped; more imports may exist than are shown."
                if stats.get("sdk_capped") else ""))

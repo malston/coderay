@@ -288,6 +288,24 @@ def test_the_footer_says_when_an_env_file_was_unreadable():
     assert "unreadable or refused" not in quiet_footer
 
 
+def test_the_footer_says_when_an_env_file_was_truncated():
+    stats = {"config_files": 1, "config_files_found": 1, "deps": 0, "integrations": 0,
+             "env_files_truncated": 1}
+    footer = architecture._footer({"arch_stats": stats})
+    assert "1 env file was truncated by the read limit; only what fit was parsed" in footer
+    quiet_footer = architecture._footer({"arch_stats": {**stats, "env_files_truncated": 0}})
+    assert "truncated by the read limit" not in quiet_footer
+
+
+def test_the_footer_says_when_a_config_file_was_truncated():
+    stats = {"config_files": 1, "config_files_found": 1, "deps": 0, "integrations": 0,
+             "config_files_truncated": 1}
+    footer = architecture._footer({"arch_stats": stats})
+    assert "1 config file was truncated by the read limit; only what fit was parsed" in footer
+    quiet_footer = architecture._footer({"arch_stats": {**stats, "config_files_truncated": 0}})
+    assert "truncated by the read limit" not in quiet_footer
+
+
 def test_the_footer_says_when_sdk_import_evidence_was_capped():
     """coderay-5wu.7. sdk_lines == the cap reads as a precise count with
     nothing telling the reader the list was cut."""
