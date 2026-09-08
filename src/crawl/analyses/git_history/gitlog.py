@@ -310,25 +310,32 @@ def show_diff(repo_path, commit_hash, max_chars=4000, stat=True):
     return raw
 
 
-def is_pure_rename(repo_path, commit_hash):
-    """True if this commit's changes are entirely renames: with rename
-    detection forced on, git pairs up every removed path with an added one
-    and no true deletion remains.
+def is_pure_rename(repo_path, commit_hash, diff_filter):
+    """True if this commit's `diff_filter`-status changes are entirely renames:
+    with rename detection forced on, none of the paths git would otherwise
+    report under that status remain unpaired.
 
-    `bulk_changes` runs with `--no-renames` so a directory move is visible as
-    a bulk deletion (coderay-q2r.44) -- but a move isn't a killed feature,
-    and the graveyard must not write one a eulogy for having been renamed.
+    `bulk_changes` runs with `--no-renames`, so a directory move is visible as
+    a bulk deletion on its old paths and a bulk addition on its new ones
+    (coderay-q2r.44, coderay-ziw.2) -- but a move isn't a killed feature or a
+    real launch, and neither the graveyard nor the era survey should describe
+    one as either. `diff_filter` must match the status the candidate was
+    collected under: "D" for a bulk_dels candidate, "A" for a bulk_adds one --
+    the two aren't interchangeable, since a genuine bulk addition has no "D"
+    paths at all and would otherwise look like a pure rename by that filter.
+    Required rather than defaulted, since that mismatch fails silently: no
+    default status is safe for every caller.
 
     Assumes `commit_hash` is never a merge commit: every caller sources it
     from `bulk_changes`, and plain `git log --diff-filter --name-only`
     (no `-m`/`--cc`) never emits a diff for a merge commit, so one never
     reaches `bulk_changes`' output in the first place (coderay-6ts.7). A
-    merge commit's `-M --diff-filter=D` semantics differ from a plain
+    merge commit's `-M --diff-filter=<X>` semantics differ from a plain
     commit's (multiple base diffs, not one), so `is_pure_rename` must not be
     pointed at one without reviewing that difference first.
     """
     raw = subprocess.check_output(
-        ["git", "-C", repo_path, "show", "-M", "--diff-filter=D", "--name-only",
+        ["git", "-C", repo_path, "show", "-M", f"--diff-filter={diff_filter}", "--name-only",
          "--pretty=format:", "--end-of-options", f"{commit_hash}^{{commit}}"],
         text=True, errors="replace",
     )
