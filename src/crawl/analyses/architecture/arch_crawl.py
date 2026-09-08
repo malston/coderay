@@ -105,7 +105,12 @@ def _walk(root):
         yield dirpath, dirnames, filenames
 
 
-def _read(path, limit=200_000, repo=None):
+ENV_READ_LIMIT = 40_000        # shared with build_bundle's .env truncation check
+CONFIG_READ_LIMIT = 200_000    # _read's own default; shared so build_bundle's
+                                # compose/k8s/gateway/iac truncation check can't drift from it
+
+
+def _read(path, limit=CONFIG_READ_LIMIT, repo=None):
     """Read a file's text, redaction-bound for a prompt.
 
     Returns (text, ok). `ok` is False when the read failed -- refused by
@@ -785,12 +790,14 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
     env_names, deps = set(), {}
     env_files, manifest_files = [], []  # what contributed names and dependency lists
     env_files_unreadable = 0
+    env_files_truncated = 0
     # One breakdown per manifest kind, so every kind is nameable in a note
     # when something goes wrong with it.
     manifest_problems = {kind: {"unreadable": 0, "malformed": 0, "truncated": 0,
                                 "truncated_unparsable": 0}
                          for kind in MANIFEST_KINDS}
     config_files_unreadable = 0   # compose / k8s / gateway / iac buckets
+    config_files_truncated = 0
     for dirpath, _dn, filenames in _walk(repo):
         for f in filenames:
             rel = os.path.relpath(os.path.join(dirpath, f), repo)
@@ -799,10 +806,17 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
                 continue
             full = os.path.join(dirpath, f)
             if kind == 'env':
-                text, ok = _read(full, 40_000, repo)
+                # Probe one char past the limit, not `>=`: a `.env` that
+                # happens to be exactly ENV_READ_LIMIT long is not a
+                # truncation (the same off-by-one MANIFEST_READ_LIMIT guards
+                # against, coderay-6ts.12).
+                text, ok = _read(full, ENV_READ_LIMIT + 1, repo)
                 if not ok:
                     env_files_unreadable += 1
                     continue
+                if len(text) > ENV_READ_LIMIT:
+                    text = text[:ENV_READ_LIMIT]
+                    env_files_truncated += 1
                 names = _env_names(text)
                 if names:
                     env_names.update(names)
@@ -832,10 +846,16 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
                     deps.update(found)
                     manifest_files.append(rel)
             else:
-                text, ok = _read(full, repo=repo)
+                # Same off-by-one guard as the .env and manifest reads:
+                # probe one char past CONFIG_READ_LIMIT so a file landing
+                # exactly on the limit is not a false positive.
+                text, ok = _read(full, CONFIG_READ_LIMIT + 1, repo)
                 if not ok:
                     config_files_unreadable += 1
                     continue
+                if len(text) > CONFIG_READ_LIMIT:
+                    text = text[:CONFIG_READ_LIMIT]
+                    config_files_truncated += 1
                 buckets[kind].append((rel, _redact(text)))
 
     parts = []          # (files this section discloses, text)
@@ -927,7 +947,9 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
         "config_files_found": sum(len(v) for v in buckets.values()),
         "manifest_problems": manifest_problems,
         "env_files_unreadable": env_files_unreadable,
+        "env_files_truncated": env_files_truncated,
         "config_files_unreadable": config_files_unreadable,
+        "config_files_truncated": config_files_truncated,
         "truncated": len(whole) > max_chars,
         "env_vars": len(env_names),
         "deps": len(deps),

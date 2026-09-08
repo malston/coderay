@@ -497,7 +497,8 @@ def test_build_bundle_overlays_the_four_sources_and_counts_them(tmp_path):
     assert stats == {"config_files": 4, "config_files_found": 4,
                      "manifest_problems": {"package": dict(zero_problems), "go_mod": dict(zero_problems),
                                           "pyproject": dict(zero_problems), "requirements": dict(zero_problems)},
-                     "env_files_unreadable": 0, "config_files_unreadable": 0,
+                     "env_files_unreadable": 0, "env_files_truncated": 0,
+                     "config_files_unreadable": 0, "config_files_truncated": 0,
                      "truncated": False,
                      "env_vars": 2, "deps": 2, "integrations": 0, "sdk_lines": 0,
                      "sdk_unavailable": "not a git repository", "sdk_capped": False,
@@ -668,6 +669,51 @@ def test_build_bundle_counts_a_requirements_txt_truncated_mid_line(tmp_path):
     assert stats["manifest_problems"]["requirements"]["malformed"] == 0
     assert stats["manifest_problems"]["requirements"]["truncated"] == 1
     assert stats["deps"] > 0
+
+
+def test_build_bundle_counts_an_env_file_truncated_by_its_own_read_limit(tmp_path):
+    """The .env read (`_read(full, 40_000, repo)`) had the same silent-cut gap
+    coderay-6ts.12 closed for manifests: a `.env` above the limit is sliced
+    with no stat, footer note, or console line saying so."""
+    lines = "\n".join(f"VAR_{i}=value{i}" for i in range(5_000))
+    repo = _repo(tmp_path, {
+        "docker-compose.yml": "services: {}\n",
+        ".env": lines,
+    })
+    assert len(open(os.path.join(repo, ".env")).read()) > ac.ENV_READ_LIMIT
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["env_files_truncated"] == 1
+
+
+def test_build_bundle_does_not_flag_an_env_file_landing_exactly_on_the_read_limit(tmp_path):
+    """Probe one char past the limit, not `>=`: a `.env` that happens to be
+    exactly ENV_READ_LIMIT long is not a truncation."""
+    line = "A=1\n"
+    reps = ac.ENV_READ_LIMIT // len(line)
+    text = line * reps
+    text += "#" * (ac.ENV_READ_LIMIT - len(text))
+    assert len(text) == ac.ENV_READ_LIMIT
+    repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n", ".env": text})
+    assert len(open(os.path.join(repo, ".env")).read()) == ac.ENV_READ_LIMIT
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["env_files_truncated"] == 0
+
+
+def test_build_bundle_counts_a_compose_file_truncated_by_its_own_read_limit(tmp_path):
+    """The generic config-bucket read (`_read(full, repo=repo)`, default
+    200,000-char limit) has the same gap for compose/k8s/gateway/iac files."""
+    repo = _repo(tmp_path, {"docker-compose.yml": "s" * 250_000})
+    assert len(open(os.path.join(repo, "docker-compose.yml")).read()) > ac.CONFIG_READ_LIMIT
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["config_files_truncated"] == 1
+
+
+def test_build_bundle_does_not_flag_a_config_file_landing_exactly_on_the_read_limit(tmp_path):
+    text = "s" * ac.CONFIG_READ_LIMIT
+    repo = _repo(tmp_path, {"docker-compose.yml": text})
+    assert len(open(os.path.join(repo, "docker-compose.yml")).read()) == ac.CONFIG_READ_LIMIT
+    _bundle, stats = ac.build_bundle(repo)
+    assert stats["config_files_truncated"] == 0
 
 
 def test_build_bundle_lists_the_integration_directories(tmp_path):

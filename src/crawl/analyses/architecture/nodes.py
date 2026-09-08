@@ -50,14 +50,20 @@ class BuildBundle(Node):
         manifest_notes = ac.manifest_problem_notes(stats.get("manifest_problems", {}))
         unreadable_env = ac._count_note(stats.get("env_files_unreadable", 0),
                                         "env file", "{be} unreadable or refused")
+        truncated_env = ac._count_note(stats.get("env_files_truncated", 0),
+                                       "env file", "{be} truncated by the read limit; only what fit was parsed")
         unreadable_config = ac._count_note(stats.get("config_files_unreadable", 0),
                                            "config file", "{be} unreadable or refused")
+        truncated_config = ac._count_note(stats.get("config_files_truncated", 0),
+                                          "config file", "{be} truncated by the read limit; only what fit was parsed")
         print(f"  Bundle: {stats['config_files']} config files, {stats['env_vars']} env vars, "
               f"{stats['deps']} deps, {stats['integrations']} integrations, {stats['sdk_lines']} SDK imports"
               + (f" ({excluded} more config files found but not in the bundle)" if excluded > 0 else "")
               + "".join(f" ({note})" for note in manifest_notes)
               + (f" ({unreadable_env})" if unreadable_env else "")
+              + (f" ({truncated_env})" if truncated_env else "")
               + (f" ({unreadable_config})" if unreadable_config else "")
+              + (f" ({truncated_config})" if truncated_config else "")
               + (" (capped, more exist)" if stats.get("sdk_capped") else "")
               + (f" (SDK imports unavailable: {stats['sdk_unavailable']})" if stats.get("sdk_unavailable") else ""))
 
