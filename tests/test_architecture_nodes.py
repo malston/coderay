@@ -56,7 +56,9 @@ def test_build_bundle_prints_when_a_package_json_was_unreadable(tmp_path, capsys
 
 def test_build_bundle_prints_when_a_package_json_was_truncated(tmp_path, capsys):
     """coderay-6ts.12. Give the truncated case the same console signal every
-    other manifest problem gets."""
+    other manifest problem gets. This package.json's cut fragment fails to
+    parse (found=None), so the note is the "no dependencies were parsed"
+    wording, not "only what fit was parsed" (coderay-ziw.6)."""
     import json
     huge_deps = {f"pkg-{i}": "^1.0.0" for i in range(20_000)}
     repo = _repo(tmp_path, {"docker-compose.yml": "services: {}\n",
@@ -65,7 +67,8 @@ def test_build_bundle_prints_when_a_package_json_was_truncated(tmp_path, capsys)
     # coderay-6ts.12 review. Must match the footer's wording exactly (the
     # earlier _count_note fix, coderay-6ts.14, exists specifically to stop
     # these two surfaces drifting apart).
-    assert "package.json file was truncated by the read limit; only what fit was parsed" \
+    assert ("package.json file was truncated by the read limit; the cut text "
+            "could not be parsed as JSON, so no dependencies were parsed") \
         in capsys.readouterr().out
 
 

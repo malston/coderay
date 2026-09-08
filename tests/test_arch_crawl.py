@@ -493,7 +493,7 @@ def test_build_bundle_overlays_the_four_sources_and_counts_them(tmp_path):
     })
     bundle, stats = ac.build_bundle(repo)
 
-    zero_problems = {"unreadable": 0, "malformed": 0, "truncated": 0}
+    zero_problems = {"unreadable": 0, "malformed": 0, "truncated": 0, "truncated_unparsable": 0}
     assert stats == {"config_files": 4, "config_files_found": 4,
                      "manifest_problems": {"package": dict(zero_problems), "go_mod": dict(zero_problems),
                                           "pyproject": dict(zero_problems), "requirements": dict(zero_problems)},
@@ -615,7 +615,11 @@ def test_build_bundle_does_not_count_a_package_json_truncated_by_its_own_read_li
     # coderay-6ts.12 review. A truncated manifest that then fails to parse
     # returned unreadable=False, malformed=False, found=None -- invisible in
     # every stat, the same silent-collapse class this bead covers.
-    assert stats["manifest_problems"]["package"]["truncated"] == 1
+    # coderay-ziw.6: that case is now its own count, distinct from a
+    # truncated manifest whose cut fragment still parsed, since nothing was
+    # parsed here at all.
+    assert stats["manifest_problems"]["package"]["truncated"] == 0
+    assert stats["manifest_problems"]["package"]["truncated_unparsable"] == 1
 
 
 def test_build_bundle_counts_a_go_mod_truncated_mid_require_block(tmp_path):
@@ -1163,7 +1167,8 @@ def test_count_note_tolerates_a_verb_phrase_with_no_be_placeholder():
 
 
 def _zero_problems():
-    return {kind: {"unreadable": 0, "malformed": 0, "truncated": 0} for kind in ac.MANIFEST_KINDS}
+    return {kind: {"unreadable": 0, "malformed": 0, "truncated": 0, "truncated_unparsable": 0}
+            for kind in ac.MANIFEST_KINDS}
 
 
 def test_manifest_problem_notes_is_empty_when_nothing_went_wrong():
@@ -1197,6 +1202,35 @@ def test_manifest_problem_notes_orders_by_manifest_parsers_kind_order_then_probl
     assert notes == [
         "1 package.json file was unreadable or refused",
         "1 requirements.txt file was truncated by the read limit; only what fit was parsed",
+    ]
+
+
+def test_manifest_problem_notes_distinguishes_truncated_parsed_from_truncated_unparsable():
+    """coderay-ziw.6. package.json/pyproject.toml can raise on a cut
+    fragment, so "truncated" alone can mean either "cut, but what survived
+    still parsed" or "cut, and what survived did not parse" -- the second
+    means zero dependencies reached the bundle, not "only what fit was
+    parsed" as the note used to claim regardless. go.mod/requirements.txt
+    never raise, so their wording is untouched."""
+    problems = _zero_problems()
+    problems["package"]["truncated"] = 1
+    problems["pyproject"]["truncated_unparsable"] = 1
+    notes = ac.manifest_problem_notes(problems)
+    assert "1 package.json file was truncated by the read limit; only what fit was parsed" in notes
+    assert not any("pyproject.toml" in note and "only what fit was parsed" in note for note in notes)
+    pyproject_note = next(note for note in notes if "pyproject.toml" in note)
+    assert "truncated by the read limit" in pyproject_note
+    assert "no dependencies were parsed" in pyproject_note
+    assert "could not be parsed as TOML" in pyproject_note
+
+
+def test_manifest_problem_notes_keeps_go_mod_truncated_wording_unchanged():
+    """go.mod's parser never raises, so its truncated note is always accurate
+    as "only what fit was parsed" -- coderay-ziw.6 must not touch it."""
+    problems = _zero_problems()
+    problems["go_mod"]["truncated"] = 1
+    assert ac.manifest_problem_notes(problems) == [
+        "1 go.mod file was truncated by the read limit; only what fit was parsed",
     ]
 
 
@@ -1311,3 +1345,7 @@ def test_build_bundle_does_not_count_a_pyproject_truncated_by_its_own_read_limit
     assert len(open(os.path.join(repo, "pyproject.toml")).read()) > 200_000
     _bundle, stats = ac.build_bundle(repo)
     assert stats["manifest_problems"]["pyproject"]["malformed"] == 0
+    # coderay-ziw.6: the cut fragment failed to parse here, so nothing was
+    # parsed -- distinct from a truncated manifest whose cut text still parsed.
+    assert stats["manifest_problems"]["pyproject"]["truncated"] == 0
+    assert stats["manifest_problems"]["pyproject"]["truncated_unparsable"] == 1
