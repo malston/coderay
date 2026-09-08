@@ -699,6 +699,12 @@ def _read_manifest(full, repo, kind):
     when truncation made it fail to parse, returned unreadable=False,
     malformed=False, `found`=None, which build_bundle's `if found:` also
     skipped in total silence.
+
+    When `truncated` is True, `found` is None only via the `except errors`
+    branch below -- `_parse_package_json` and `_parse_pyproject` return `{}`
+    on a parsed-but-wrong-shaped manifest, never `None`, so build_bundle can
+    tell a cut-and-still-parsed manifest from a cut-and-unparsable one by
+    checking `found is None` alone (coderay-ziw.6).
     """
     # Probe one char past the limit: len(text) == MANIFEST_READ_LIMIT is also
     # what a file that just happens to be exactly that long reads back as, so
@@ -744,7 +750,15 @@ def manifest_problem_notes(manifest_problems):
     """A `_count_note` clause per (kind, problem) with a nonzero count, e.g.
     "1 go.mod file was unreadable or refused" -- ordered by MANIFEST_KINDS'
     own kind order, then unreadable/malformed/truncated, so every manifest
-    kind is named specifically (coderay-6ts.13)."""
+    kind is named specifically (coderay-6ts.13).
+
+    "truncated" and "truncated_unparsable" are two different outcomes of a
+    manifest being cut by the read limit (coderay-ziw.6): go.mod and
+    requirements.txt never raise, so their cut fragment always parses to a
+    partial-but-real dependency dict, and "only what fit was parsed" is
+    always true for them. package.json and pyproject.toml can raise on a
+    cut fragment (broken JSON/TOML syntax mid-structure); when that happens
+    `found` is None -- zero dependencies were parsed, not "only what fit"."""
     notes = []
     for kind, kind_info in MANIFEST_KINDS.items():
         label = kind_info['label']
@@ -755,6 +769,10 @@ def manifest_problem_notes(manifest_problems):
                                  kind_info['malformed_verb'] or "could not be parsed"))
         notes.append(_count_note(counts.get("truncated", 0), f"{label} file",
                                  "{be} truncated by the read limit; only what fit was parsed"))
+        notes.append(_count_note(counts.get("truncated_unparsable", 0), f"{label} file",
+                                 "{be} truncated by the read limit; the cut text "
+                                 f"{kind_info['malformed_verb'] or 'could not be parsed'}, "
+                                 "so no dependencies were parsed"))
     return [note for note in notes if note]
 
 
@@ -769,7 +787,8 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
     env_files_unreadable = 0
     # One breakdown per manifest kind, so every kind is nameable in a note
     # when something goes wrong with it.
-    manifest_problems = {kind: {"unreadable": 0, "malformed": 0, "truncated": 0}
+    manifest_problems = {kind: {"unreadable": 0, "malformed": 0, "truncated": 0,
+                                "truncated_unparsable": 0}
                          for kind in MANIFEST_KINDS}
     config_files_unreadable = 0   # compose / k8s / gateway / iac buckets
     for dirpath, _dn, filenames in _walk(repo):
@@ -797,7 +816,15 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
                     manifest_problems[kind]["malformed"] += 1
                     continue
                 if truncated:
-                    manifest_problems[kind]["truncated"] += 1
+                    # `found` is None only when the cut fragment itself failed to
+                    # parse (package.json/pyproject.toml raising on broken
+                    # JSON/TOML syntax mid-structure) -- go.mod/requirements.txt
+                    # never raise, so `found` is always a (possibly partial)
+                    # dict for them (coderay-ziw.6).
+                    if found is None:
+                        manifest_problems[kind]["truncated_unparsable"] += 1
+                    else:
+                        manifest_problems[kind]["truncated"] += 1
                 # A JSON/TOML manifest of the wrong shape (a list, say) parses fine and
                 # simply yields no dependencies -- docs/ and examples/ are walked, and a
                 # package.json there can hold anything.
