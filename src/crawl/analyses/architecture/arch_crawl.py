@@ -506,6 +506,8 @@ def _parse_pep508(spec):
     operator, `;` (environment marker), or end of string; `git+https://...`
     fails this because `+` is none of those.
     """
+    if not isinstance(spec, str):
+        return None
     spec = spec.strip()
     m = _PEP508_NAME_RE.match(spec)
     if not m:
@@ -591,8 +593,6 @@ def _parse_pyproject(text):
     dependencies = project.get('dependencies')
     if isinstance(dependencies, list):
         for spec in dependencies:
-            if not isinstance(spec, str):
-                continue   # a bare number or inline table: not a spec _parse_pep508 can strip()
             parsed = _parse_pep508(spec)
             if parsed:
                 deps[parsed[0]] = parsed[1]
@@ -601,8 +601,6 @@ def _parse_pyproject(text):
         for group in optional.values():
             if isinstance(group, list):
                 for spec in group:
-                    if not isinstance(spec, str):
-                        continue
                     parsed = _parse_pep508(spec)
                     if parsed:
                         deps[parsed[0]] = parsed[1]

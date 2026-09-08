@@ -1063,6 +1063,8 @@ def test_build_bundle_survives_a_package_json_that_is_valid_json_of_the_wrong_sh
     ("-e .", None),
     ("https://example.com/foo.whl", None),
     ("certifi @ https://example.com/certifi.whl", None),
+    (42, None),
+    ({"foo": "bar"}, None),
 ])
 def test_parse_pep508_extracts_name_and_constraint(spec, expected):
     assert ac._parse_pep508(spec) == expected
