@@ -1,6 +1,5 @@
 """Tour the data model and the migrations that shaped it."""
 
-import os
 import sys
 
 from pocketflow import Flow
@@ -9,7 +8,8 @@ from crawl.core import OverviewNode
 from crawl.core.render import Section, Theme, esc, md
 from crawl.core.runner import repo_name_of, require_directory, run_analysis
 from crawl.core.text import codebase_budget_argument
-from .schema_find import SCHEMA_BUDGET, find_migrations, find_schema
+from .schema_find import (SCHEMA_BUDGET, TRUNCATION_MARKER, find_migrations,
+                          find_schema)
 from crawl.core.preview import Preview, aborts
 from .nodes import (FindSchema, SchemaTour, TraceFlows, TableDeepDive,
                     MigrationActs, MIGRATION_FLOOR, NO_SCHEMA)
@@ -110,9 +110,7 @@ def preview(args) -> Preview:
     if schema["files"] and not schema["text"]:
         notes.append(f"{schema['path']} could not be read: missing, unreadable, "
                      "or refused as credential-named.")
-    elif len(schema["text"]) > args.codebase_budget:
-        # _read splices its truncation marker past the limit, so the text can
-        # only exceed the budget by having been cut at it.
+    elif TRUNCATION_MARKER in schema["text"]:
         notes.append(f"The schema was truncated at the {args.codebase_budget:,}-char budget; "
                      "the model reads less than the whole file.")
     if read:

@@ -1,6 +1,5 @@
 """Map a multi-service architecture in three passes."""
 
-import os
 import re
 import sys
 

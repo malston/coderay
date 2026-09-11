@@ -1,14 +1,13 @@
 """Read the product roadmap already written in the git log."""
 
-import os
 import sys
 
 from pocketflow import Flow
 
 from crawl.core import OverviewNode
 from crawl.core.runner import repo_name_of, require_directory, run_analysis
-from crawl.core.preview import Preview
-from .nodes import (BULK_ADD_FLOOR, BULK_DEL_FLOOR, SHALLOW_WARNING,
+from crawl.core.preview import Preview, aborts
+from .nodes import (BULK_ADD_FLOOR, BULK_DEL_FLOOR, NO_COMMITS, SHALLOW_WARNING,
                     FetchHistory, NameEras, ProfileEras, Graveyard)
 from .gitlog import repo_root
 # This analysis builds its page from structured data rather than markdown
@@ -53,6 +52,8 @@ def preview(args) -> Preview:
               f"bulk additions ({BULK_ADD_FLOOR}+ files)": len(log["bulk_adds"]),
               f"bulk deletions ({BULK_DEL_FLOOR}+ files)": len(log["bulk_dels"])}
     notes = [SHALLOW_WARNING] if log["shallow"] else []  # coderay-q2r.38
+    if not log["commits"]:
+        notes.append(aborts(NO_COMMITS))
     return {"counts": counts, "files": {}, "notes": notes}
 
 

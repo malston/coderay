@@ -528,3 +528,17 @@ def test_graveyard_keeps_finished_entries_when_a_later_one_fails(monkeypatch, tm
         n.Graveyard().run(shared)
 
     assert len(shared["graves"]) == 1
+
+
+def test_fetch_history_refuses_a_checkout_with_no_commits(tmp_path):
+    """An empty log used to crash in git_log_commits, which was loud and free.
+    Reading it as zero commits instead lets NameEras build a full prompt out of
+    "(none)" and invent eras from nothing, at cost. It has to stop here, as
+    every other analysis's crawl does when it finds nothing to send."""
+    repo = _repo(tmp_path, [])
+
+    with pytest.raises(SystemExit) as e:
+        n.FetchHistory().post({"repo_path": repo}, repo,
+                              n.FetchHistory().exec(repo))
+
+    assert "no commits" in str(e.value)

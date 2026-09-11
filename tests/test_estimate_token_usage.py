@@ -422,7 +422,7 @@ def test_tour_preview_reports_what_the_preview_cap_dropped(tmp_path):
     parser = _parser_for("tour")
 
     result = ANALYSES["tour"].preview(parser.parse_args([str(repo)]))
-    assert result["counts"]["files on disk"] == 12
+    assert result["counts"]["source files found"] == 12
     assert result["counts"]["read into the selection pass"] == 12
     assert result["counts"]["dropped before the model saw them"] == 0
     assert result["notes"] == []
@@ -437,7 +437,7 @@ def test_tour_preview_notes_the_files_the_model_will_never_see(tmp_path, monkeyp
 
     result = ANALYSES["tour"].preview(_parser_for("tour").parse_args([str(repo)]))
 
-    assert result["counts"]["files on disk"] == 12
+    assert result["counts"]["source files found"] == 12
     assert result["counts"]["read into the selection pass"] == 5
     assert result["counts"]["dropped before the model saw them"] == 7
     assert any("never reach" in note for note in result["notes"])
@@ -691,3 +691,83 @@ def test_the_readme_quotes_the_real_crawl_constants():
     assert f"{tour_nodes.PREVIEW_CHARS_PER_FILE} chars" in section
     assert files.DEFAULT_MAX_FILE_BYTES == 500_000
     assert "500 KB" in section
+
+
+# ------------------------------------- honesty of what the report claims
+
+def test_tour_does_not_call_its_filtered_count_files_on_disk(tmp_path):
+    """list_files has already dropped every unrecognised extension, every skipped
+    directory and everything over the size ceiling, so its result is nowhere near
+    what is on disk. A reader sizing a run takes the first row as the repo's size."""
+    repo = tmp_path / "mixed_repo"
+    repo.mkdir()
+    (repo / "app.py").write_text("x = 1\n", encoding="utf-8")
+    (repo / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 40)
+    (repo / "node_modules").mkdir()
+    (repo / "node_modules" / "dep.js").write_text("module.exports = 1\n", encoding="utf-8")
+
+    result = ANALYSES["tour"].preview(_parser_for("tour").parse_args([str(repo)]))
+
+    assert "files on disk" not in result["counts"]
+    assert result["counts"]["source files found"] == 1
+
+
+def test_tour_says_when_a_real_run_would_abort(tmp_path):
+    """tour was the one analysis left without the note. A real run hands
+    SmartCrawl an empty file list, and every index the model returns is rejected,
+    so yaml_call burns its retries after paid calls."""
+    repo = tmp_path / "empty_repo"
+    repo.mkdir()
+
+    result = ANALYSES["tour"].preview(_parser_for("tour").parse_args([str(repo)]))
+
+    assert any(note.startswith("A real run stops here:") for note in result["notes"])
+
+
+def test_git_history_says_when_a_real_run_would_abort(tmp_path):
+    repo = tmp_path / "no_commits"
+    repo.mkdir()
+    subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True, capture_output=True)
+
+    result = ANALYSES["git-history"].preview(_parser_for("git-history").parse_args([str(repo)]))
+
+    assert result["counts"]["commits"] == 0
+    assert any(note.startswith("A real run stops here:") for note in result["notes"])
+
+
+def test_schema_does_not_claim_truncation_when_nothing_was_truncated(tmp_path):
+    """The embedded-SQL path reads the Go file with no limit at all, so its text
+    routinely runs past the budget without a cut. Sizing that as proof of
+    truncation tells the reader the model sees less when it sees several times
+    the budget."""
+    repo = tmp_path / "go_repo"
+    repo.mkdir()
+    (repo / "db.go").write_text(
+        'package db\n\nconst schema = `\n'
+        + "".join(f"CREATE TABLE t{i} (id INT PRIMARY KEY);\n" for i in range(400))
+        + '`\n', encoding="utf-8")
+
+    result = ANALYSES["schema"].preview(
+        _parser_for("schema").parse_args([str(repo), "--codebase-budget", "2000"]))
+
+    assert not any("truncated" in note for note in result["notes"]), result["notes"]
+
+
+def test_require_directory_refuses_a_directory_it_cannot_walk(tmp_path):
+    """os.path.isdir is True for a directory with no read or execute permission,
+    and os.walk then swallows the PermissionError and yields nothing -- the exact
+    clean-zeros-on-a-failure the guard exists to prevent."""
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    locked.chmod(0o000)
+    try:
+        if os.access(str(locked), os.R_OK | os.X_OK):
+            pytest.skip("running with permission to read a 000 directory (root?)")
+        result = subprocess.run(
+            [sys.executable, "-m", "crawl.cli", "estimate-token-usage", "tour", str(locked)],
+            capture_output=True, text=True, env=_env(tmp_path),
+        )
+        assert result.returncode == 1
+        assert "cannot be read" in result.stderr
+    finally:
+        locked.chmod(0o700)

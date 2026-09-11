@@ -8,7 +8,9 @@ Four steps, each a slice of the same commit list:
 
 Reliability mirrors the rest of the repo: every LLM node uses
 Node(max_retries=3, wait=2), JSON parsing is strict so bad output retries, and
-gitlog's subprocess reads raise on any git failure rather than reporting no data.
+gitlog's subprocess reads raise on any git failure rather than reporting no
+data, the one exception being a checkout with no commits, which FetchHistory
+refuses outright instead.
 """
 import re
 from importlib import resources
@@ -87,6 +89,10 @@ SHALLOW_WARNING = ("This is a shallow clone; the log is a fragment of the histor
                    "and the eras will be wrong. Unshallow it first "
                    "(git fetch --unshallow).")
 
+NO_COMMITS = ("This checkout has no commits, so there is no history to read. "
+              "Every pass here summarises the log; over an empty one they would "
+              "name eras that never happened.")
+
 
 class FetchHistory(Node):
     def prep(self, shared):
@@ -103,8 +109,14 @@ class FetchHistory(Node):
         }
 
     def post(self, shared, prep_res, exec_res):
-        shared.update(exec_res)
         c = exec_res["commits"]
+        if not c:
+            # SystemExit, not assert: python -O strips asserts, and four paid
+            # passes would run over nothing (coderay-q2r.50). Before this the
+            # empty log reached NameEras, which built a full prompt out of
+            # "(none)" and invented eras from it.
+            raise SystemExit(NO_COMMITS)
+        shared.update(exec_res)
         span = f"{exec_res['commits_asc'][0]['month']}..{exec_res['commits_asc'][-1]['month']}" if c else "empty"
         print(f"  Crawled {len(c):,} commits ({span}), "
               f"{len(exec_res['bulk_adds'])} bulk adds, {len(exec_res['bulk_dels'])} bulk deletions")

@@ -19,6 +19,11 @@ def require_directory(repo_path):
     path reports the same clean zeros as a repo that really is empty."""
     if not os.path.isdir(repo_path):
         raise SystemExit(f"{repo_path} is not a directory")
+    # isdir() is True for a directory with no read or execute permission, and
+    # os.walk then swallows the PermissionError and yields nothing -- the same
+    # clean zeros this guard exists to prevent.
+    if not os.access(repo_path, os.R_OK | os.X_OK):
+        raise SystemExit(f"{repo_path} cannot be read")
 
 
 def run_flow(flow, shared, out_dir, dump_state):

@@ -191,38 +191,45 @@ A real run (without `--dry-run`) prints a `Session` summary at the end with the 
 crawl estimate-token-usage tour path/to/repo
 ```
 
-Runs only an analysis's crawl step -- the filesystem walk that decides what a real run would send -- and stops. No network call, no API key, nothing written to disk. It works for every analysis:
+Runs only an analysis's crawl step, the filesystem walk that decides what a real run would send, and stops there. No network call, no API key, nothing written to disk. It works for every analysis:
 
 ```text
 tour: /Users/you/code/beads
 
-  Files on disk                      3,289
+  Source files found                 3,289
   Read into the selection pass       1,250
   Dropped before the model saw them  2,039
 
-  NOTE: 2,039 of 3,289 files never reach the file-selection prompt: it holds
-        1,250 at 800 chars each. The model cannot pick a file it never saw.
+  NOTE: 2,039 of 3,289 source files never reach the file-selection prompt:
+        it holds 1,250 at 800 chars each. The model cannot pick a file it
+        never saw.
 
   This reports the file crawl only; it does not yet estimate tokens or cost.
 ```
 
-#### The tour reads your repo in three narrowings
+#### The tour reads your repo in three steps
 
-A tour never analyses a whole repository. It arrives at a small selection in three steps, and the report above shows you the first two.
+A tour analyses a small selection of a repository. It arrives at that selection in three steps. The report above shows the first two.
 
-| Step             | Files | What decides it                                                                                                  |
-| ---------------- | ----- | ---------------------------------------------------------------------------------------------------------------- |
-| 1. The walk      | 3,289 | Source extension, not in a skipped directory, under 500 KB                                                         |
-| 2. The manifest  | 1,250 | The first 800 chars of each file, until a 1,000,000-char manifest budget is spent                                  |
-| 3. The selection | ~50   | The LLM picks from the manifest; those files are read whole. Needs a model, so the preview stops before this step |
+| Step                    | Files | What decides it                                                                                              |
+| ----------------------- | ----- | ------------------------------------------------------------------------------------------------------------ |
+| 1. The walk             | 3,289 | Source extension, not in a skipped directory, under 500 KB                                                     |
+| 2. The preview manifest | 1,250 | The first 800 chars of each file, until a 1,000,000-char budget is spent                                       |
+| 3. The selection        | ~50   | The LLM picks from the manifest; those files are read whole. Needs a model, so the preview stops before it |
 
-**Which files get dropped at step 2 is not a judgement about them.** `list_files` walks depth-first with directory names and filenames both sorted, and the manifest takes the first 1,250 in that order and stops. The files that fall out are the ones whose paths sort last. A repo with a large `vendor/` tree can spend its whole manifest before reaching `src/`.
+**Step 1 counts what the crawler kept.** [`list_files`](src/crawl/core/files.py) drops unrecognised extensions, skipped directories (`node_modules`, `.git`, `dist`, vendored trees) and files over 500 KB before it returns. `Source files found` is the count that survives all three filters, so it runs well below the file count of the folder itself.
 
-A large drop is not automatically a problem -- if those 2,039 are fixtures and generated clients, the tour loses nothing. The number is there so you can decide that before the chapters are written rather than after.
+**What the preview manifest is.** To ask the model which files matter, `SmartCrawl.prep` in [`src/crawl/analyses/tour/nodes.py`](src/crawl/analyses/tour/nodes.py) builds one block of text holding the first 800 characters of each file, enough to show the imports, the class names and the opening docstring. That block fills the `{manifest}` slot in [`src/crawl/analyses/tour/prompts/select-files.md`](src/crawl/analyses/tour/prompts/select-files.md) and goes out as the selection prompt. It lives in memory for the length of that one call.
 
-The step 3 figure is a request, not a ceiling. The prompt asks for `min(50, max(20, manifest_files // 20))` files "or fewer" -- 5% of the manifest, floored at 20, capped at 50 -- and nothing checks how many come back. What actually bounds step 3 is `--codebase-budget`, which reads the chosen files whole until its character budget is spent and drops the rest. Neither the selection target nor the manifest budget is settable today.
+> Two different things share the word "manifest" here. The preview manifest above is the text the model chooses from. The `manifest.json` a successful run writes beside its report is a separate file, written afterwards, recording which repo files the prompts carried. The preview manifest never reaches disk.
 
-**`--codebase-budget` does not change these two numbers.** It caps step 3, and the manifest budget behind step 2 is not exposed on the command line. `tour` takes no `--include`/`--exclude` either, so the practical lever on an oversized repo is to point the command at a subdirectory.
+**Step 2 drops files by their position in the walk.** `list_files` walks depth-first with directory names and filenames sorted, and the manifest takes the first 1,250 in that order and stops. The files that fall out are the ones whose paths sort last. A repo with a large `vendor/` tree can spend its whole manifest before the walk reaches `src/`.
+
+A large drop can still be fine. If those 2,039 files are fixtures and generated clients, the tour loses nothing by skipping them. The count is there so you can check that before the chapters are written.
+
+**Step 3 asks for a number of files and does not enforce it.** The prompt requests `min(50, max(20, manifest_files // 20))` files "or fewer", which is 5% of the manifest, floored at 20 and capped at 50. Nothing checks how many come back. `--codebase-budget` is what bounds this step: it reads the chosen files whole until its character budget is spent and drops the rest.
+
+**`--codebase-budget` leaves the first two numbers alone.** It caps step 3. The manifest budget behind step 2 has no command-line flag, and neither does the selection target. `tour` takes no `--include`/`--exclude` either. On an oversized repo, point the command at a subdirectory.
 
 #### Each analysis reports what its own crawler counted
 
@@ -230,7 +237,7 @@ The rows change per analysis, because each one crawls differently:
 
 | Analysis         | Counts                                                                    |
 | ---------------- | ------------------------------------------------------------------------- |
-| `tour`           | files on disk, read into the selection pass, dropped                      |
+| `tour`           | source files found, read into the selection pass, dropped                 |
 | `backend`        | files in the bundle, and how many matched each of the six layers          |
 | `architecture`   | config files, env var names, declared dependencies, SDK import lines      |
 | `interfaces`     | surface files found, surface files read                                   |
@@ -238,9 +245,9 @@ The rows change per analysis, because each one crawls differently:
 | `product-intent` | files in the bundle, dropped by the budget, unreadable                    |
 | `git-history`    | commits, bulk additions, bulk deletions                                   |
 
-Only `product-intent`'s crawler tracks a clean included/dropped/unreadable triple. Printing those three everywhere would mean reporting numbers the other crawlers never computed.
+`product-intent` is the only crawler that tracks a clean included/dropped/unreadable triple. Printing those three everywhere would report numbers the other crawlers never computed.
 
-A `NOTE:` line appears whenever the counts alone would mislead: a budget that capped text rather than dropping files, a file named but never read (`--schema` pointed at a missing path), a shallow clone whose commit count is a fragment of the history, or a crawl that found nothing -- where the preview reports zero rather than aborting, then says the real run stops there, in the same words the run itself would use.
+A `NOTE:` line appears whenever the counts alone would mislead. There are four cases: a budget that capped text instead of dropping files, a file named but never read (`--schema` pointed at a missing path), a shallow clone whose commit count covers part of the history, and a crawl that found nothing. In that last case the preview reports zero and says the real run stops there, using the same words the run itself would print.
 
 ### Send the model more of the code
 

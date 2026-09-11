@@ -1,5 +1,4 @@
 """Reverse engineer the product story from the source."""
-import os
 import sys
 
 from pocketflow import Flow

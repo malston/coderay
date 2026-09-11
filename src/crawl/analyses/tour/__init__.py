@@ -10,9 +10,10 @@ from crawl.core.text import codebase_budget_argument
 from crawl.core.runner import (keeping_results, require_directory, run_flow,
                                 run_state_writer, write_manifest)
 from crawl.analyses.tour.flow import create_tour_flow
-from crawl.analyses.tour.nodes import (CODEBASE_BUDGET, PREVIEW_CHARS_PER_FILE,
-                                       PipelineState, SmartCrawl)
-from crawl.core.preview import Preview
+from crawl.analyses.tour.nodes import (CODEBASE_BUDGET, NO_SOURCE,
+                                       PREVIEW_CHARS_PER_FILE, PipelineState,
+                                       SmartCrawl)
+from crawl.core.preview import Preview, aborts
 from crawl.analyses.tour.render import (
     available_lenses,
     build_mermaid,
@@ -52,6 +53,10 @@ def sent(shared):
 def preview(args) -> Preview:
     """What the crawl step found, before any LLM call: every file whose head goes
     into the file-selection prompt, and every file the preview cap kept out of it.
+
+    "Source files found" is what list_files returned, not what is on disk: it has
+    already dropped unrecognised extensions, skipped directories and anything over
+    the size ceiling.
     The model cannot pick a file it never saw, so the cap is the number that
     decides whether this analysis reads the repo or a slice of it.
 
@@ -61,17 +66,22 @@ def preview(args) -> Preview:
     --codebase-budget is accepted and does not move these counts: it sizes the
     analyze, relate and chapter prompts, which no file crawl reaches."""
     shared = init_shared(args)
-    SmartCrawl().prep(shared)
+    try:
+        SmartCrawl().prep(shared)
+    except SystemExit as no_source:
+        return {"counts": {"source files found": 0, "read into the selection pass": 0,
+                           "dropped before the model saw them": 0},
+                "files": {"previewed": []}, "notes": [aborts(str(no_source))]}
     previewed = shared["previewed_files"]
-    on_disk = shared["files_on_disk"]
-    dropped = on_disk - len(previewed)
+    found = shared["source_files_found"]
+    dropped = found - len(previewed)
     notes = []
     if dropped:
         notes.append(
-            f"{dropped:,} of {on_disk:,} files never reach the file-selection prompt: "
-            f"it holds {len(previewed):,} at {PREVIEW_CHARS_PER_FILE:,} chars each. "
-            "The model cannot pick a file it never saw.")
-    return {"counts": {"files on disk": on_disk,
+            f"{dropped:,} of {found:,} source files never reach the file-selection "
+            f"prompt: it holds {len(previewed):,} at {PREVIEW_CHARS_PER_FILE:,} chars "
+            "each. The model cannot pick a file it never saw.")
+    return {"counts": {"source files found": found,
                        "read into the selection pass": len(previewed),
                        "dropped before the model saw them": dropped},
             "files": {"previewed": previewed}, "notes": notes}

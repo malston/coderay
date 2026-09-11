@@ -1,6 +1,5 @@
 """Map the API surface and trace one action through it."""
 
-import os
 import re
 import sys
 

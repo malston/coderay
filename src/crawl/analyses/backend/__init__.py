@@ -1,6 +1,5 @@
 """Read a backend as the six layers every request flows through."""
 
-import os
 import sys
 
 from pocketflow import Flow

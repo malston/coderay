@@ -53,14 +53,20 @@ def _records(raw):
         yield h, int(ts), author, subject, [f for f in files if f]
 
 
+# `git rev-parse --verify --quiet HEAD` exits 1 for an unborn HEAD and 128 for
+# a repository git cannot read at all. Only the first means "no commits yet".
+_UNBORN_HEAD = 1
+
+
 def has_commits(repo_path):
     """False for a checkout with no commits yet, which has no HEAD.
 
     `git log` exits 128 there rather than printing nothing, so every log query
-    asks this first; the callers already read an empty log as a repo with no
-    history (FetchHistory.post reads it as the span "empty")."""
+    asks this first. A repository git cannot read at all is a different
+    problem and is left to fail loudly in the log call below, rather than
+    passing for a repo whose history is simply empty."""
     return subprocess.run(["git", "-C", repo_path, "rev-parse", "--verify", "--quiet", "HEAD"],
-                          capture_output=True).returncode == 0
+                          capture_output=True).returncode != _UNBORN_HEAD
 
 
 def git_log_commits(repo_path):
