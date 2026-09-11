@@ -11,6 +11,7 @@ The *analysis* nodes stay in each analysis's own `nodes.py`.
 """
 from pocketflow import Node
 
+from .call_llm import DETERMINISTIC_FAILURES
 from .overview import write_overview
 
 
@@ -30,7 +31,13 @@ class OverviewNode(Node):
         return self._spec(shared)
 
     def exec(self, spec):
-        return write_overview(spec["name"], spec["what"], spec["sections"], spec.get("facts", ""))
+        try:
+            return write_overview(spec["name"], spec["what"], spec["sections"], spec.get("facts", ""))
+        except DETERMINISTIC_FAILURES as e:
+            # These skip the retry loop, and exec_fallback with it, so the
+            # promise above is kept here or a truncated overview takes the
+            # whole run down with it (coderay-n9j).
+            return self.exec_fallback(spec, e)
 
     def exec_fallback(self, prep_res, exc):
         # coderay-q2r.13: non-fatal on purpose, but never silent. Without this

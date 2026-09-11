@@ -460,7 +460,7 @@ def test_truncated_response_still_records_its_usage(monkeypatch):
         _fake_anthropic_module_truncated_with_usage(input_tokens=500, output_tokens=16384),
     )
 
-    with pytest.raises(RuntimeError, match="truncated"):
+    with pytest.raises(call_llm_module.ResponseTruncated, match="truncated"):
         call_llm("prompt")
 
     usage = call_llm_module.get_usage()
@@ -471,7 +471,7 @@ def test_truncated_response_still_records_its_usage(monkeypatch):
 
 def test_truncated_anthropic_response_raises(monkeypatch):
     monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module("max_tokens"))
-    with pytest.raises(RuntimeError, match="truncated"):
+    with pytest.raises(call_llm_module.ResponseTruncated, match="truncated"):
         call_llm("prompt")
 
 
@@ -1137,3 +1137,51 @@ def test_prompt_too_large_is_importable_from_core():
     from crawl.core import PromptTooLarge
 
     assert PromptTooLarge is call_llm_module.PromptTooLarge
+
+
+def test_a_truncated_response_is_not_retried_by_a_node():
+    """A truncation is deterministic for a given prompt and cap, and unlike an
+    oversized prompt the retry is billed: it re-runs a whole generation to hit
+    the same cap (coderay-n9j)."""
+    from pocketflow import Node
+
+    attempts = []
+
+    class Truncating(Node):
+        def __init__(self):
+            super().__init__(max_retries=3, wait=0)
+
+        def exec(self, prep_res):
+            attempts.append(1)
+            raise call_llm_module._truncated("response truncated")
+
+    with pytest.raises(call_llm_module.ResponseTruncated):
+        Truncating()._exec(None)
+
+    assert len(attempts) == 1
+
+
+def test_a_truncated_response_still_lets_a_run_keep_its_results(tmp_path):
+    from crawl.core.runner import keeping_results
+
+    dumped = []
+
+    def step():
+        raise call_llm_module._truncated("response truncated")
+
+    with pytest.raises(call_llm_module.ResponseTruncated):
+        keeping_results(step, {"chapters": ["one"]}, str(tmp_path),
+                        lambda shared, out: dumped.append(shared) or "state.json")
+
+    assert dumped == [{"chapters": ["one"]}]
+
+
+def test_every_deterministic_failure_stays_out_of_a_retry_loop():
+    """The tuple is what a node names to survive one of these, so a class added
+    to it that a retry loop would still catch defeats the point."""
+    for cls in call_llm_module.DETERMINISTIC_FAILURES:
+        assert issubclass(cls, SystemExit), f"{cls.__name__} is not a SystemExit"
+        assert not issubclass(cls, Exception), f"{cls.__name__} is still an Exception"
+
+    assert set(call_llm_module.DETERMINISTIC_FAILURES) == {
+        call_llm_module.ResponseTruncated, call_llm_module.PromptTooLarge}
