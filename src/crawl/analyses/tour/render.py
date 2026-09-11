@@ -6,7 +6,9 @@ from datetime import date
 
 from markdown_it import MarkdownIt
 
+from crawl.core.call_llm import CHARS_PER_TOKEN
 from crawl.core.files import write_text_atomic
+from crawl.core.pricing import input_ceiling
 from crawl.core.render import markdown_parser
 
 from crawl.core import (
@@ -355,6 +357,11 @@ def estimate_dry_run_cost(repo_path, instructions, provider, model, chapter_gues
 
     prompts = [select_prompt, analyze_prompt, relate_prompt] + [chapter_prompt] * chapter_guess
     estimated_input_tokens = sum(len(p) // 4 for p in prompts)
+    # Whether a real run would be refused before its first call. Measured with
+    # the guard's own divisor rather than the chars/4 one above, since the
+    # point is to predict that guard's verdict, not to price the run.
+    ceiling = input_ceiling(provider, model)
+    largest_prompt_tokens = int(max(len(p) for p in prompts) / CHARS_PER_TOKEN)
     estimated_output_tokens_worst_case = max_out * len(prompts)
 
     low_usage = {"input_tokens": estimated_input_tokens, "output_tokens": 0,
@@ -369,6 +376,8 @@ def estimate_dry_run_cost(repo_path, instructions, provider, model, chapter_gues
         "estimated_output_tokens_worst_case": estimated_output_tokens_worst_case,
         "cost_low": cost_for(provider, model, low_usage),
         "cost_high": cost_for(provider, model, high_usage),
+        "input_ceiling": ceiling,
+        "largest_prompt_tokens": largest_prompt_tokens,
     }
 
 
@@ -387,7 +396,25 @@ def format_dry_run_summary(estimate):
         "Note: this estimate does not account for prompt caching -- a real run "
         "reuses the same codebase block across calls, so actual cost is often "
         "lower than the low end shown here."
+        + _dry_run_refusal_note(estimate)
     )
+
+
+def _dry_run_refusal_note(estimate):
+    """Whether a real run would be refused before it spent anything. Without
+    this the one command whose job is to say what a run will do stays silent
+    about the run not happening at all (coderay-8vk)."""
+    ceiling = estimate.get("input_ceiling")
+    largest = estimate.get("largest_prompt_tokens", 0)
+    if ceiling is None:
+        return ("\nNo input ceiling is recorded for this model, so a prompt too "
+                "large for it would be refused by the provider rather than "
+                "caught before the call.")
+    if largest > ceiling:
+        return (f"\nThis run would be refused before its first call: its largest "
+                f"prompt is about {largest:,} tokens, over {estimate['model']}'s "
+                f"{ceiling:,}-token input ceiling. Lower --codebase-budget.")
+    return ""
 
 
 def default_output_dir(repo_path, instructions):

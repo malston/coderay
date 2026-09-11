@@ -32,7 +32,7 @@ import sys
 import time
 
 from .files import write_text_atomic
-from .pricing import max_input_tokens
+from .pricing import input_ceiling
 from .text import positive_int
 
 CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "crawl")
@@ -63,6 +63,10 @@ CHARS_PER_TOKEN = 2.5
 INPUT_HINT = "lower --codebase-budget or the CODEBASE_BUDGET environment variable"
 INPUT_OR_OUTPUT_HINT = (INPUT_HINT + ", or lower LLM_MAX_OUTPUT_TOKENS if the "
                         "input plus the requested output is what overran")
+
+
+def _output_hint():
+    return f"raise LLM_MAX_OUTPUT_TOKENS (currently {max_output_tokens()})"
 
 _usage_log = []
 
@@ -151,9 +155,8 @@ def _api_detail(e):
     return str(e)
 
 
-def _truncated(detail):
-    return ResponseTruncated(f"{detail}; raise LLM_MAX_OUTPUT_TOKENS "
-                             f"(currently {max_output_tokens()})")
+def _truncated(detail, hint=None):
+    return ResponseTruncated(f"{detail}; {hint or _output_hint()}")
 
 
 def max_output_tokens():
@@ -263,7 +266,7 @@ def call_llm(prompt: str) -> str:
 
     # Sits after the cache lookup: a cached prompt already succeeded once and
     # reaches no provider, so its size is no longer anyone's problem.
-    ceiling = max_input_tokens(provider, model)
+    ceiling = input_ceiling(provider, model)
     if ceiling is None:
         # No figure is recorded, so nothing is checked. Said once per model,
         # because the alternative to a guess is silence and silence leaves a
@@ -279,7 +282,7 @@ def call_llm(prompt: str) -> str:
             raise _too_large(
                 f"prompt is about {estimate:,} tokens "
                 f"({len(plain_prompt):,} characters), over {model}'s "
-                f"{ceiling:,}-token input limit")
+                f"{ceiling:,}-token input ceiling")
 
     start = time.perf_counter()
 
@@ -326,6 +329,15 @@ def call_llm(prompt: str) -> str:
         )
         if resp.stop_reason == "max_tokens":
             raise _truncated("Anthropic response truncated (stop_reason=max_tokens)")
+        if resp.stop_reason == "model_context_window_exceeded":
+            # The window spans the response, so input plus max_tokens can pass
+            # the input check and still run out mid-generation. Raising the
+            # output cap cannot help, and the partial text must not pass for a
+            # whole answer (coderay-8vk).
+            raise _truncated(
+                "Anthropic stopped at the context window "
+                "(stop_reason=model_context_window_exceeded): the input plus "
+                "the requested output did not fit", INPUT_OR_OUTPUT_HINT)
         text_block = next((b for b in resp.content if getattr(b, "type", None) == "text"), None)
         text = text_block.text if text_block else None
 
@@ -352,7 +364,12 @@ def call_llm(prompt: str) -> str:
         )
         choice = resp.choices[0]
         if choice.finish_reason == "length":
-            raise _truncated("OpenAI response truncated (finish_reason=length)")
+            # One reason for two causes: the requested output cap, or the
+            # context window that spans input and output together. Since the
+            # reply cannot say which, the remedy names both rather than
+            # advising a raise that would make the second case worse.
+            raise _truncated("OpenAI response truncated (finish_reason=length)",
+                             INPUT_OR_OUTPUT_HINT)
         text = choice.message.content
 
     elif provider == "gemini":

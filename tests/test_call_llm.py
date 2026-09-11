@@ -48,6 +48,10 @@ def isolated_cache(tmp_path, monkeypatch):
     # or building a cache key from it then works against a different value.
     for var in ("ANTHROPIC_MODEL", "OPENAI_MODEL", "GEMINI_MODEL"):
         monkeypatch.delenv(var, raising=False)
+    # Which models have been reported as unguarded is module state that
+    # outlives a test, so a test asserting the warning fires once depends on
+    # whatever ran before it unless this is cleared here.
+    call_llm_module._unguarded_reported.clear()
     yield
 
 
@@ -197,7 +201,8 @@ def test_anthropic_call_raises_when_usage_object_is_missing(monkeypatch):
     assert call_llm_module.get_usage() == []
 
 
-def _fake_openai_module_with_usage(prompt_tokens, completion_tokens, text="ok"):
+def _fake_openai_module_with_usage(prompt_tokens, completion_tokens, text="ok",
+                                   finish_reason="stop"):
     fake = types.ModuleType("openai")
 
     class Usage:
@@ -209,8 +214,10 @@ def _fake_openai_module_with_usage(prompt_tokens, completion_tokens, text="ok"):
         content = text
 
     class Choice:
-        finish_reason = "stop"
-        message = Message()
+        pass
+
+    Choice.finish_reason = finish_reason
+    Choice.message = Message()
 
     class Resp:
         choices = [Choice()]
@@ -1282,3 +1289,95 @@ def test_a_gemini_content_block_is_retried_by_a_node(monkeypatch):
         Calling()._exec(None)
 
     assert len(attempts) == 3
+
+
+def _install_fake_sdk(monkeypatch, provider, text="ok"):
+    """Stand the named provider's SDK up as a fake. openai and google-genai are
+    optional extras, absent in CI, so a test that reaches a provider branch
+    without one raises ImportError rather than exercising the branch; with the
+    extras installed it would open a real socket instead."""
+    if provider == "anthropic":
+        monkeypatch.setitem(sys.modules, "anthropic",
+                            _fake_anthropic_module_that_records_calls(text=text))
+    elif provider == "openai":
+        monkeypatch.setitem(sys.modules, "openai",
+                            _fake_openai_module_with_usage(1, 1, text=text))
+    else:
+        _install_fake_gemini_module_with_usage(monkeypatch, 1, 1, 0, text=text)
+
+
+@pytest.mark.parametrize("provider,model,ceiling", [
+    ("openai", "gpt-5.6-terra", 922_000),
+    ("gemini", "gemini-3.7-flash", 1_048_576),
+])
+def test_the_guard_applies_to_every_provider_with_a_recorded_ceiling(
+        monkeypatch, provider, model, ceiling):
+    """The guard is provider-agnostic: it applies to any model whose ceiling is
+    recorded (coderay-8vk). The fake SDK is what makes a missing ceiling fail
+    as an absent refusal rather than as an ImportError."""
+    monkeypatch.setenv("LLM_PROVIDER", provider)
+    monkeypatch.setenv(f"{provider.upper()}_API_KEY", "test-key")
+    _install_fake_sdk(monkeypatch, provider)
+    over = "x" * (int(ceiling * call_llm_module.CHARS_PER_TOKEN) + 3)
+
+    with pytest.raises(call_llm_module.PromptTooLarge) as excinfo:
+        call_llm(over)
+
+    message = str(excinfo.value)
+    assert model in message
+    # Pins the figure, which is what catches a ceiling transposed off the
+    # wrong row of the vendor's page.
+    assert f"{ceiling:,}" in message
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "openai", "gemini"])
+def test_a_default_model_run_reports_no_unguarded_warning(monkeypatch, provider, capsys):
+    """The skip warning is the signal that a model is unchecked, so a run on a
+    default model must not emit it. Driving a real call through the branch
+    catches a resolved model name that fails the table lookup, which a lookup
+    by literal cannot."""
+    monkeypatch.setenv("LLM_PROVIDER", provider)
+    monkeypatch.setenv(f"{provider.upper()}_API_KEY", "test-key")
+    _install_fake_sdk(monkeypatch, provider, text="fine")
+
+    assert call_llm("a modest prompt") == "fine"
+
+    err = capsys.readouterr().err
+    _, model = call_llm_module.resolve_provider_and_model()
+    assert "no input-token ceiling recorded" not in err, (
+        f"{provider}/{model} resolved to a model with no recorded ceiling")
+
+
+def test_stopping_at_the_context_window_is_not_passed_off_as_a_whole_answer(monkeypatch):
+    """Anthropic's window spans the response, so input plus max_tokens can pass
+    the input check and still run out mid-generation. Only stop_reason
+    max_tokens was recognised, so this one fell through and the partial text
+    returned as if complete (coderay-8vk)."""
+    monkeypatch.setitem(sys.modules, "anthropic",
+                        _fake_anthropic_module("model_context_window_exceeded",
+                                               text="half an answer"))
+
+    with pytest.raises(call_llm_module.ResponseTruncated) as excinfo:
+        call_llm("prompt")
+
+    message = str(excinfo.value)
+    assert "model_context_window_exceeded" in message
+    # Raising the output cap cannot help when the window is what ran out.
+    assert "--codebase-budget" in message
+
+
+def test_an_openai_length_stop_names_both_knobs(monkeypatch):
+    """finish_reason=length covers the requested output cap and the context
+    window alike, and the reply cannot say which. Advising a raise alone would
+    make the window case worse."""
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setitem(sys.modules, "openai", _fake_openai_module_with_usage(
+        1, 1, text="half an answer", finish_reason="length"))
+
+    with pytest.raises(call_llm_module.ResponseTruncated) as excinfo:
+        call_llm("prompt")
+
+    message = str(excinfo.value)
+    assert "--codebase-budget" in message
+    assert "LLM_MAX_OUTPUT_TOKENS" in message
