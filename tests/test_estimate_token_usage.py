@@ -17,6 +17,7 @@ import pytest
 
 from crawl.analyses import ANALYSES
 from crawl.analyses.tour import nodes as tour_nodes
+from crawl.core import files
 from crawl.core import get_usage, reset_usage
 
 ANALYSIS_NAMES = sorted(ANALYSES)
@@ -654,3 +655,39 @@ def test_the_two_agent_docs_describe_the_preview_identically():
         line for line in text.splitlines() if line.startswith("- Every analysis declares `preview(args)`"))
 
     assert bullet(claude) == bullet(agents)
+
+
+# ------------------------------------------------------- the README's claims
+
+def _readme_preview_section():
+    readme = pathlib.Path("README.md").read_text(encoding="utf-8")
+    start = readme.index("### Preview what the crawl will read")
+    return readme[start:readme.index("### Send the model more of the code", start)]
+
+
+@pytest.mark.parametrize("name", ANALYSIS_NAMES)
+def test_the_readme_names_every_analysis_the_preview_supports(name):
+    """The README tabulates what each crawler counts. An eighth analysis, or a
+    renamed one, must not leave that table quietly describing six."""
+    assert f"`{name}`" in _readme_preview_section()
+
+
+def test_the_readme_quotes_tours_real_count_labels(tmp_path):
+    """The sample output is transcribed, so a renamed label leaves the README
+    showing a report the command no longer prints."""
+    section = _readme_preview_section()
+    result = ANALYSES["tour"].preview(_parser_for("tour").parse_args([str(_repo(tmp_path))]))
+
+    for label in result["counts"]:
+        assert label[0].upper() + label[1:] in section, label
+
+
+def test_the_readme_quotes_the_real_crawl_constants():
+    """The three narrowings are explained with numbers. They are constants in the
+    code, and the prose is wrong the moment one of them moves."""
+    section = _readme_preview_section()
+
+    assert tour_nodes.PREVIEW_CHARS_PER_FILE == 800
+    assert f"{tour_nodes.PREVIEW_CHARS_PER_FILE} chars" in section
+    assert files.DEFAULT_MAX_FILE_BYTES == 500_000
+    assert "500 KB" in section

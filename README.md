@@ -108,6 +108,8 @@ crawl schema path/to/repo     # data model and migration history
 crawl git-history path/to/repo  # the product story in the commit log
 # OR
 crawl product-intent path/to/repo  # the product story in the source
+
+crawl estimate-token-usage tour path/to/repo  # what a run would read, before paying for one
 ```
 
 If a run fails partway through (a bad LLM response after retries, a network error, a fault while writing the report) or you interrupt it with Ctrl-C, whatever the pipeline had produced is written to `run_state.json` in the output directory, so you can see how far it got without rerunning the whole pipeline. Every analysis writes each result it had finished, the tour's completed chapters included, leaving out the source it read and anything it can recompute without the model, and a later successful run removes the file.
@@ -183,6 +185,63 @@ The estimate also can't account for prompt caching, since it never makes a real 
 
 A real run (without `--dry-run`) prints a `Session` summary at the end with the actual token counts and cost, based on the usage each LLM call reported.
 
+### Preview what the crawl will read
+
+```bash
+crawl estimate-token-usage tour path/to/repo
+```
+
+Runs only an analysis's crawl step -- the filesystem walk that decides what a real run would send -- and stops. No network call, no API key, nothing written to disk. It works for every analysis:
+
+```text
+tour: /Users/you/code/beads
+
+  Files on disk                      3,289
+  Read into the selection pass       1,250
+  Dropped before the model saw them  2,039
+
+  NOTE: 2,039 of 3,289 files never reach the file-selection prompt: it holds
+        1,250 at 800 chars each. The model cannot pick a file it never saw.
+
+  This reports the file crawl only; it does not yet estimate tokens or cost.
+```
+
+#### The tour reads your repo in three narrowings
+
+A tour never analyses a whole repository. It arrives at a small selection in three steps, and the report above shows you the first two.
+
+| Step             | Files | What decides it                                                                                                  |
+| ---------------- | ----- | ---------------------------------------------------------------------------------------------------------------- |
+| 1. The walk      | 3,289 | Source extension, not in a skipped directory, under 500 KB                                                         |
+| 2. The manifest  | 1,250 | The first 800 chars of each file, until a 1,000,000-char manifest budget is spent                                  |
+| 3. The selection | ~50   | The LLM picks from the manifest; those files are read whole. Needs a model, so the preview stops before this step |
+
+**Which files get dropped at step 2 is not a judgement about them.** `list_files` walks depth-first with directory names and filenames both sorted, and the manifest takes the first 1,250 in that order and stops. The files that fall out are the ones whose paths sort last. A repo with a large `vendor/` tree can spend its whole manifest before reaching `src/`.
+
+A large drop is not automatically a problem -- if those 2,039 are fixtures and generated clients, the tour loses nothing. The number is there so you can decide that before the chapters are written rather than after.
+
+The step 3 figure is a request, not a ceiling. The prompt asks for `min(50, max(20, manifest_files // 20))` files "or fewer" -- 5% of the manifest, floored at 20, capped at 50 -- and nothing checks how many come back. What actually bounds step 3 is `--codebase-budget`, which reads the chosen files whole until its character budget is spent and drops the rest. Neither the selection target nor the manifest budget is settable today.
+
+**`--codebase-budget` does not change these two numbers.** It caps step 3, and the manifest budget behind step 2 is not exposed on the command line. `tour` takes no `--include`/`--exclude` either, so the practical lever on an oversized repo is to point the command at a subdirectory.
+
+#### Each analysis reports what its own crawler counted
+
+The rows change per analysis, because each one crawls differently:
+
+| Analysis         | Counts                                                                    |
+| ---------------- | ------------------------------------------------------------------------- |
+| `tour`           | files on disk, read into the selection pass, dropped                      |
+| `backend`        | files in the bundle, and how many matched each of the six layers          |
+| `architecture`   | config files, env var names, declared dependencies, SDK import lines      |
+| `interfaces`     | surface files found, surface files read                                   |
+| `schema`         | schema files read, migrations found                                       |
+| `product-intent` | files in the bundle, dropped by the budget, unreadable                    |
+| `git-history`    | commits, bulk additions, bulk deletions                                   |
+
+Only `product-intent`'s crawler tracks a clean included/dropped/unreadable triple. Printing those three everywhere would mean reporting numbers the other crawlers never computed.
+
+A `NOTE:` line appears whenever the counts alone would mislead: a budget that capped text rather than dropping files, a file named but never read (`--schema` pointed at a missing path), a shallow clone whose commit count is a fragment of the history, or a crawl that found nothing -- where the preview reports zero rather than aborting, then says the real run stops there, in the same words the run itself would use.
+
 ### Send the model more of the code
 
 The tour sends the model the files it selected, whole, until 1,000,000 characters are spent, and drops the rest. On a large repo the dry run shows that cap in the `Codebase budget` line. Raise it with a flag or an environment variable; the flag wins when both are set:
@@ -193,6 +252,8 @@ CODEBASE_BUDGET=2000000 crawl tour path/to/repo
 ```
 
 The budget caps how many whole files reach the model. It never trims a file part way, so a higher budget means more files in the prompt, and a larger prompt on every call that carries the codebase. Run `--dry-run` with the new value first to see the cost.
+
+This budget applies to step 3 above -- the files the model already chose. It does not widen the manifest the model chooses *from*; if `estimate-token-usage` reports a large `Dropped before the model saw them`, raising this will not recover those files.
 
 ### Pricing overrides
 
