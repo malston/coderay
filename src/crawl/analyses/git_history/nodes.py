@@ -155,6 +155,12 @@ class ProfileEras(Node):
         super().__init__(max_retries=3, wait=2)
 
     def prep(self, shared):
+        # Each era is a paid call, so finished profiles land in shared one at a
+        # time: a failure that ends the run leaves the ones already bought for
+        # the run-state dump, and a retry attempt resumes after them instead of
+        # asking again (coderay-5wu.3, the pattern WriteChapters uses). exec
+        # sees no shared, so it is handed the list.
+        shared["profiles"] = []
         return {
             "repo_path": shared["repo_path"],
             "commits_asc": shared["commits_asc"],
@@ -162,12 +168,20 @@ class ProfileEras(Node):
             "max_commits": shared.get("profile_max_commits", 400),
             "diff_chars": shared.get("profile_diff_chars", 2500),
             "template": load_prompt("profile-era.md"),
+            "profiles": shared["profiles"],
         }
 
     def exec(self, ctx):
         eras, template = ctx["eras"], ctx["template"]
-        profiles, prior_lines = [], []
+        profiles = ctx["profiles"]
+        # An era whose window holds no commits is skipped below, so a profile's
+        # position does not track its era's. Identity, not index, says which
+        # ones an earlier attempt already answered.
+        done = {_era_key(p["era"]) for p in profiles}
+        prior_lines = [_prior_line(i, p) for i, p in enumerate(profiles)]
         for i, era in enumerate(eras):
+            if _era_key(era) in done:
+                continue  # answered on an earlier attempt
             print(f"  Profiling era {i+1}/{len(eras)}: {printable(era['name'], 80)}")
             window = gl.era_commits(ctx["commits_asc"], era["start"], era["end"])
             if not window:  # coderay-q2r.39
@@ -218,15 +232,26 @@ class ProfileEras(Node):
                              # what left the machine for this era (coderay-3eu)
                              "commits_sent": [c["hash"] for c in sampled],
                              "diffs_sent": list(dict.fromkeys(c["hash"] for c in diffs.values()))})
-            prior_lines.append(
-                f"Era {i+1} \"{era['name']}\": "
-                f"cast — {result['cast'].get('narrative', '')} "
-                f"mood — {result['mood'].get('narrative', '')}"
-            )
+            prior_lines.append(_prior_line(i, profiles[-1]))
         return profiles
 
     def post(self, shared, prep_res, exec_res):
         shared["profiles"] = exec_res
+
+
+def _era_key(era):
+    """What identifies an era across attempts, since its index does not."""
+    return (era.get("name", ""), era.get("start", ""), era.get("end", ""))
+
+
+def _prior_line(index, profile):
+    """One era's summary as the next era's prompt sees it. Rebuilt from shared
+    on a resumed attempt, so the prompt is byte-identical either way and the
+    response cache still hits."""
+    result = profile["profile"]
+    return (f"Era {index+1} \"{profile['era']['name']}\": "
+            f"cast \u2014 {result['cast'].get('narrative', '')} "
+            f"mood \u2014 {result['mood'].get('narrative', '')}")
 
 
 # Step 4. Read the graveyard of killed features.
@@ -261,16 +286,23 @@ class Graveyard(Node):
                 continue
             seen_areas.add(area)
             graves.append(c)
+        # Finished entries land in shared one at a time, for the same reason
+        # ProfileEras does it (coderay-5wu.3).
+        shared["graves"] = []
         return {
             "repo_path": shared["repo_path"],
             "eras": shared["eras"],
             "graves": graves,
             "template": load_prompt("graveyard-entry.md"),
+            "entries": shared["graves"],
         }
 
     def exec(self, ctx):
-        entries = []
+        entries = ctx["entries"]
+        done = {e["commit"]["hash"] for e in entries}
         for c in ctx["graves"]:
+            if c["hash"] in done:
+                continue  # written on an earlier attempt
             print(f"  Graveyard: {c['hash'][:7]} ({c['count']} files) {printable(c['subject'], 60)}")
             era = _era_for(c["month"], ctx["eras"]) or {}
             prompt = fill(
