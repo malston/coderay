@@ -381,7 +381,17 @@ def call_llm(prompt: str) -> str:
         candidate = resp.candidates[0] if resp.candidates else None
         finish_reason = str(getattr(candidate, "finish_reason", "") or "")
         if candidate is not None and finish_reason and "STOP" not in finish_reason.upper():
-            raise _truncated(f"Gemini response incomplete (finish_reason={finish_reason})")
+            # MAX_TOKENS is the only FinishReason that means the output cap.
+            # The rest (SAFETY, RECITATION, LANGUAGE, OTHER, BLOCKLIST,
+            # PROHIBITED_CONTENT, SPII, MALFORMED_FUNCTION_CALL and the image
+            # variants) are content and function-call blocks, several of them
+            # sampling-dependent, so another attempt can complete where this
+            # one stopped. Calling one a truncation would advise a knob that
+            # cannot fix it and, because a truncation leaves the retry loop,
+            # would end the run on the first attempt.
+            if "MAX_TOKENS" in finish_reason.upper():
+                raise _truncated(f"Gemini response incomplete (finish_reason={finish_reason})")
+            raise RuntimeError(f"Gemini stopped early (finish_reason={finish_reason})")
         text = resp.text
 
     if not text:

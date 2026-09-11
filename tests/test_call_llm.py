@@ -1185,3 +1185,100 @@ def test_every_deterministic_failure_stays_out_of_a_retry_loop():
 
     assert set(call_llm_module.DETERMINISTIC_FAILURES) == {
         call_llm_module.ResponseTruncated, call_llm_module.PromptTooLarge}
+
+
+def _install_fake_gemini_finishing(monkeypatch, finish_reason, text="partial"):
+    """A Gemini fake whose single candidate stops for `finish_reason`."""
+    google = types.ModuleType("google")
+    genai = types.ModuleType("google.genai")
+    genai_types = types.ModuleType("google.genai.types")
+
+    class GenerateContentConfig:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class Usage:
+        prompt_token_count = 10
+        candidates_token_count = 5
+        cached_content_token_count = 0
+
+    class Candidate:
+        pass
+
+    Candidate.finish_reason = finish_reason
+
+    class Resp:
+        def __init__(self):
+            self.candidates = [Candidate()]
+            self.text = text
+            self.usage_metadata = Usage()
+
+    class Models:
+        def generate_content(self, **kwargs):
+            return Resp()
+
+    class Client:
+        def __init__(self, *a, **kw):
+            self.models = Models()
+
+    genai_types.GenerateContentConfig = GenerateContentConfig
+    genai.types = genai_types
+    genai.Client = Client
+    google.genai = genai
+    monkeypatch.setitem(sys.modules, "google", google)
+    monkeypatch.setitem(sys.modules, "google.genai", genai)
+    monkeypatch.setitem(sys.modules, "google.genai.types", genai_types)
+
+
+def test_gemini_reports_the_output_cap_as_a_truncation(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    _install_fake_gemini_finishing(monkeypatch, "MAX_TOKENS")
+
+    with pytest.raises(call_llm_module.ResponseTruncated, match="LLM_MAX_OUTPUT_TOKENS"):
+        call_llm("prompt")
+
+
+@pytest.mark.parametrize("finish_reason", [
+    "SAFETY", "RECITATION", "LANGUAGE", "OTHER", "BLOCKLIST",
+    "PROHIBITED_CONTENT", "SPII", "MALFORMED_FUNCTION_CALL",
+])
+def test_gemini_content_blocks_stay_retryable(monkeypatch, finish_reason):
+    """MAX_TOKENS is the only FinishReason that means the output cap; the rest
+    are content and function-call blocks, several of them sampling-dependent.
+    Reporting one as a truncation both advises a knob that cannot fix it and,
+    since a truncation now bypasses the retry loop, kills a run that another
+    attempt could have completed (coderay-n9j)."""
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    _install_fake_gemini_finishing(monkeypatch, finish_reason)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        call_llm("prompt")
+
+    assert not isinstance(excinfo.value, call_llm_module.ResponseTruncated)
+    assert finish_reason in str(excinfo.value)
+    assert "LLM_MAX_OUTPUT_TOKENS" not in str(excinfo.value)
+
+
+def test_a_gemini_content_block_is_retried_by_a_node(monkeypatch):
+    """It is not deterministic: the same prompt sampled again often completes."""
+    from pocketflow import Node
+
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    _install_fake_gemini_finishing(monkeypatch, "RECITATION")
+    attempts = []
+
+    class Calling(Node):
+        def __init__(self):
+            super().__init__(max_retries=3, wait=0)
+
+        def exec(self, prep_res):
+            attempts.append(1)
+            return call_llm(f"prompt {len(attempts)}")
+
+    with pytest.raises(RuntimeError):
+        Calling()._exec(None)
+
+    assert len(attempts) == 3
