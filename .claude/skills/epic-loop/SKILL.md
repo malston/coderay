@@ -22,7 +22,7 @@ Run `bd show $EPIC` first. Its DESIGN field may carry epic-specific instructions
 The user drives this with `/goal`, which re-evaluates the condition after every turn, waits for background review agents before judging, and survives a resumed session. The goal line looks like:
 
 ```text
-/goal Every open child of beads epic <epic-id> is closed, blocked on a held PR, or tagged `human`, worked per /epic-loop; or stop when the epic's turn counter reaches 80
+/goal Every open child of beads epic <epic-id> is closed, blocked on a held PR, or tagged `human`, worked per /epic-loop; or stop when the epic's turn counter reaches 20
 ```
 
 The turn counter lives in the epic so a resumed session doesn't reset it. End every turn, whatever else happened in it, by reading the epic's notes with `bd show $EPIC --json`, replacing the `turns: N` line (or appending one if absent), and writing the whole notes field back with `bd update $EPIC --notes "..."`. Notes is a single field and the user keeps their own remarks in it, so never write only the counter.
