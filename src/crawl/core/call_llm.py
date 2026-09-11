@@ -28,9 +28,11 @@ Smoke test:
 import hashlib
 import json
 import os
+import sys
 import time
 
 from .files import write_text_atomic
+from .pricing import max_input_tokens
 from .text import positive_int
 
 CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "crawl")
@@ -42,12 +44,37 @@ CACHE_BREAKPOINT = "<<CODERAY_CACHE_BREAKPOINT>>"
 
 DEFAULT_MAX_OUTPUT_TOKENS = 16384
 
+# Chars per token for the pre-flight size estimate. One refused run measured
+# 2,999,828 characters at 1,385,407 tokens, a density of 2.1653 (coderay-cvi);
+# that is a single sample of one repository, not a property of source in
+# general. The divisor has to stay at or above that density so a prompt of it
+# that would have fit is not refused, and at or below 2.999825 so that run is
+# still caught: at 3.0 the estimate lands on 999,942 and slips under the
+# 1,000,000 ceiling. 2.5 sits between the two. Text sparser than 2.5, such as
+# prose or markdown, is over-estimated and can be refused when it would have
+# fit; the band between this estimate and a real refusal is covered by the
+# provider's own error, caught below.
+CHARS_PER_TOKEN = 2.5
+
+# Remediation lines for a size refusal. The pre-flight guard measures the
+# input alone, so the input knob is the whole answer there; a provider refusal
+# can also mean the input plus the requested output exceeds the window, which
+# the output cap governs.
+INPUT_HINT = "lower --codebase-budget or the CODEBASE_BUDGET environment variable"
+INPUT_OR_OUTPUT_HINT = (INPUT_HINT + ", or lower LLM_MAX_OUTPUT_TOKENS if the "
+                        "input plus the requested output is what overran")
+
 _usage_log = []
+
+# (provider, model) pairs already reported as having no recorded ceiling, so a
+# run says it once rather than once per LLM call.
+_unguarded_reported = set()
 
 
 def reset_usage():
     """Clear accumulated usage records. Call once before a pipeline run."""
     _usage_log.clear()
+    _unguarded_reported.clear()
 
 
 def get_usage():
@@ -64,6 +91,59 @@ def resolve_provider_and_model():
 class ResponseTruncated(RuntimeError):
     """The model hit the output cap. Deterministic for a given prompt and cap,
     so callers should not retry it as if it were transient (coderay-q2r.46)."""
+
+
+class PromptTooLarge(SystemExit):
+    """The prompt is more input than the model accepts. Deterministic for a
+    given prompt and model, so every retry reaches the same verdict; deriving
+    from SystemExit keeps it out of `except Exception`, which is what a node's
+    retry loop matches on, and carries the message to the user without a
+    traceback. `keeping_results` names SystemExit too, so a run still writes
+    the results it had (coderay-cvi, the reasoning tour applies to
+    ResponseTruncated at analyses/tour/nodes.py).
+    """
+
+
+def _too_large(detail, hint=INPUT_HINT):
+    return PromptTooLarge(f"{detail}; {hint}")
+
+
+# The two classes a size refusal arrives as: 400 for a prompt over the model's
+# input ceiling, 413 for a request over the transport's byte limit. They are
+# siblings under APIStatusError, not one a subclass of the other, so catching
+# either alone misses the other.
+_SIZE_REFUSAL_NAMES = ("BadRequestError", "RequestTooLargeError")
+
+
+def _size_refusal_errors():
+    """The SDK classes above, for matching in an except clause. A name the
+    installed SDK does not define is left out rather than failing a live run;
+    test_sdk_size_refusal_classes_are_named is what reports that, so a rename
+    cannot quietly retire this handler."""
+    import anthropic
+    found = (getattr(anthropic, name, None) for name in _SIZE_REFUSAL_NAMES)
+    return tuple(cls for cls in found if isinstance(cls, type))
+
+
+def _is_request_too_large(e):
+    """Whether the refusal is the transport's byte-limit one, whose status is
+    the whole diagnosis."""
+    import anthropic
+    cls = getattr(anthropic, "RequestTooLargeError", None)
+    return isinstance(cls, type) and isinstance(e, cls)
+
+
+def _api_detail(e):
+    """The provider's own sentence out of a structured error body. The SDK
+    builds str() on a status error as `Error code: 400 - {body}` with the
+    parsed body inlined as a dict repr, which reads badly in the middle of a
+    remediation line, so prefer the message the body carries."""
+    body = getattr(e, "body", None)
+    if isinstance(body, dict):
+        error = body.get("error")
+        if isinstance(error, dict) and isinstance(error.get("message"), str):
+            return error["message"]
+    return str(e)
 
 
 def _truncated(detail):
@@ -176,6 +256,26 @@ def call_llm(prompt: str) -> str:
         _record_usage(provider, model, 0, 0, 0, 0, 0.0, cached=True)
         return cached
 
+    # Sits after the cache lookup: a cached prompt already succeeded once and
+    # reaches no provider, so its size is no longer anyone's problem.
+    ceiling = max_input_tokens(provider, model)
+    if ceiling is None:
+        # No figure is recorded, so nothing is checked. Said once per model,
+        # because the alternative to a guess is silence and silence leaves a
+        # later provider refusal looking like it came from nowhere.
+        if (provider, model) not in _unguarded_reported:
+            _unguarded_reported.add((provider, model))
+            print(f"Warning: no input-token ceiling recorded for {provider}/{model}; "
+                  "an oversized prompt will be refused by the provider rather than "
+                  "caught before the call", file=sys.stderr)
+    else:
+        estimate = int(len(plain_prompt) / CHARS_PER_TOKEN)
+        if estimate > ceiling:
+            raise _too_large(
+                f"prompt is about {estimate:,} tokens "
+                f"({len(plain_prompt):,} characters), over {model}'s "
+                f"{ceiling:,}-token input limit")
+
     start = time.perf_counter()
 
     if provider == "anthropic":
@@ -188,12 +288,25 @@ def call_llm(prompt: str) -> str:
         # max_tokens implies more than 10 minutes of generation time, which
         # backend's 32768-token cap trips. get_final_message() assembles the
         # stream into the same Message object create() would have returned.
-        with Anthropic().messages.stream(
-            model=model,
-            max_tokens=max_out,
-            messages=[{"role": "user", "content": content}],
-        ) as stream:
-            resp = stream.get_final_message()
+        try:
+            with Anthropic().messages.stream(
+                model=model,
+                max_tokens=max_out,
+                messages=[{"role": "user", "content": content}],
+            ) as stream:
+                resp = stream.get_final_message()
+        except _size_refusal_errors() as e:
+            # The estimate above is beaten by a prompt that tokenizes denser
+            # than the sample it came from, and skipped outright for a model
+            # with no ceiling recorded, so the provider's own refusal is
+            # restated as the budget problem it is. A 413 is a size refusal by
+            # status, so it needs no wording match; a 400 covers many request
+            # faults and is identified by the sentence the body carries. Any
+            # other refusal keeps its own type and message.
+            detail = _api_detail(e)
+            if _is_request_too_large(e) or "prompt is too long" in detail:
+                raise _too_large(detail, INPUT_OR_OUTPUT_HINT) from e
+            raise
         duration_s = time.perf_counter() - start
         usage = getattr(resp, "usage", None)
         if usage is None:
