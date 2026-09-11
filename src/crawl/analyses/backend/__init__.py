@@ -9,7 +9,7 @@ from crawl.core import OverviewNode
 from crawl.core.render import Section, Theme, esc
 from crawl.core.runner import repo_name_of, run_analysis
 from crawl.core.text import codebase_budget_argument
-from .backend_crawl import DEFAULT_MAX_CHARS
+from .backend_crawl import DEFAULT_MAX_CHARS, LAYERS, build_bundle
 from .nodes import BuildBundle, Pipeline, LayerCode, Trace
 
 NAME = "backend"
@@ -72,6 +72,16 @@ THEME = Theme(
 def sent(shared):
     """What left the machine: the source files whose text reached the bundle (coderay-3eu)."""
     return {"files": shared.get("bundle_files", [])}
+
+
+def preview(args):
+    """What the crawl step found, before any LLM call. A file can match a layer
+    and still not reach the bundle -- empty, unreadable, or past the budget --
+    so the matched counts are reported beside the included one, not instead of it."""
+    _bundle, stats = build_bundle(args.repo_path, max_chars=args.codebase_budget)
+    counts = {"included": stats["included"]}
+    counts.update({f"matched {layer}": stats["counts"].get(layer, 0) for layer in LAYERS})
+    return {"counts": counts, "files": {"included": stats["files"]}, "notes": []}
 
 
 def init_shared(args):

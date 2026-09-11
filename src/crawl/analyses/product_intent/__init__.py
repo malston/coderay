@@ -7,7 +7,7 @@ from pocketflow import Flow
 from crawl.core.runner import run_analysis
 from crawl.core.text import codebase_budget_argument
 from .nodes import (DEFAULT_MAX_CHARS, FetchRepo, PainScene, VariantSentence,
-                    CompetitivePositioning, SurprisesAndAbsences)
+                    CompetitivePositioning, SurprisesAndAbsences, bundle)
 # This analysis hand-builds its page from structured data, so it keeps its own
 # renderer; crawl.core.render defers to these.
 from .render import render_html, render_markdown  # noqa: F401
@@ -26,6 +26,17 @@ def add_arguments(parser):
                         help=".gitignore-style pattern: drop matching paths. "
                              "Repeatable.")
     parser.add_argument("--codebase-budget", **codebase_budget_argument(DEFAULT_MAX_CHARS))
+
+def preview(args):
+    """What the crawl step found, before any LLM call. This is the one crawler
+    that counts all three outright: what went in, what the budget dropped, and
+    what would not decode."""
+    _codebase, stats = bundle(args.repo_path, include=args.include or None,
+                              exclude=args.exclude or None, max_chars=args.codebase_budget)
+    return {"counts": {"included": stats["included"], "dropped": stats["dropped"],
+                       "unreadable": stats["unreadable"]},
+            "files": {"included": stats["files"]}, "notes": []}
+
 
 def sent(shared):
     """What left the machine: every source file the bundle carried whole (coderay-3eu)."""

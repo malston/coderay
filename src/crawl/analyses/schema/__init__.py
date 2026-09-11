@@ -9,7 +9,7 @@ from crawl.core import OverviewNode
 from crawl.core.render import Section, Theme, esc, md
 from crawl.core.runner import repo_name_of, run_analysis
 from crawl.core.text import codebase_budget_argument
-from .schema_find import SCHEMA_BUDGET
+from .schema_find import SCHEMA_BUDGET, find_migrations, find_schema
 from .nodes import (FindSchema, SchemaTour, TraceFlows, TableDeepDive,
                     MigrationActs, MIGRATION_FLOOR)
 
@@ -93,6 +93,16 @@ def add_arguments(parser):
                         help="path to the schema file, relative to the repo "
                              "(overrides autodetect)")
     parser.add_argument("--codebase-budget", **codebase_budget_argument(SCHEMA_BUDGET))
+
+def preview(args):
+    """What the crawl step found, before any LLM call: the schema files located by
+    convention (or named by --schema) and the migration directory with the most
+    timestamped entries."""
+    schema = find_schema(args.repo_path, args.schema, args.codebase_budget)
+    _mig_dir, mig_names = find_migrations(args.repo_path)
+    return {"counts": {"schema files": len(schema["files"]), "migrations": len(mig_names)},
+            "files": {"schema": schema["files"], "migrations": mig_names}, "notes": []}
+
 
 def sent(shared):
     """What left the machine: the schema files read, and the names (not the

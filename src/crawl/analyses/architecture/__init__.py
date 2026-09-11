@@ -10,7 +10,8 @@ from crawl.core import OverviewNode
 from crawl.core.render import Section, Theme, esc, md
 from crawl.core.runner import repo_name_of, run_analysis
 from crawl.core.text import codebase_budget_argument
-from .arch_crawl import DEFAULT_MAX_CHARS, _count_note, manifest_problem_notes
+from .arch_crawl import (DEFAULT_MAX_CHARS, _count_note, build_bundle,
+                         manifest_problem_notes)
 from .nodes import BuildBundle, Inventory, TechStack, TraceRequest
 
 NAME = "architecture"
@@ -127,6 +128,33 @@ def overview_spec(shared):
 
 def add_arguments(parser) -> None:
     parser.add_argument("--codebase-budget", **codebase_budget_argument(DEFAULT_MAX_CHARS))
+
+def preview(args):
+    """What the crawl step found, before any LLM call. This bundle is four
+    overlaid sources, not one file walk, so it counts config files, declared
+    dependencies and integration directories rather than a single included set."""
+    _bundle, stats = build_bundle(args.repo_path, max_chars=args.codebase_budget)
+    counts = {
+        "config files included": stats["config_files"],
+        "config files found": stats.get("config_files_found", stats["config_files"]),
+        "config files unreadable": stats.get("config_files_unreadable", 0),
+        "config files truncated": stats.get("config_files_truncated", 0),
+        "env files unreadable": stats.get("env_files_unreadable", 0),
+        "env files truncated": stats.get("env_files_truncated", 0),
+        "dependencies": stats["deps"],
+        "integrations": stats["integrations"],
+    }
+    notes = list(manifest_problem_notes(stats.get("manifest_problems", {})))
+    if stats.get("truncated"):
+        # This crawler caps the assembled text rather than dropping files, so
+        # the counts above would otherwise overstate what the model reads.
+        notes.append(f"The bundle was truncated at the {args.codebase_budget:,}-char budget; "
+                     "the model sees less than the counts above describe.")
+    if stats.get("sdk_unavailable"):
+        notes.append("SDK import evidence unavailable; connections are configured, not proven live.")
+    if stats.get("sdk_capped"):
+        notes.append("SDK import evidence was capped; more imports may exist than are counted.")
+    return {"counts": counts, "files": {"included": stats["files"]}, "notes": notes}
 
 def run(args) -> None:
     # Exit code 1, no usage line, matching tour's run(): run(args) has no

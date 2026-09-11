@@ -9,7 +9,7 @@ from crawl.core.env import env_defaults
 from crawl.core.text import codebase_budget_argument
 from crawl.core.runner import keeping_results, run_flow, run_state_writer, write_manifest
 from crawl.analyses.tour.flow import create_tour_flow
-from crawl.analyses.tour.nodes import CODEBASE_BUDGET, PipelineState
+from crawl.analyses.tour.nodes import CODEBASE_BUDGET, PipelineState, SmartCrawl
 from crawl.analyses.tour.render import (
     available_lenses,
     build_mermaid,
@@ -44,6 +44,18 @@ def sent(shared):
     """What left the machine: the selected files, whole, and every file whose
     preview went into the selection prompt (coderay-3eu)."""
     return {"files": shared.get("selected_files", []), "previewed_files": shared.get("previewed_files", [])}
+
+
+def preview(args):
+    """What the crawl step found, before any LLM call: every file whose head goes
+    into the selection prompt. Which of those the model then picks is its answer,
+    not something a preview can know. Reuses SmartCrawl's own prep() rather than
+    rebuilding its preview-manifest logic, the same seam estimate_dry_run_cost uses."""
+    shared = init_shared(args)
+    SmartCrawl().prep(shared)
+    previewed = shared["previewed_files"]
+    return {"counts": {"previewed": len(previewed)},
+            "files": {"previewed": previewed}, "notes": []}
 
 
 def init_shared(args) -> PipelineState:

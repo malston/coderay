@@ -32,6 +32,21 @@ def add_arguments(parser):
                         help="cap on characters per landmark diff in a "
                              "profile prompt (default 2500)")
 
+def preview(args):
+    """What the crawl step found, before any LLM call. There are no file counts
+    here: this analysis reads commits. The eras are the model's answer, so a
+    preview cannot report them."""
+    log = FetchHistory().exec(args.repo_path)
+    counts = {"commits": len(log["commits"]),
+              "bulk additions": len(log["bulk_adds"]),
+              "bulk deletions": len(log["bulk_dels"])}
+    notes = []
+    if log["shallow"]:  # coderay-q2r.38: the count above is a fragment, not the history
+        notes.append("This is a shallow clone; the commit count is a fragment of the "
+                     "history. Unshallow it first (git fetch --unshallow).")
+    return {"counts": counts, "files": {}, "notes": notes}
+
+
 def sent(shared):
     """What left the machine: no files here. The whole log is summarised for the
     era names, with the biggest bulk changes' subject lines verbatim; each era's

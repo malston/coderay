@@ -11,7 +11,7 @@ from crawl.core.render import (
     Section, Theme, card, esc, extract_mermaid, md, strip_mermaid)
 from crawl.core.runner import repo_name_of, run_analysis
 from crawl.core.text import codebase_budget_argument
-from .routes_find import DEFAULT_MAX_CHARS
+from .routes_find import DEFAULT_MAX_CHARS, crawl_routes
 from .nodes import FindRoutes, ApiMenu, TraceActions, EndpointSequence
 
 NAME = "interfaces"
@@ -199,6 +199,14 @@ def overview_spec(shared):
 
 def add_arguments(parser) -> None:
     parser.add_argument("--codebase-budget", **codebase_budget_argument(DEFAULT_MAX_CHARS))
+
+def preview(args):
+    """What the crawl step found, before any LLM call: the surface files found by
+    convention, and the ones whose text actually reached the bundle. A found file
+    is left out when it is empty or would not fit the budget (coderay-q2r.24)."""
+    _routes, found, read = crawl_routes(args.repo_path, max_chars=args.codebase_budget)
+    return {"counts": {"found": len(found), "read": len(read)},
+            "files": {"found": found, "read": read}, "notes": []}
 
 def run(args) -> None:
     # Exit code 1, no usage line, matching tour's run(): run(args) has no
