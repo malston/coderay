@@ -269,3 +269,46 @@ def test_sent_names_the_schema_files_and_the_migration_names(tmp_path):
     n.FindSchema().run(shared)
     # one migration is below the floor, so its name never reaches a prompt
     assert schema.sent(shared) == {"files": ["db/schema.rb"], "migration_names": []}
+
+
+def test_deep_dive_keeps_finished_cards_when_a_later_batch_fails(monkeypatch):
+    """Each batch is a paid call. A failure on a later one used to discard every
+    card bought before it, since exec accumulated locally (coderay-5wu.3)."""
+    from crawl.core.call_llm import ResponseTruncated
+
+    calls = []
+
+    def reply(prompt):
+        calls.append(prompt)
+        if len(calls) == 2:
+            raise ResponseTruncated("response truncated")
+        return "### one\nbody\n"
+
+    monkeypatch.setattr(n, "call_llm", reply)
+    shared = {"schema": "s", "product_name": "p", "one_liner": "o",
+              "table_list": [f"t{i}" for i in range(8)]}
+
+    with pytest.raises(ResponseTruncated):
+        n.TableDeepDive().run(shared)
+
+    assert shared["deepdive_cards"] == ["### one\nbody"]
+
+
+def test_deep_dive_resumes_after_the_batches_it_already_bought(monkeypatch):
+    calls = []
+
+    def reply(prompt):
+        calls.append(prompt)
+        if len(calls) == 2:
+            raise RuntimeError("connection reset")
+        return f"### card {len(calls)}\nbody\n"
+
+    monkeypatch.setattr(n, "call_llm", reply)
+    shared = {"schema": "s", "product_name": "p", "one_liner": "o",
+              "table_list": [f"t{i}" for i in range(8)]}
+    n.TableDeepDive().run(shared)
+
+    # Batch 1, batch 2 (fails), batch 2 again. Batch 1 is not bought twice.
+    assert len(calls) == 3
+    assert len(shared["deepdive_cards"]) == 2
+    assert "### card 1" in shared["deepdive_md"]

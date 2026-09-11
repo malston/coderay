@@ -439,3 +439,92 @@ def test_name_eras_tolerates_an_empty_bulk_dels_list(monkeypatch, tmp_path):
               "bulk_dels": [], "bulk_adds": []}
     n.NameEras().run(shared)
     assert shared["survey_commits_sent"] == []
+
+
+def test_profile_eras_keeps_finished_profiles_when_a_later_era_fails(monkeypatch, tmp_path):
+    """Eras are paid for one at a time. A failure on a later one used to discard
+    every profile bought before it, because exec accumulated locally and only
+    post wrote to shared, so the run-state dump saw nothing (coderay-5wu.3 is
+    the pattern WriteChapters already uses)."""
+    from crawl.core.call_llm import ResponseTruncated
+
+    repo = _repo(tmp_path, [("c", {"a.py": "1\n"}, [])])
+    from crawl.analyses.git_history import gitlog as gl
+    real = gl.git_log_commits(repo)[0]
+    calls = []
+
+    def reply(prompt):
+        calls.append(prompt)
+        if len(calls) == 2:
+            raise ResponseTruncated("response truncated")
+        return "```json\n" + json.dumps(PROFILE) + "\n```"
+
+    _fake_llm(monkeypatch, reply)
+    two = ERAS + [{"name": "Later", "start": "2020-01", "end": "2020-12",
+                   "description": "d2", "turning_point": "t2"}]
+    shared = {"repo_path": repo,
+              "commits_asc": [dict(real, month="2019-06"), dict(real, month="2020-06")],
+              "eras": two}
+
+    with pytest.raises(ResponseTruncated):
+        n.ProfileEras().run(shared)
+
+    assert len(shared["profiles"]) == 1
+    assert shared["profiles"][0]["era"]["name"] == ERAS[0]["name"]
+
+
+def test_profile_eras_resumes_after_the_profiles_it_already_bought(monkeypatch, tmp_path):
+    """A retry attempt must not re-ask for an era already answered."""
+    repo = _repo(tmp_path, [("c", {"a.py": "1\n"}, [])])
+    from crawl.analyses.git_history import gitlog as gl
+    real = gl.git_log_commits(repo)[0]
+    calls = []
+
+    def reply(prompt):
+        calls.append(prompt)
+        if len(calls) == 2:
+            raise RuntimeError("connection reset")
+        return "```json\n" + json.dumps(PROFILE) + "\n```"
+
+    _fake_llm(monkeypatch, reply)
+    two = ERAS + [{"name": "Later", "start": "2020-01", "end": "2020-12",
+                   "description": "d2", "turning_point": "t2"}]
+    shared = {"repo_path": repo,
+              "commits_asc": [dict(real, month="2019-06"), dict(real, month="2020-06")],
+              "eras": two}
+    n.ProfileEras().run(shared)
+
+    # Era 1, era 2 (fails), era 2 again. Era 1 is not bought twice.
+    assert len(calls) == 3
+    assert len(shared["profiles"]) == 2
+    assert "(this is the first era)" in calls[0]
+    # The resumed attempt still carries era 1's summary as context.
+    assert "Era 1" in calls[2]
+
+
+def test_graveyard_keeps_finished_entries_when_a_later_one_fails(monkeypatch, tmp_path):
+    from crawl.core.call_llm import ResponseTruncated
+
+    first = {f"core/one/f{i}.py": "x\n" for i in range(10)}
+    second = {f"core/two/f{i}.py": "x\n" for i in range(10)}
+    repo = _repo(tmp_path, [("add", {**first, **second}, []),
+                            ("drop one", {}, list(first)),
+                            ("drop two", {}, list(second))])
+    from crawl.analyses.git_history import gitlog as gl
+    calls = []
+
+    def reply(prompt):
+        calls.append(prompt)
+        if len(calls) == 2:
+            raise ResponseTruncated("response truncated")
+        return "entry"
+
+    _fake_llm(monkeypatch, reply)
+    shared = {"repo_path": repo, "eras": ERAS,
+              "bulk_dels": gl.bulk_changes(repo, "D", min_files=5),
+              "grave_min_files": 8, "max_graves": 6}
+
+    with pytest.raises(ResponseTruncated):
+        n.Graveyard().run(shared)
+
+    assert len(shared["graves"]) == 1

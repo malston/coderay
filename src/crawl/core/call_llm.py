@@ -88,20 +88,25 @@ def resolve_provider_and_model():
     return provider, _model_for(provider)
 
 
-class ResponseTruncated(RuntimeError):
+class ResponseTruncated(SystemExit):
     """The model hit the output cap. Deterministic for a given prompt and cap,
-    so callers should not retry it as if it were transient (coderay-q2r.46)."""
+    so every retry reaches the same verdict, and a retry here re-runs a whole
+    generation that is billed again (coderay-q2r.46, coderay-n9j)."""
 
 
 class PromptTooLarge(SystemExit):
     """The prompt is more input than the model accepts. Deterministic for a
-    given prompt and model, so every retry reaches the same verdict; deriving
-    from SystemExit keeps it out of `except Exception`, which is what a node's
-    retry loop matches on, and carries the message to the user without a
-    traceback. `keeping_results` names SystemExit too, so a run still writes
-    the results it had (coderay-cvi, the reasoning tour applies to
-    ResponseTruncated at analyses/tour/nodes.py).
-    """
+    given prompt and model, so every retry reaches the same verdict, though a
+    retry here costs only time since no call is made (coderay-cvi)."""
+
+
+# The failures no retry can recover from. Both derive from SystemExit, which a
+# node's retry loop does not match because it catches Exception; the message
+# then reaches the user without a traceback, and `keeping_results` names
+# SystemExit so a run still writes the results it already paid for. Bypassing
+# the retry loop bypasses `exec_fallback` with it, so a node that must survive
+# one of these handles it itself rather than relying on that hook.
+DETERMINISTIC_FAILURES = (ResponseTruncated, PromptTooLarge)
 
 
 def _too_large(detail, hint=INPUT_HINT):
@@ -376,7 +381,17 @@ def call_llm(prompt: str) -> str:
         candidate = resp.candidates[0] if resp.candidates else None
         finish_reason = str(getattr(candidate, "finish_reason", "") or "")
         if candidate is not None and finish_reason and "STOP" not in finish_reason.upper():
-            raise _truncated(f"Gemini response incomplete (finish_reason={finish_reason})")
+            # MAX_TOKENS is the only FinishReason that means the output cap.
+            # The rest (SAFETY, RECITATION, LANGUAGE, OTHER, BLOCKLIST,
+            # PROHIBITED_CONTENT, SPII, MALFORMED_FUNCTION_CALL and the image
+            # variants) are content and function-call blocks, several of them
+            # sampling-dependent, so another attempt can complete where this
+            # one stopped. Calling one a truncation would advise a knob that
+            # cannot fix it and, because a truncation leaves the retry loop,
+            # would end the run on the first attempt.
+            if "MAX_TOKENS" in finish_reason.upper():
+                raise _truncated(f"Gemini response incomplete (finish_reason={finish_reason})")
+            raise RuntimeError(f"Gemini stopped early (finish_reason={finish_reason})")
         text = resp.text
 
     if not text:

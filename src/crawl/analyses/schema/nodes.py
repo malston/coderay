@@ -180,18 +180,28 @@ class TableDeepDive(Node):
         super().__init__(max_retries=3, wait=2)
 
     def prep(self, shared):
+        # Each batch is a paid call, so finished ones land in shared as they
+        # arrive: a failure that ends the run leaves the cards already bought
+        # for the run-state dump, and a retry attempt resumes after them
+        # instead of buying them again (coderay-5wu.3). post joins them into
+        # the markdown the renderer reads. exec sees no shared, so it is
+        # handed the list.
+        shared["deepdive_cards"] = []
         return {
             "schema": shared["schema"],
             "product_name": shared["product_name"],
             "one_liner": shared["one_liner"],
             "tables": shared["table_list"],
             "template": load_prompt("table-deep-dive.md"),
+            "cards": shared["deepdive_cards"],
         }
 
     def exec(self, ctx):
         tables = ctx["tables"]
-        cards = []
-        for i in range(0, len(tables), self.BATCH):
+        cards = ctx["cards"]
+        for batch_no, i in enumerate(range(0, len(tables), self.BATCH)):
+            if batch_no < len(cards):
+                continue  # bought on an earlier attempt
             batch = tables[i:i + self.BATCH]
             print(f"  Deep dive: tables {i+1}-{i+len(batch)} of {len(tables)}")
             prompt = fill(ctx["template"],

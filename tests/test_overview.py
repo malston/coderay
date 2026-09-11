@@ -109,3 +109,60 @@ def test_write_overview_prompt_asks_for_voice_but_not_citations(monkeypatch):
     write_overview("toy_repo", "a backend", SECTIONS)
     assert "Cite the file and symbol" not in seen["p"]
     assert "## Welcome" in seen["p"] and "exactly as given" in seen["p"]
+
+
+def test_overview_stays_non_fatal_when_the_reply_is_truncated(monkeypatch, capsys):
+    """The overview is optional by design (coderay-q2r.13): a failure leaves the
+    page without intro copy rather than killing the run. A deterministic LLM
+    failure skips the node's retry loop, and so skips exec_fallback with it, so
+    the node has to keep that promise itself (coderay-n9j)."""
+    from crawl.core.call_llm import ResponseTruncated
+
+    def truncated(prompt):
+        raise ResponseTruncated("response truncated (stop_reason=max_tokens)")
+
+    monkeypatch.setattr("crawl.core.overview.call_llm", truncated)
+    node = OverviewNode(lambda sh: {"name": "n", "what": "w", "sections": SECTIONS},
+                        max_retries=2, wait=0)
+    shared = {}
+    node.run(shared)
+
+    assert shared["overview"] == {"welcome": "", "intros": {}}
+    assert "Overview failed" in capsys.readouterr().out
+
+
+def test_overview_stays_non_fatal_when_the_prompt_is_too_large(monkeypatch, capsys):
+    """Same promise, for the other deterministic failure. The overview prompt
+    carries counts and gists rather than source, so this is the unlikely one,
+    but the node is documented as non-fatal without qualification."""
+    from crawl.core.call_llm import PromptTooLarge
+
+    def too_large(prompt):
+        raise PromptTooLarge("prompt is about 9 tokens; lower --codebase-budget")
+
+    monkeypatch.setattr("crawl.core.overview.call_llm", too_large)
+    node = OverviewNode(lambda sh: {"name": "n", "what": "w", "sections": SECTIONS},
+                        max_retries=2, wait=0)
+    shared = {}
+    node.run(shared)
+
+    assert shared["overview"] == {"welcome": "", "intros": {}}
+    assert "Overview failed" in capsys.readouterr().out
+
+
+def test_a_truncated_overview_is_attempted_only_once(monkeypatch):
+    """Retrying a truncation re-runs a whole generation to hit the same cap, and
+    unlike an oversized prompt that one is billed every time."""
+    from crawl.core.call_llm import ResponseTruncated
+
+    attempts = []
+
+    def truncated(prompt):
+        attempts.append(1)
+        raise ResponseTruncated("response truncated (stop_reason=max_tokens)")
+
+    monkeypatch.setattr("crawl.core.overview.call_llm", truncated)
+    OverviewNode(lambda sh: {"name": "n", "what": "w", "sections": SECTIONS},
+                 max_retries=3, wait=0).run({})
+
+    assert len(attempts) == 1

@@ -3,6 +3,7 @@ prompt/YAML plumbing in llm.py."""
 # Re-exported for `from crawl.core import <name>`; not used inside this module.
 from .call_llm import (  # noqa: F401
     DEFAULT_MAX_OUTPUT_TOKENS,
+    DETERMINISTIC_FAILURES,
     PromptTooLarge,
     ResponseTruncated,
     call_llm,

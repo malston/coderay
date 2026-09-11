@@ -362,10 +362,11 @@ class WriteChapters(Node):
             try:
                 content = call_llm(prompt)
             except ResponseTruncated as e:
-                # coderay-q2r.46: deterministic, so a retry would hit the same
-                # cap. SystemExit is not an Exception, so it passes straight
-                # through the node's retry loop.
-                raise SystemExit(f"Chapter {i+1}/{total} ({name}) overran the output cap: {e}") from e
+                # Re-raised only to name which chapter of how many overran;
+                # staying out of the node's retry loop is the exception class's
+                # own doing (coderay-q2r.46, coderay-n9j).
+                raise ResponseTruncated(
+                    f"Chapter {i+1}/{total} ({name}) overran the output cap: {e}") from e
             chapters.append({"name": name, "filename": ctx["filenames"][name], "content": content})
             prev_chapters.append(content)
 
