@@ -43,13 +43,29 @@ BUILTIN_PRICES = {
 # context_window field.
 #
 # A model absent from this table has no ceiling recorded and is not checked
-# against one. gpt-5.6-terra and gemini-3.7-flash are absent deliberately: no
-# published figure is recorded for either, and a guessed ceiling would refuse
-# runs that would have worked.
+# against one; a guessed ceiling would refuse runs that would have worked.
+#
+# Each figure below is the vendor's own published one, but they are not all the
+# same kind of number. Anthropic and Google publish a limit on the input alone,
+# which is what this table means. OpenAI publishes a context window covering
+# input, output and reasoning together, so a prompt just under that figure can
+# still overrun once the requested output is added. The guard is therefore
+# permissive on that path by roughly the output cap, a band a few tens of
+# thousands of tokens wide at the top of a million, which the provider's own
+# refusal is left to catch (coderay-8vk).
 MAX_INPUT_TOKENS = {
     # The API reported this limit itself when it refused an oversized prompt:
     # "prompt is too long: 1385407 tokens > 1000000 maximum" (coderay-cvi).
     ("anthropic", "claude-sonnet-5"): 1_000_000,
+    # "It features a 1,050,000 token context window, a maximum of 128,000
+    # output tokens" -- developers.openai.com/api/docs/models/gpt-5.6-terra.
+    # A context window, per the caveat above, not an input-only limit.
+    ("openai", "gpt-5.6-terra"): 1_050_000,
+    # "It features an input token limit of 1,048,576 tokens and an output limit
+    # of 65,536 tokens" -- ai.google.dev/gemini-api/docs/models/gemini-3.7-flash.
+    # Readable at run time as ModelInfo.input_token_limit, if this ever needs
+    # checking against the live API rather than the docs.
+    ("gemini", "gemini-3.7-flash"): 1_048_576,
 }
 
 CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "crawl")

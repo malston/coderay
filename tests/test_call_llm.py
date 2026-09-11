@@ -1282,3 +1282,35 @@ def test_a_gemini_content_block_is_retried_by_a_node(monkeypatch):
         Calling()._exec(None)
 
     assert len(attempts) == 3
+
+
+@pytest.mark.parametrize("provider,model,ceiling", [
+    ("openai", "gpt-5.6-terra", 1_050_000),
+    ("gemini", "gemini-3.7-flash", 1_048_576),
+])
+def test_the_guard_covers_the_other_providers_too(monkeypatch, provider, model, ceiling):
+    """The guard itself was always provider-agnostic; it did nothing on these
+    two only because no ceiling was recorded for them (coderay-8vk)."""
+    monkeypatch.setenv("LLM_PROVIDER", provider)
+    monkeypatch.setenv(f"{provider.upper()}_API_KEY", "test-key")
+    over = "x" * (int(ceiling * call_llm_module.CHARS_PER_TOKEN) + 3)
+
+    with pytest.raises(call_llm_module.PromptTooLarge) as excinfo:
+        call_llm(over)
+
+    message = str(excinfo.value)
+    assert model in message
+    assert f"{ceiling:,}" in message
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "openai", "gemini"])
+def test_no_provider_default_is_left_unguarded(monkeypatch, provider, capsys):
+    """The skip warning is the signal that a model is unchecked. No default
+    should be producing it."""
+    monkeypatch.setenv("LLM_PROVIDER", provider)
+    monkeypatch.setenv(f"{provider.upper()}_API_KEY", "test-key")
+    call_llm_module.reset_usage()
+    _, model = call_llm_module.resolve_provider_and_model()
+
+    assert call_llm_module.max_input_tokens(provider, model) is not None, (
+        f"{provider}/{model} has no recorded ceiling; its pre-flight guard is inert")

@@ -240,16 +240,14 @@ def test_max_input_tokens_is_none_for_a_model_with_no_published_figure():
     assert max_input_tokens("openai", "gpt-6-nonexistent") is None
 
 
-def test_the_default_openai_and_gemini_models_are_deliberately_unrecorded():
-    """The absence is a documented decision, not an oversight: no published
-    figure was found for either, and a guessed ceiling would refuse runs that
-    would have worked. Naming the real defaults means adding a ceiling for one
-    fails here and forces the question of whether its path needs the
-    provider-side refusal handling too."""
+def test_every_default_model_has_a_recorded_ceiling():
+    """All three providers' defaults are covered, each from the vendor's own
+    model page. Values are whole token counts, not per-million fractions."""
     from crawl.core.pricing import max_input_tokens
 
-    assert max_input_tokens("openai", "gpt-5.6-terra") is None
-    assert max_input_tokens("gemini", "gemini-3.7-flash") is None
+    assert max_input_tokens("anthropic", "claude-sonnet-5") == 1_000_000
+    assert max_input_tokens("openai", "gpt-5.6-terra") == 1_050_000
+    assert max_input_tokens("gemini", "gemini-3.7-flash") == 1_048_576
 
 
 def test_the_default_model_has_a_recorded_ceiling(monkeypatch):
