@@ -224,3 +224,47 @@ def test_ensure_priced_prompts_for_an_unknown_model_on_a_tty(monkeypatch):
     ensure_priced("openai", "gpt-6-ensure")
 
     assert get_price("openai", "gpt-6-ensure") is not None
+
+
+def test_max_input_tokens_for_a_known_model():
+    from crawl.core.pricing import max_input_tokens
+
+    # A whole token count, not a per-million fraction: context windows must
+    # not be routed through the $/token conversion the price table uses.
+    assert max_input_tokens("anthropic", "claude-sonnet-5") == 1_000_000
+
+
+def test_max_input_tokens_is_none_for_a_model_with_no_published_figure():
+    from crawl.core.pricing import max_input_tokens
+
+    assert max_input_tokens("openai", "gpt-6-nonexistent") is None
+
+
+def test_the_default_openai_and_gemini_models_are_deliberately_unrecorded():
+    """The absence is a documented decision, not an oversight: no published
+    figure was found for either, and a guessed ceiling would refuse runs that
+    would have worked. Naming the real defaults means adding a ceiling for one
+    fails here and forces the question of whether its path needs the
+    provider-side refusal handling too."""
+    from crawl.core.pricing import max_input_tokens
+
+    assert max_input_tokens("openai", "gpt-5.6-terra") is None
+    assert max_input_tokens("gemini", "gemini-3.7-flash") is None
+
+
+def test_the_default_model_has_a_recorded_ceiling(monkeypatch):
+    """Couples the table to the default model by construction rather than by
+    matching literal strings in two files. Without this, bumping the default
+    leaves a stale key behind, max_input_tokens returns None, the guard turns
+    off for every run, and the suite stays green."""
+    from crawl.core.call_llm import resolve_provider_and_model
+    from crawl.core.pricing import max_input_tokens
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    for var in ("LLM_PROVIDER", "ANTHROPIC_MODEL", "OPENAI_API_KEY", "GEMINI_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+
+    provider, model = resolve_provider_and_model()
+    assert max_input_tokens(provider, model) is not None, (
+        f"no input-token ceiling recorded for the default {provider}/{model}; "
+        "the pre-flight guard is inert for every run")

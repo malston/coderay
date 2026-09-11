@@ -1,6 +1,7 @@
-"""$/token pricing for the models crawl talks to.
+"""Per-model facts for the models crawl talks to: $/token pricing, and the
+input-token ceiling a prompt has to fit inside.
 
-Values are $/token (not $/1M) since usage records store raw token counts.
+Prices are $/token (not $/1M) since usage records store raw token counts.
 Anthropic's cache read/write figures use the standard 0.1x/1.25x-of-input
 formula documented in Anthropic's own pricing docs, not a per-model line
 item. See docs/superpowers/specs/2026-08-28-token-cost-reporting-design.md
@@ -33,6 +34,22 @@ _PER_MILLION = {
 BUILTIN_PRICES = {
     key: {field: dollars / 1_000_000 for field, dollars in prices.items()}
     for key, prices in _PER_MILLION.items()
+}
+
+# Input-token ceiling per model, kept out of _PER_MILLION because every field
+# in there is divided by a million to reach $/token, with no allowlist -- a
+# token count placed there comes back scaled by 1e-6. "max_input_tokens" is
+# the name Anthropic's own Models API gives this figure; it publishes no
+# context_window field.
+#
+# A model absent from this table has no ceiling recorded and is not checked
+# against one. gpt-5.6-terra and gemini-3.7-flash are absent deliberately: no
+# published figure is recorded for either, and a guessed ceiling would refuse
+# runs that would have worked.
+MAX_INPUT_TOKENS = {
+    # The API reported this limit itself when it refused an oversized prompt:
+    # "prompt is too long: 1385407 tokens > 1000000 maximum" (coderay-cvi).
+    ("anthropic", "claude-sonnet-5"): 1_000_000,
 }
 
 CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "crawl")
@@ -74,6 +91,12 @@ def get_price(provider, model):
         except (TypeError, ValueError, AttributeError) as e:
             print(f"Warning: ignoring malformed pricing override for {provider}:{model} ({e})", file=sys.stderr)
     return BUILTIN_PRICES.get((provider, model))
+
+
+def max_input_tokens(provider, model):
+    """Input-token ceiling for (provider, model), or None when no figure is
+    recorded for it -- an unknown ceiling means "unchecked", not "unlimited"."""
+    return MAX_INPUT_TOKENS.get((provider, model))
 
 
 def cost_for(provider, model, usage_record):

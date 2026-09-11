@@ -43,6 +43,11 @@ def isolated_cache(tmp_path, monkeypatch):
     # call_llm() actually wrote (coderay-d8q). Tests that need a specific
     # value still set it themselves via monkeypatch.setenv.
     monkeypatch.delenv("LLM_MAX_OUTPUT_TOKENS", raising=False)
+    # Same reason as the cap above: .env.example ships these blank, so a
+    # developer's shell may export one, and a test asserting the default model
+    # or building a cache key from it then works against a different value.
+    for var in ("ANTHROPIC_MODEL", "OPENAI_MODEL", "GEMINI_MODEL"):
+        monkeypatch.delenv(var, raising=False)
     yield
 
 
@@ -818,3 +823,317 @@ def test_positive_int_is_the_one_rule_for_count_knobs():
     for bad in ("", "lots", "1.5", "0", "-3"):
         with pytest.raises(ValueError, match="positive whole number"):
             positive_int(bad)
+
+
+# The prompt size that actually crashed a run: 2,999,828 chars counted
+# 1,385,407 tokens against claude-sonnet-5's 1,000,000 ceiling (coderay-cvi).
+OVERSIZED_PROMPT = "x" * 2_999_828
+
+
+def _fake_anthropic_module_that_records_calls(text="ok"):
+    """A fake whose stream() records that it was reached, so a test can assert
+    the guard fired before any SDK call was made."""
+    fake = _fake_anthropic_module_with_usage(
+        input_tokens=1, output_tokens=1, cache_read=0, cache_write=0, text=text,
+    )
+    fake.stream_calls = []
+    inner = fake.Anthropic
+
+    class Recording(inner):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            real_stream = self.messages.stream
+
+            def stream(**kwargs):
+                fake.stream_calls.append(kwargs)
+                return real_stream(**kwargs)
+
+            self.messages.stream = stream
+
+    fake.Anthropic = Recording
+    return fake
+
+
+def _fake_anthropic_module_raising(api_message, status=400):
+    """A fake whose stream() raises the SDK's size-refusal class for `status`,
+    carrying `api_message` the way a real one does: in a parsed body, with
+    str() rendering as `Error code: N - {body}` (anthropic/_base_client.py),
+    not as the bare sentence."""
+    fake = types.ModuleType("anthropic")
+
+    class APIStatusError(Exception):
+        def __init__(self, body):
+            self.body = body
+            super().__init__(f"Error code: {status} - {body}")
+
+    class BadRequestError(APIStatusError):
+        pass
+
+    class RequestTooLargeError(APIStatusError):
+        pass
+
+    raised = RequestTooLargeError if status == 413 else BadRequestError
+    body = {"type": "error",
+            "error": {"type": "invalid_request_error", "message": api_message}}
+
+    class Messages:
+        def stream(self, **kwargs):
+            raise raised(body)
+
+    class Anthropic:
+        def __init__(self, *a, **kw):
+            self.messages = Messages()
+
+    fake.APIStatusError = APIStatusError
+    fake.BadRequestError = BadRequestError
+    fake.RequestTooLargeError = RequestTooLargeError
+    fake.Anthropic = Anthropic
+    return fake
+
+
+def test_oversized_prompt_is_refused_before_any_sdk_call(monkeypatch):
+    fake = _fake_anthropic_module_that_records_calls()
+    monkeypatch.setitem(sys.modules, "anthropic", fake)
+
+    with pytest.raises(call_llm_module.PromptTooLarge) as excinfo:
+        call_llm(OVERSIZED_PROMPT)
+
+    assert fake.stream_calls == []
+    message = str(excinfo.value)
+    assert "claude-sonnet-5" in message
+    assert "1,000,000" in message
+    assert "--codebase-budget" in message
+
+
+def test_normal_prompt_is_not_refused(monkeypatch):
+    fake = _fake_anthropic_module_that_records_calls(text="fine")
+    monkeypatch.setitem(sys.modules, "anthropic", fake)
+
+    assert call_llm("a modest prompt") == "fine"
+    assert len(fake.stream_calls) == 1
+
+
+def test_model_with_no_published_ceiling_skips_the_guard(monkeypatch):
+    # An unknown ceiling must mean "don't check", never a guessed number.
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-unpublished-9")
+    fake = _fake_anthropic_module_that_records_calls(text="through")
+    monkeypatch.setitem(sys.modules, "anthropic", fake)
+
+    assert call_llm(OVERSIZED_PROMPT) == "through"
+    assert len(fake.stream_calls) == 1
+
+
+def test_cached_oversized_prompt_is_served_rather_than_refused(monkeypatch):
+    # A prompt already in the cache succeeded once, costs nothing to serve,
+    # and reaches no provider -- the guard must not stand in front of it.
+    fake = _fake_anthropic_module_that_records_calls()
+    monkeypatch.setitem(sys.modules, "anthropic", fake)
+    _cache_put("anthropic", "claude-sonnet-5",
+               call_llm_module.DEFAULT_MAX_OUTPUT_TOKENS,
+               OVERSIZED_PROMPT, "from cache")
+
+    assert call_llm(OVERSIZED_PROMPT) == "from cache"
+    assert fake.stream_calls == []
+
+
+def test_too_long_rejection_from_the_api_is_reported_clearly(monkeypatch):
+    # The guard's estimate can be beaten by a denser-than-measured prompt, so
+    # the provider's own refusal must still read as a budget problem.
+    monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module_raising(
+        "prompt is too long: 1385407 tokens > 1000000 maximum"))
+
+    with pytest.raises(call_llm_module.PromptTooLarge) as excinfo:
+        call_llm("short enough to pass the estimate")
+
+    message = str(excinfo.value)
+    assert "prompt is too long: 1385407 tokens > 1000000 maximum" in message
+    assert "--codebase-budget" in message
+    assert "LLM_MAX_OUTPUT_TOKENS" in message
+
+
+def test_the_reported_refusal_carries_no_dict_repr(monkeypatch):
+    # The SDK renders str() on a status error as `Error code: N - {body}` with
+    # the parsed body inlined, so stringifying the exception drops a dict repr
+    # into the middle of the remediation line and buries the two numbers the
+    # user needs. The message comes out of the body instead.
+    monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module_raising(
+        "prompt is too long: 1385407 tokens > 1000000 maximum"))
+
+    with pytest.raises(call_llm_module.PromptTooLarge) as excinfo:
+        call_llm("short enough to pass the estimate")
+
+    message = str(excinfo.value)
+    assert "Error code:" not in message
+    assert "{" not in message and "'" not in message
+
+
+def test_a_request_over_the_byte_limit_is_reported_as_a_size_problem(monkeypatch):
+    # 413 arrives as RequestTooLargeError, a sibling of BadRequestError rather
+    # than a subclass, so catching the 400 alone misses it. Its status is the
+    # whole diagnosis, so it needs no wording match.
+    monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic_module_raising(
+        "request body too large", status=413))
+
+    with pytest.raises(call_llm_module.PromptTooLarge) as excinfo:
+        call_llm("small by token count, past the transport limit by bytes")
+
+    assert "--codebase-budget" in str(excinfo.value)
+
+
+def test_other_bad_requests_are_left_alone(monkeypatch):
+    # Only a size refusal is a budget problem; anything else must keep its own
+    # type and message rather than being mislabelled.
+    fake = _fake_anthropic_module_raising("temperature: unsupported")
+    monkeypatch.setitem(sys.modules, "anthropic", fake)
+
+    with pytest.raises(fake.BadRequestError):
+        call_llm("a prompt with a bad parameter")
+
+
+def test_a_differently_worded_size_refusal_is_not_mistaken_for_one(monkeypatch):
+    # The 400 match is a case-sensitive substring of provider copy. Pinning the
+    # exact recorded wording documents the assumption: reword it and the
+    # handler stops firing, which this test is what reports.
+    fake = _fake_anthropic_module_raising("Prompt Is Too Long: 1385407 tokens")
+    monkeypatch.setitem(sys.modules, "anthropic", fake)
+
+    with pytest.raises(fake.BadRequestError):
+        call_llm("a refusal whose wording drifted")
+
+
+def test_sdk_size_refusal_classes_are_named(monkeypatch):
+    """The handler resolves its catch targets by name off the installed SDK, so
+    a rename would leave it matching nothing while every faked test stayed
+    green. anthropic is a core dependency, so this needs no network or key."""
+    monkeypatch.delitem(sys.modules, "anthropic", raising=False)
+    import anthropic
+
+    for name in call_llm_module._SIZE_REFUSAL_NAMES:
+        cls = getattr(anthropic, name, None)
+        assert isinstance(cls, type), f"anthropic.{name} is gone"
+        assert issubclass(cls, Exception), f"anthropic.{name} is not an exception"
+
+    assert len(call_llm_module._size_refusal_errors()) == len(
+        call_llm_module._SIZE_REFUSAL_NAMES)
+
+
+# 1,000,000 tokens at the measured 2.1653 density: the largest prompt that
+# genuinely fits under claude-sonnet-5's ceiling. The guard must let it by, or
+# it is refusing work that would have succeeded.
+LARGEST_FITTING_PROMPT = "x" * 2_165_300
+
+
+def test_a_large_prompt_that_genuinely_fits_is_not_refused(monkeypatch):
+    fake = _fake_anthropic_module_that_records_calls(text="fits")
+    monkeypatch.setitem(sys.modules, "anthropic", fake)
+
+    assert call_llm(LARGEST_FITTING_PROMPT) == "fits"
+    assert len(fake.stream_calls) == 1
+
+
+def test_the_guard_admits_a_prompt_estimating_exactly_the_ceiling(monkeypatch):
+    # The comparison is `>`, so an estimate landing on the ceiling is allowed.
+    fake = _fake_anthropic_module_that_records_calls(text="exact")
+    monkeypatch.setitem(sys.modules, "anthropic", fake)
+    at_ceiling = "x" * int(1_000_000 * call_llm_module.CHARS_PER_TOKEN)
+
+    assert call_llm(at_ceiling) == "exact"
+    assert len(fake.stream_calls) == 1
+
+
+def test_the_guard_refuses_one_token_over_the_ceiling(monkeypatch):
+    fake = _fake_anthropic_module_that_records_calls()
+    monkeypatch.setitem(sys.modules, "anthropic", fake)
+    over = "x" * (int(1_000_000 * call_llm_module.CHARS_PER_TOKEN) + 3)
+
+    with pytest.raises(call_llm_module.PromptTooLarge):
+        call_llm(over)
+    assert fake.stream_calls == []
+
+
+def test_the_guard_measures_the_text_actually_sent(monkeypatch):
+    # The cache-breakpoint marker is stripped before the prompt goes out, so
+    # the marker's own characters must not count toward the estimate.
+    fake = _fake_anthropic_module_that_records_calls(text="marker ok")
+    monkeypatch.setitem(sys.modules, "anthropic", fake)
+    body = int(1_000_000 * call_llm_module.CHARS_PER_TOKEN)
+    # Over the ceiling with the marker counted, exactly on it without.
+    prompt = "x" * (body // 2) + call_llm_module.CACHE_BREAKPOINT + "x" * (body - body // 2)
+
+    assert call_llm(prompt) == "marker ok"
+    assert len(fake.stream_calls) == 1
+
+
+def test_the_refusal_names_the_estimate_it_computed(monkeypatch):
+    fake = _fake_anthropic_module_that_records_calls()
+    monkeypatch.setitem(sys.modules, "anthropic", fake)
+
+    with pytest.raises(call_llm_module.PromptTooLarge) as excinfo:
+        call_llm(OVERSIZED_PROMPT)
+
+    # Pins the formula, not just the fact of a refusal.
+    assert "1,199,931" in str(excinfo.value)
+    assert "2,999,828" in str(excinfo.value)
+
+
+def test_an_unguarded_model_is_reported_once_per_run(monkeypatch, capsys):
+    # Not guessing a ceiling is right; saying nothing about it is not, or a
+    # later provider refusal looks like it came from nowhere.
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-unpublished-9")
+    monkeypatch.setitem(sys.modules, "anthropic",
+                        _fake_anthropic_module_that_records_calls(text="ok"))
+    call_llm_module.reset_usage()
+
+    call_llm("first")
+    call_llm("second")
+
+    err = capsys.readouterr().err
+    assert err.count("no input-token ceiling recorded") == 1
+    assert "claude-unpublished-9" in err
+
+
+def test_a_deterministic_refusal_is_not_retried_by_a_node():
+    """PocketFlow's Node retries on `except Exception`, and a size refusal is
+    deterministic, so a retry re-uploads the same prompt to earn the same
+    verdict. PromptTooLarge derives from SystemExit to stay out of that."""
+    from pocketflow import Node
+
+    attempts = []
+
+    class Refusing(Node):
+        def __init__(self):
+            super().__init__(max_retries=3, wait=0)
+
+        def exec(self, prep_res):
+            attempts.append(1)
+            raise call_llm_module._too_large("prompt is about 9 tokens")
+
+    with pytest.raises(call_llm_module.PromptTooLarge):
+        Refusing()._exec(None)
+
+    assert len(attempts) == 1
+
+
+def test_a_deterministic_refusal_still_lets_a_run_keep_its_results(tmp_path):
+    """Bypassing the retry loop must not also bypass keeping_results, or a
+    refusal throws away every paid result the run already had."""
+    from crawl.core.runner import keeping_results
+
+    dumped = []
+
+    def step():
+        raise call_llm_module._too_large("prompt is about 9 tokens")
+
+    with pytest.raises(call_llm_module.PromptTooLarge):
+        keeping_results(step, {"chapters": ["one"]}, str(tmp_path),
+                        lambda shared, out: dumped.append(shared) or "state.json")
+
+    assert dumped == [{"chapters": ["one"]}]
+
+
+def test_prompt_too_large_is_importable_from_core():
+    # ResponseTruncated is re-exported for the node that catches it; a node
+    # cannot handle this one by the same convention unless it is too.
+    from crawl.core import PromptTooLarge
+
+    assert PromptTooLarge is call_llm_module.PromptTooLarge

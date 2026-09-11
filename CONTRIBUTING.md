@@ -44,7 +44,7 @@ To start it, open Claude Code in the repo with `main` green and `gh auth status`
 
 ```text
 /epic-loop <epic-id>
-/goal Every open child of beads epic <epic-id> is closed, blocked on a held PR, or tagged `human`, worked per /epic-loop; or stop when the epic's turn counter reaches 80
+/goal Every open child of beads epic <epic-id> is closed, blocked on a held PR, or tagged `human`, worked per /epic-loop; or stop when the epic's turn counter reaches 20
 ```
 
 Add `--hold` to the first line (`/epic-loop <epic-id> --hold`) to stop each pull request at ready-for-review and leave the merge to you. Use this in any repo where a person is required to approve every change.

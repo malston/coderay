@@ -40,7 +40,11 @@ def test_the_migration_section_renders_a_note_rather_than_vanishing():
     assert "only 2 migrations found" in migration.md_skip_note({"migration_names": ["a", "b"]})
 
 
-def test_add_arguments_adds_the_schema_override_and_budget_flags():
+def test_add_arguments_adds_the_schema_override_and_budget_flags(monkeypatch):
+    # A developer's shell may export CODEBASE_BUDGET for interactive runs, and
+    # it supplies the flag's default -- isolate it, as the budget-parsing
+    # helpers do, or this asserts against that value.
+    monkeypatch.delenv("CODEBASE_BUDGET", raising=False)
     parser = argparse.ArgumentParser()
     parser.add_argument("repo_path")
     parser.add_argument("--out", default=None)
