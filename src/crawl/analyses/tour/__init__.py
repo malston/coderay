@@ -7,9 +7,12 @@ from datetime import date
 from crawl.core import ensure_priced, get_usage, reset_usage, resolve_provider_and_model
 from crawl.core.env import env_defaults
 from crawl.core.text import codebase_budget_argument
-from crawl.core.runner import keeping_results, run_flow, run_state_writer, write_manifest
+from crawl.core.runner import (keeping_results, require_directory, run_flow,
+                                run_state_writer, write_manifest)
 from crawl.analyses.tour.flow import create_tour_flow
-from crawl.analyses.tour.nodes import CODEBASE_BUDGET, PipelineState, SmartCrawl
+from crawl.analyses.tour.nodes import (CODEBASE_BUDGET, PREVIEW_CHARS_PER_FILE,
+                                       PipelineState, SmartCrawl)
+from crawl.core.preview import Preview
 from crawl.analyses.tour.render import (
     available_lenses,
     build_mermaid,
@@ -46,16 +49,33 @@ def sent(shared):
     return {"files": shared.get("selected_files", []), "previewed_files": shared.get("previewed_files", [])}
 
 
-def preview(args):
+def preview(args) -> Preview:
     """What the crawl step found, before any LLM call: every file whose head goes
-    into the selection prompt. Which of those the model then picks is its answer,
-    not something a preview can know. Reuses SmartCrawl's own prep() rather than
-    rebuilding its preview-manifest logic, the same seam estimate_dry_run_cost uses."""
+    into the file-selection prompt, and every file the preview cap kept out of it.
+    The model cannot pick a file it never saw, so the cap is the number that
+    decides whether this analysis reads the repo or a slice of it.
+
+    Reuses SmartCrawl's own prep(), which records both figures on `shared`,
+    rather than rebuilding its preview-manifest logic here.
+
+    --codebase-budget is accepted and does not move these counts: it sizes the
+    analyze, relate and chapter prompts, which no file crawl reaches."""
     shared = init_shared(args)
     SmartCrawl().prep(shared)
     previewed = shared["previewed_files"]
-    return {"counts": {"previewed": len(previewed)},
-            "files": {"previewed": previewed}, "notes": []}
+    on_disk = shared["files_on_disk"]
+    dropped = on_disk - len(previewed)
+    notes = []
+    if dropped:
+        notes.append(
+            f"{dropped:,} of {on_disk:,} files never reach the file-selection prompt: "
+            f"it holds {len(previewed):,} at {PREVIEW_CHARS_PER_FILE:,} chars each. "
+            "The model cannot pick a file it never saw.")
+    return {"counts": {"files on disk": on_disk,
+                       "read into the selection pass": len(previewed),
+                       "dropped before the model saw them": dropped},
+            "files": {"previewed": previewed}, "notes": notes}
+
 
 
 def init_shared(args) -> PipelineState:
@@ -63,11 +83,7 @@ def init_shared(args) -> PipelineState:
             "codebase_budget": args.codebase_budget}
 
 def run(args) -> None:
-    # Exit code 1, no usage line -- not the same as argparse's ap.error() (code 2,
-    # usage printed), a sanctioned exception (see Global Constraints): run(args)
-    # has no parser in scope, and threading one through isn't worth it for one check.
-    if not os.path.isdir(args.repo_path):
-        raise SystemExit(f"{args.repo_path} is not a directory")
+    require_directory(args.repo_path)
 
     if args.dry_run:
         try:

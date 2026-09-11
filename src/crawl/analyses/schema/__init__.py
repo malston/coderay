@@ -7,11 +7,12 @@ from pocketflow import Flow
 
 from crawl.core import OverviewNode
 from crawl.core.render import Section, Theme, esc, md
-from crawl.core.runner import repo_name_of, run_analysis
+from crawl.core.runner import repo_name_of, require_directory, run_analysis
 from crawl.core.text import codebase_budget_argument
 from .schema_find import SCHEMA_BUDGET, find_migrations, find_schema
+from crawl.core.preview import Preview, aborts
 from .nodes import (FindSchema, SchemaTour, TraceFlows, TableDeepDive,
-                    MigrationActs, MIGRATION_FLOOR)
+                    MigrationActs, MIGRATION_FLOOR, NO_SCHEMA)
 
 NAME = "schema"
 # What the first node reads from the repo; left out of run_state.json on failure.
@@ -94,14 +95,35 @@ def add_arguments(parser):
                              "(overrides autodetect)")
     parser.add_argument("--codebase-budget", **codebase_budget_argument(SCHEMA_BUDGET))
 
-def preview(args):
-    """What the crawl step found, before any LLM call: the schema files located by
-    convention (or named by --schema) and the migration directory with the most
-    timestamped entries."""
+def preview(args) -> Preview:
+    """What the crawl step found, before any LLM call: the schema files read (by
+    convention, or named by --schema) and the migration directory with the most
+    timestamped entries.
+
+    find_schema names a file before it reads it, so a --schema path that is
+    missing, unreadable or refused comes back named with empty text. Counting the
+    name would report a file this command never read."""
     schema = find_schema(args.repo_path, args.schema, args.codebase_budget)
     _mig_dir, mig_names = find_migrations(args.repo_path)
-    return {"counts": {"schema files": len(schema["files"]), "migrations": len(mig_names)},
-            "files": {"schema": schema["files"], "migrations": mig_names}, "notes": []}
+    read = schema["files"] if schema["text"] else []
+    notes = []
+    if schema["files"] and not schema["text"]:
+        notes.append(f"{schema['path']} could not be read: missing, unreadable, "
+                     "or refused as credential-named.")
+    elif len(schema["text"]) > args.codebase_budget:
+        # _read splices its truncation marker past the limit, so the text can
+        # only exceed the budget by having been cut at it.
+        notes.append(f"The schema was truncated at the {args.codebase_budget:,}-char budget; "
+                     "the model reads less than the whole file.")
+    if read:
+        notes.append(f"Schema read from {schema['path']} ({schema['kind']}).")
+    else:
+        notes.append(aborts(NO_SCHEMA))
+    if mig_names and len(mig_names) < MIGRATION_FLOOR:
+        notes.append(f"{len(mig_names)} migrations is below the floor of {MIGRATION_FLOOR}; "
+                     "a real run skips the migration pass entirely.")
+    return {"counts": {"schema files read": len(read), "migrations found": len(mig_names)},
+            "files": {"schema": read, "migrations": mig_names}, "notes": notes}
 
 
 def sent(shared):
@@ -143,8 +165,5 @@ def overview_spec(shared):
 
 
 def run(args) -> None:
-    # Exit code 1, no usage line, matching tour's run(): run(args) has no
-    # parser in scope, and threading one through isn't worth it for one check.
-    if not os.path.isdir(args.repo_path):
-        raise SystemExit(f"{args.repo_path} is not a directory")
+    require_directory(args.repo_path)
     run_analysis(sys.modules[__name__], args)

@@ -52,6 +52,10 @@ def first_card(md):
     return (rest[:nxt.start() + 3] if nxt else rest)[:2500]
 
 
+NO_SURFACE = ("No route/surface files found. This analysis expects a web API "
+              "(Rails routes, Django urls, Next.js pages/api, tRPC, GraphQL, gRPC, Go net/http).")
+
+
 class FindRoutes(Node):
     def prep(self, shared):
         return shared["repo_path"], shared.get("codebase_budget", rf.DEFAULT_MAX_CHARS)
@@ -65,9 +69,7 @@ class FindRoutes(Node):
         routes, files, kept = exec_res
         if not routes.strip():
             # SystemExit, not assert: python -O strips asserts (coderay-q2r.50).
-            raise SystemExit(
-            "No route/surface files found. This analysis expects a web API "
-            "(Rails routes, Django urls, Next.js pages/api, tRPC, GraphQL, gRPC, Go net/http).")
+            raise SystemExit(NO_SURFACE)
         shared["routes"] = routes
         shared["route_files"] = files
         shared["route_files_read"] = kept

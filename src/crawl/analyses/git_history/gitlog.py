@@ -53,8 +53,20 @@ def _records(raw):
         yield h, int(ts), author, subject, [f for f in files if f]
 
 
+def has_commits(repo_path):
+    """False for a checkout with no commits yet, which has no HEAD.
+
+    `git log` exits 128 there rather than printing nothing, so every log query
+    asks this first; the callers already read an empty log as a repo with no
+    history (FetchHistory.post reads it as the span "empty")."""
+    return subprocess.run(["git", "-C", repo_path, "rev-parse", "--verify", "--quiet", "HEAD"],
+                          capture_output=True).returncode == 0
+
+
 def git_log_commits(repo_path):
     """One dict per commit: hash, month, author, subject, files."""
+    if not has_commits(repo_path):
+        return []
     raw = subprocess.check_output(
         ["git", "-C", repo_path, "log",
          f"--pretty=format:%x00%H|%at|%an|%s", "--name-only"],
@@ -106,6 +118,8 @@ def bulk_changes(repo_path, status, min_files=10):
     in. `show_diff` (used on the commit afterward) keeps rename detection on,
     so the model still sees `rename from/to` and can tell a move from a kill.
     """
+    if not has_commits(repo_path):
+        return []
     raw = subprocess.check_output(
         ["git", "-C", repo_path, "log", "--no-renames", f"--diff-filter={status}",
          "--name-only", f"--pretty=format:%x00%H|%at|%an|%s"],

@@ -88,6 +88,10 @@ def tables_from_headers(md, known=None):
     return out
 
 
+NO_SCHEMA = ("No schema file found. Point --schema at it "
+             "(e.g. packages/prisma/schema.prisma).")
+
+
 class FindSchema(Node):
     def prep(self, shared):
         return (shared["repo_path"], shared.get("schema_override"),
@@ -103,9 +107,7 @@ class FindSchema(Node):
         schema, mig_dir, mig_names = exec_res
         if not schema["text"]:
             # SystemExit, not assert: python -O strips asserts (coderay-q2r.50).
-            raise SystemExit(
-            "No schema file found. Point --schema at it "
-            "(e.g. packages/prisma/schema.prisma).")
+            raise SystemExit(NO_SCHEMA)
         shared["schema"] = schema["text"]
         shared["schema_kind"] = schema["kind"]
         shared["schema_path"] = schema["path"]

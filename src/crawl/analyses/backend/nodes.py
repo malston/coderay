@@ -22,6 +22,19 @@ def load_prompt(name):
     return read_prompt(PROMPTS_DIR, name)
 
 
+def empty_bundle_reason(counts):
+    """Why a backend crawl came back with nothing to send. Shared with this
+    analysis's preview(), so the pre-flight report and the run agree."""
+    if counts:
+        # Files matched the layers but every body was left out: empty,
+        # unreadable, or not UTF-8 (safe_read drops those whole,
+        # coderay-q2r.57).
+        found = ", ".join(f"{v} file{'s' if v != 1 else ''} in {k}" for k, v in sorted(counts.items()))
+        return f"Found {found}, but none had readable text: each is empty, unreadable or not UTF-8."
+    return ("No backend source found (no routes/views/models). This analysis "
+            "expects a server-side backend (Django, Express, Rails, FastAPI, Go net/http, …).")
+
+
 class BuildBundle(Node):
     def prep(self, shared):
         return shared["repo_path"], shared.get("codebase_budget", bc.DEFAULT_MAX_CHARS)
@@ -33,16 +46,8 @@ class BuildBundle(Node):
     def post(self, shared, prep_res, exec_res):
         bundle, stats = exec_res
         c = stats["counts"]
-        if c:
-            # Files matched the layers but every body was left out: empty,
-            # unreadable, or not UTF-8 (safe_read drops those whole,
-            # coderay-q2r.57).
-            found = ", ".join(f"{v} file{'s' if v != 1 else ''} in {k}" for k, v in sorted(c.items()))
-            why = f"Found {found}, but none had readable text: each is empty, unreadable or not UTF-8."
-        else:
-            why = ("No backend source found (no routes/views/models). This analysis "
-                   "expects a server-side backend (Django, Express, Rails, FastAPI, Go net/http, …).")
         if not bundle.strip():
+            why = empty_bundle_reason(c)
             # SystemExit, not assert: python -O strips asserts, and three paid
             # passes would run over nothing (coderay-q2r.50).
             raise SystemExit(why)

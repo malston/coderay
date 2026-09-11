@@ -8,11 +8,13 @@ from pocketflow import Flow
 
 from crawl.core import OverviewNode
 from crawl.core.render import Section, Theme, esc, md
-from crawl.core.runner import repo_name_of, run_analysis
+from crawl.core.runner import repo_name_of, require_directory, run_analysis
 from crawl.core.text import codebase_budget_argument
 from .arch_crawl import (DEFAULT_MAX_CHARS, _count_note, build_bundle,
                          manifest_problem_notes)
-from .nodes import BuildBundle, Inventory, TechStack, TraceRequest
+from crawl.core.preview import Preview, aborts
+from .nodes import (BuildBundle, Inventory, TechStack, TraceRequest,
+                    empty_bundle_reason)
 
 NAME = "architecture"
 # What the first node reads from the repo; left out of run_state.json on failure.
@@ -129,36 +131,47 @@ def overview_spec(shared):
 def add_arguments(parser) -> None:
     parser.add_argument("--codebase-budget", **codebase_budget_argument(DEFAULT_MAX_CHARS))
 
-def preview(args):
-    """What the crawl step found, before any LLM call. This bundle is four
-    overlaid sources, not one file walk, so it counts config files, declared
-    dependencies and integration directories rather than a single included set."""
-    _bundle, stats = build_bundle(args.repo_path, max_chars=args.codebase_budget)
+def preview(args) -> Preview:
+    """What the crawl step found, before any LLM call. This bundle overlays
+    process declarations, env var names, declared dependencies, infrastructure
+    config and SDK import lines, so it counts each of those rather than a single
+    included set. Env var names and SDK import lines are the two largest drivers
+    of bundle size, which is why they are reported here and not only by the run."""
+    bundle, stats = build_bundle(args.repo_path, max_chars=args.codebase_budget)
     counts = {
-        "config files included": stats["config_files"],
-        "config files found": stats.get("config_files_found", stats["config_files"]),
-        "config files unreadable": stats.get("config_files_unreadable", 0),
-        "config files truncated": stats.get("config_files_truncated", 0),
-        "env files unreadable": stats.get("env_files_unreadable", 0),
-        "env files truncated": stats.get("env_files_truncated", 0),
-        "dependencies": stats["deps"],
-        "integrations": stats["integrations"],
+        # The bundle carries env files and dependency manifests too, so its own
+        # length is reported beside the config-only count rather than standing in
+        # for it; the two describe different populations.
+        "files in the bundle": len(stats["files"]),
+        "config files in the bundle": stats["config_files"],
+        "config files found": stats["config_files_found"],
+        "config files unreadable": stats["config_files_unreadable"],
+        "config files truncated": stats["config_files_truncated"],
+        "env files unreadable": stats["env_files_unreadable"],
+        "env files truncated": stats["env_files_truncated"],
+        "env var names": stats["env_vars"],
+        "dependencies declared": stats["deps"],
+        "integration directories": stats["integrations"],
+        "SDK import lines": stats["sdk_lines"],
     }
-    notes = list(manifest_problem_notes(stats.get("manifest_problems", {})))
-    if stats.get("truncated"):
+    notes = list(manifest_problem_notes(stats["manifest_problems"]))
+    if stats["truncated"]:
         # This crawler caps the assembled text rather than dropping files, so
         # the counts above would otherwise overstate what the model reads.
         notes.append(f"The bundle was truncated at the {args.codebase_budget:,}-char budget; "
                      "the model sees less than the counts above describe.")
-    if stats.get("sdk_unavailable"):
-        notes.append("SDK import evidence unavailable; connections are configured, not proven live.")
-    if stats.get("sdk_capped"):
+    if stats["sdk_unavailable"]:
+        # The reason, not a flag: "not a git repository" and "git is not
+        # installed" are different problems and only one is the user's to fix.
+        notes.append(f"SDK import evidence unavailable ({stats['sdk_unavailable']}); "
+                     "connections are configured, not proven live.")
+    if stats["sdk_capped"]:
         notes.append("SDK import evidence was capped; more imports may exist than are counted.")
-    return {"counts": counts, "files": {"included": stats["files"]}, "notes": notes}
+    if not bundle.strip():
+        notes.append(aborts(empty_bundle_reason(stats["sdk_unavailable"])))
+    return {"counts": counts, "files": {"bundle": stats["files"]}, "notes": notes}
+
 
 def run(args) -> None:
-    # Exit code 1, no usage line, matching tour's run(): run(args) has no
-    # parser in scope, and threading one through isn't worth it for one check.
-    if not os.path.isdir(args.repo_path):
-        raise SystemExit(f"{args.repo_path} is not a directory")
+    require_directory(args.repo_path)
     run_analysis(sys.modules[__name__], args)

@@ -23,6 +23,15 @@ def load_prompt(name):
     return read_prompt(PROMPTS_DIR, name)
 
 
+def empty_bundle_reason(sdk_unavailable):
+    """Why an architecture crawl came back with nothing to send. Shared with this
+    analysis's preview(), so the pre-flight report and the run agree."""
+    return ("No architecture sources found (no compose/env/package/IaC). "
+            + (f"SDK import evidence was also unavailable: {sdk_unavailable}. " if sdk_unavailable else "")
+            + "This analysis expects a multi-service app; a single-binary tool "
+            "has no service graph to draw.")
+
+
 class BuildBundle(Node):
     def prep(self, shared):
         return shared["repo_path"], shared.get("codebase_budget", ac.DEFAULT_MAX_CHARS)
@@ -36,11 +45,7 @@ class BuildBundle(Node):
         reason = stats.get("sdk_unavailable")
         if not bundle.strip():
             # SystemExit, not assert: python -O strips asserts (coderay-q2r.50).
-            raise SystemExit(
-            "No architecture sources found (no compose/env/package/IaC). "
-            + (f"SDK import evidence was also unavailable: {reason}. " if reason else "")
-            + "This analysis expects a multi-service app; a single-binary tool "
-            "has no service graph to draw.")
+            raise SystemExit(empty_bundle_reason(reason))
         shared["codebase"] = bundle
         shared["arch_stats"] = stats
         shared["bundle_files"] = stats["files"]

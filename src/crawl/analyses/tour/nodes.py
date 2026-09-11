@@ -122,8 +122,11 @@ class SmartCrawl(Node):
         max_files = max(1, budget // chars_per_file)
         files = all_files[:max_files]
         # The head of each of these goes to the model whether or not it is then
-        # selected, so the manifest lists them too (coderay-3eu).
+        # selected, so the manifest lists them too (coderay-3eu). The total is
+        # recorded beside them because the cap above is silent: without it the
+        # count of what was read cannot be told from the count of what exists.
         shared["previewed_files"] = [os.path.relpath(p, root) for p in files]
+        shared["files_on_disk"] = len(all_files)
         target = shared.get("target_files", min(50, max(20, len(files) // 20)))
 
         manifest_parts = []

@@ -9,10 +9,12 @@ from pocketflow import Flow
 from crawl.core import OverviewNode
 from crawl.core.render import (
     Section, Theme, card, esc, extract_mermaid, md, strip_mermaid)
-from crawl.core.runner import repo_name_of, run_analysis
+from crawl.core.runner import repo_name_of, require_directory, run_analysis
 from crawl.core.text import codebase_budget_argument
 from .routes_find import DEFAULT_MAX_CHARS, crawl_routes
-from .nodes import FindRoutes, ApiMenu, TraceActions, EndpointSequence
+from crawl.core.preview import Preview, aborts
+from .nodes import (FindRoutes, ApiMenu, TraceActions, EndpointSequence,
+                    NO_SURFACE)
 
 NAME = "interfaces"
 # What the first node reads from the repo; left out of run_state.json on failure.
@@ -200,17 +202,21 @@ def overview_spec(shared):
 def add_arguments(parser) -> None:
     parser.add_argument("--codebase-budget", **codebase_budget_argument(DEFAULT_MAX_CHARS))
 
-def preview(args):
+def preview(args) -> Preview:
     """What the crawl step found, before any LLM call: the surface files found by
     convention, and the ones whose text actually reached the bundle. A found file
     is left out when it is empty or would not fit the budget (coderay-q2r.24)."""
-    _routes, found, read = crawl_routes(args.repo_path, max_chars=args.codebase_budget)
-    return {"counts": {"found": len(found), "read": len(read)},
-            "files": {"found": found, "read": read}, "notes": []}
+    routes, found, read = crawl_routes(args.repo_path, max_chars=args.codebase_budget)
+    notes = []
+    if len(found) > len(read):
+        notes.append(f"{len(found) - len(read)} of {len(found)} surface files "
+                     "did not reach the bundle: empty, or past the budget.")
+    if not routes.strip():
+        notes.append(aborts(NO_SURFACE))
+    return {"counts": {"surface files found": len(found), "surface files read": len(read)},
+            "files": {"found": found, "read": read}, "notes": notes}
+
 
 def run(args) -> None:
-    # Exit code 1, no usage line, matching tour's run(): run(args) has no
-    # parser in scope, and threading one through isn't worth it for one check.
-    if not os.path.isdir(args.repo_path):
-        raise SystemExit(f"{args.repo_path} is not a directory")
+    require_directory(args.repo_path)
     run_analysis(sys.modules[__name__], args)
