@@ -15,6 +15,7 @@ import math as _math
 import re
 
 from crawl.core.render import md_heading, markdown_parser
+from crawl.core.theme import DARK_TOKENS, HEAD_ASSETS, TOKENS
 
 from markdown_it import MarkdownIt
 
@@ -114,61 +115,15 @@ HTML_TEMPLATE = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{name}: git history</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css"
-  integrity="sha384-wH75j6z1lH97ZOpMOInqhgKzFkAInZPPSPlZpYKYTOqsaizPvhQZmAtLcPKXpLyH" crossorigin="anonymous">
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"
-  integrity="sha384-F/bZzf7p3Joyp5psL90p/p89AZJsndkSoGwRpXcZhleCWhd8SnRuoYo4d0yirjJp" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js"
-  integrity="sha384-EOXBFmc3gx5mb+vn0vPvvGqACToJD24hhacX5Yx+8NUUQrHIle/Qi5Bg9o3zKwW2" crossorigin="anonymous"></script>
-<script>
-  // Disable auto-run SYNCHRONOUSLY, before DOMContentLoaded — otherwise Mermaid
-  // renders every diagram itself, and our loop below would re-process the
-  // already-rendered SVG and wipe it.
-  // 'strict' sanitises LLM-authored diagram labels; see coderay-q2r.11.
-  if (window.mermaid) mermaid.initialize({{ startOnLoad: false, theme: 'neutral', securityLevel: 'strict' }});
-</script>
-<script>
-  window.addEventListener('load', async function () {{
-    // Syntax-highlight code blocks. (Mermaid pres have no <code>, so they're skipped.)
-    if (window.hljs) {{ try {{ hljs.highlightAll(); }} catch (e) {{}} }}
-    // Render each diagram, but validate first with parse() so a diagram the model
-    // got wrong is silently DROPPED — no "Syntax error" box, no orphan graphics.
-    // A data-driven page can't guarantee valid Mermaid; a missing diagram beats
-    // an error box.
-    if (!window.mermaid) return;
-    var blocks = document.querySelectorAll('pre.mermaid');
-    for (var i = 0; i < blocks.length; i++) {{
-      var el = blocks[i], src = el.textContent;
-      try {{
-        if ((await mermaid.parse(src, {{ suppressErrors: true }})) === false) {{ el.remove(); continue; }}
-        var out = await mermaid.render('mmd' + i, src);
-        el.innerHTML = out.svg;
-      }} catch (e) {{
-        el.remove();
-      }}
-    }}
-  }});
-</script>
+{head_assets}
 <style>
-  :root {{
-    --bg: #f7f8fa; --surface: #fff; --text: #101828; --muted: #667085;
-    --faint: #98a2b3; --rule: #e4e7ec; --line: #eef0f3;
-    --accent: #3b82f6; --accent-soft: #eff6ff;
-    --good: #16a34a; --stone: #9aa4b2; --stone-bg: #f2f4f7;
-    --shadow: 0 1px 2px rgba(16,24,40,.05); --shadow-lg: 0 8px 26px rgba(16,24,40,.10);
-    --radius: 12px;
-  }}
-  * {{ box-sizing: border-box; }}
+{tokens}
+  :root {{ --accent: #3b82f6; --accent-soft: #eff6ff; --accent-ink: #2a58a4;
+    --shadow-lg: 0 8px 26px rgba(16,24,40,.10); }}
   html {{ -webkit-text-size-adjust: 100%; }}
-  body {{ font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-    font-size: 13.5px; line-height: 1.5; background: var(--bg); color: var(--text);
-    margin: 0; -webkit-font-smoothing: antialiased; }}
-  code, .mono {{ font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; }}
+  body {{ font-family: var(--font); font-size: 13.5px; line-height: 1.5;
+    background: var(--bg); color: var(--text); margin: 0; -webkit-font-smoothing: antialiased; }}
   main {{ max-width: 1240px; margin: 0 auto; padding: 0 24px 56px; }}
 
   /* Hero */
@@ -177,7 +132,7 @@ HTML_TEMPLATE = """<!doctype html>
   .hero-inner {{ max-width: 1120px; margin: 0 auto; }}
   .hero-diagram {{ margin: 26px 0 4px; }}
   .hero-diagram-cap {{ font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-    color: var(--accent); margin: 0 2px 9px; }}
+    color: var(--accent-ink); margin: 0 2px 9px; }}
   .timeline {{ display: flex; gap: 4px; align-items: stretch; }}
   .tl-era {{ min-width: 0; padding: 15px 13px; border-radius: 8px; color: #fff; overflow: hidden; }}
   .tl-name {{ font-weight: 800; font-size: .92rem; letter-spacing: -.01em; line-height: 1.2;
@@ -194,7 +149,7 @@ HTML_TEMPLATE = """<!doctype html>
   /* Section header with a scroll hint */
   .sec-head {{ display: flex; align-items: baseline; gap: 10px; margin: 42px 2px 14px; }}
   .sec-n {{ font-family: 'JetBrains Mono', monospace; font-size: .68rem; font-weight: 700;
-    color: var(--accent); }}
+    color: var(--accent-ink); }}
   .sec-label {{ display: flex; align-items: center; gap: 9px; font-size: .68rem; font-weight: 700;
     letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }}
   .sec-label::before {{ content: ''; width: 3px; height: 14px; background: var(--accent); border-radius: 2px; }}
@@ -205,11 +160,11 @@ HTML_TEMPLATE = """<!doctype html>
   .intro {{ background: var(--surface); border: 1px solid var(--rule); border-left: 4px solid var(--accent);
     border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px 24px; margin: 30px 0 4px; }}
   .intro-label {{ font-size: .68rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
-    color: var(--accent); margin-bottom: 10px; }}
-  .intro p {{ margin: .5em 0; font-size: .96rem; color: #344054; line-height: 1.7; }}
+    color: var(--accent-ink); margin-bottom: 10px; }}
+  .intro p {{ margin: .5em 0; font-size: .96rem; color: var(--body-text); line-height: 1.7; }}
   .intro p:first-child {{ margin-top: 0; }}
   .intro strong {{ color: var(--text); }}
-  .sec-intro {{ font-size: .9rem; color: #475467; line-height: 1.6; margin: -6px 2px 12px; }}
+  .sec-intro {{ font-size: .9rem; color: var(--body-soft); line-height: 1.6; margin: -6px 2px 12px; }}
   .sec-intro p {{ margin: 0; }}
 
   /* Horizontal rails */
@@ -218,14 +173,14 @@ HTML_TEMPLATE = """<!doctype html>
     padding: 4px 2px 18px; margin: 0; list-style: none; }}
   .rail::-webkit-scrollbar {{ height: 9px; }}
   .rail::-webkit-scrollbar-track {{ background: var(--line); border-radius: 5px; }}
-  .rail::-webkit-scrollbar-thumb {{ background: #cbd2dc; border-radius: 5px; }}
+  .rail::-webkit-scrollbar-thumb {{ background: var(--thumb); border-radius: 5px; }}
   .rail::-webkit-scrollbar-thumb:hover {{ background: var(--stone); }}
 
   /* Cards scroll up/down inside a fixed frame */
   .scroll {{ flex: 1; overflow-y: auto; overscroll-behavior: contain; }}
   .scroll::-webkit-scrollbar {{ width: 9px; }}
   .scroll::-webkit-scrollbar-track {{ background: transparent; }}
-  .scroll::-webkit-scrollbar-thumb {{ background: #dce0e7; border-radius: 5px; }}
+  .scroll::-webkit-scrollbar-thumb {{ background: var(--thumb); border-radius: 5px; }}
   .scroll::-webkit-scrollbar-thumb:hover {{ background: var(--stone); }}
 
   /* Shared card frame */
@@ -233,9 +188,9 @@ HTML_TEMPLATE = """<!doctype html>
     border-radius: var(--radius); box-shadow: var(--shadow);
     display: flex; flex-direction: column; overflow: hidden; }}
   .card-top {{ flex-shrink: 0; padding: 15px 20px 13px; border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, #fbfcfe, #fff); }}
+    background: linear-gradient(180deg, #fbfcfe, var(--surface)); }}
   .card-num {{ font-family: 'JetBrains Mono', monospace; font-size: .64rem; font-weight: 700;
-    letter-spacing: .12em; color: var(--accent); }}
+    letter-spacing: .12em; color: var(--accent-ink); }}
   .card-name {{ font-size: 1.12rem; font-weight: 800; letter-spacing: -.01em; margin: 3px 0 7px; }}
   .card-meta {{ display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }}
   .chip {{ font-family: 'JetBrains Mono', monospace; font-size: .66rem; color: var(--muted);
@@ -245,13 +200,13 @@ HTML_TEMPLATE = """<!doctype html>
   .era {{ flex: 0 0 500px; width: 500px; }}
   .era .scroll {{ max-height: 72vh; }}
   .era-body {{ padding: 15px 20px 18px; }}
-  .era-desc {{ color: #344054; font-size: .85rem; line-height: 1.6; }}
+  .era-desc {{ color: var(--body-text); font-size: .85rem; line-height: 1.6; }}
   .era-desc p {{ margin: 0 0 .55em; }}
   .turning {{ font-size: .8rem; color: var(--muted); background: var(--accent-soft);
     border-radius: 8px; padding: 10px 12px; margin: 10px 0 0; }}
-  .turning b {{ color: #1e3a8a; }}
+  .turning b {{ color: var(--accent-ink); }}
   .turning .hash {{ font-family: 'JetBrains Mono', monospace; font-size: .72rem;
-    background: #dbeafe; padding: 1px 5px; border-radius: 4px; color: #1e40af; }}
+    background: var(--surface); padding: 1px 5px; border-radius: 4px; color: var(--accent-ink); }}
 
   /* Section 2 — cast & mood (fixed frame, inner scroll) */
   .profile {{ flex: 0 0 440px; width: 440px; height: 66vh; min-height: 460px; max-height: 720px;
@@ -280,17 +235,14 @@ HTML_TEMPLATE = """<!doctype html>
   .grave-meta {{ flex-shrink: 0; font-family: 'JetBrains Mono', monospace; font-size: .66rem;
     color: var(--faint); padding: 14px 18px 11px; border-bottom: 1px solid var(--line); }}
   .grave-body {{ padding: 13px 18px 16px; font-size: .82rem; }}
-  .grave-body p {{ margin: .55em 0; color: #344054; line-height: 1.6; }}
+  .grave-body p {{ margin: .55em 0; color: var(--body-text); line-height: 1.6; }}
   .grave-body p:first-child {{ margin-top: 0; }}
   .grave-body strong {{ color: var(--text); }}
   .grave-body em {{ color: var(--muted); font-style: italic; }}
 
   /* Code + Mermaid inside cards */
-  pre {{ background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 11px 13px;
-    overflow-x: auto; margin: 11px 0; }}
+  pre {{ padding: 11px 13px; margin: 11px 0; }}
   pre code {{ padding: 0; font-size: .74rem; line-height: 1.55; }}
-  /* let highlight.js color the tokens, but keep our own dark pre background */
-  pre code.hljs {{ background: transparent; padding: 0; color: #e2e8f0; }}
   pre.mermaid {{ background: var(--stone-bg); color: inherit; text-align: center; padding: 12px; }}
   pre.mermaid svg {{ max-width: 100%; height: auto; }}
   code {{ font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: .84em;
@@ -301,6 +253,7 @@ HTML_TEMPLATE = """<!doctype html>
   @media (max-width: 560px) {{
     .era, .profile, .grave {{ flex-basis: 86vw; width: 86vw; }}
   }}
+{dark_tokens}
 </style>
 </head>
 <body>
@@ -484,6 +437,7 @@ def render_html(name, shared):
     grave_blocks = [_grave_card(g) for g in shared.get("graves", [])]
 
     return HTML_TEMPLATE.format(
+        head_assets=HEAD_ASSETS, tokens=TOKENS, dark_tokens=DARK_TOKENS,
         name=_esc(name),
         subtitle=subtitle,
         welcome=_era_timeline(paired),

@@ -10,6 +10,7 @@ from crawl.core.call_llm import CHARS_PER_TOKEN
 from crawl.core.files import write_text_atomic
 from crawl.core.pricing import input_ceiling
 from crawl.core.render import markdown_parser
+from crawl.core.theme import DARK_TOKENS, HEAD_ASSETS, TOKENS
 
 from crawl.core import (
     cost_for, fill, list_files, max_output_tokens,
@@ -68,38 +69,48 @@ def build_mermaid(abstractions, relationships):
 
 
 SHARED_STYLE = """\
-  :root { --fg: #0d1117; --muted: #57606a; --bg: #fff; --soft: #f6f8fa; --accent: #0969da; --rule: #d0d7de; }
-  body { font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-         color: var(--fg); background: var(--bg); margin: 0 auto; max-width: 880px; padding: 32px 24px; }
-  h1 { font-size: 1.9em; margin: 0 0 .2em; }
-  h2 { font-size: 1.35em; margin: 1.8em 0 .4em; padding-bottom: .2em; border-bottom: 1px solid var(--rule); }
-  h3 { font-size: 1.1em; margin: 1.4em 0 .3em; }
-  p, li, td, th { color: var(--fg); }
-  p { margin: .8em 0; }
-  .muted { color: var(--muted); }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; }
+  :root { --accent: #0d9488; --accent-soft: #ccfbf1; --accent-ink: #0e6262; }
+  body { font-family: var(--font); font-size: 16px; line-height: 1.65;
+    color: var(--text); background: var(--bg); margin: 0; -webkit-font-smoothing: antialiased; }
+  main { max-width: 820px; margin: 0 auto; padding: 0 24px 64px; }
+  h1 { font-size: 1.9rem; font-weight: 800; letter-spacing: -.025em; margin: 1.1em 0 .2em; }
+  h2 { font-size: 1.25rem; font-weight: 700; letter-spacing: -.015em; margin: 2em 0 .5em;
+    padding-bottom: .3em; border-bottom: 1px solid var(--rule); }
+  h3 { font-size: 1.02rem; font-weight: 700; margin: 1.6em 0 .35em; }
+  p { margin: .85em 0; color: var(--body-text); }
   ul, ol { padding-left: 1.4em; }
-  li { margin: .35em 0; }
-  code { font: .9em/1.4 ui-monospace, "SF Mono", Consolas, monospace; background: var(--soft); padding: 1px 5px; border-radius: 3px; }
-  pre { background: var(--soft); padding: 14px 16px; border-radius: 6px; overflow-x: auto; }
-  pre code { background: none; padding: 0; font-size: .88em; }
-  pre.mermaid { background: var(--soft); padding: 16px; text-align: center; }
-  blockquote { border-left: 3px solid var(--rule); margin: 1em 0; padding: .2em 1em; color: var(--muted); }
-  table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-  th, td { border: 1px solid var(--rule); padding: 8px 10px; text-align: left; font-size: .92em; }
-  th { background: var(--soft); }
-  .lens { display: inline-block; padding: 2px 8px; background: var(--soft); border-radius: 4px; font-size: .85em; }
-  nav.chapter-nav { margin: 2em 0 0; padding: 1em 0; border-top: 1px solid var(--rule); display: flex; justify-content: space-between; font-size: .95em; }
-  .staleness { font-size: .85em; }"""
+  li { margin: .35em 0; color: var(--body-text); }
+  strong { color: var(--text); }
+  em { color: var(--body-soft); }
+  .muted { color: var(--muted); }
+  a { color: var(--accent-ink); text-decoration: none; }
+  a:hover { text-decoration: underline; }
 
-MERMAID_SCRIPT = """\
-<script
-  src="https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js"
-  integrity="sha384-EOXBFmc3gx5mb+vn0vPvvGqACToJD24hhacX5Yx+8NUUQrHIle/Qi5Bg9o3zKwW2"
-  crossorigin="anonymous"
-></script>
-<script>mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'strict' });</script>"""
+  .hero { background: radial-gradient(120% 140% at 50% 0%, #0f766e 0%, #042f2e 70%);
+    color: #fff; padding: 46px 20px 42px; text-align: center; }
+  .hero-inner { max-width: 1120px; margin: 0 auto; }
+  .hero h1 { margin: 12px 0 10px; color: #fff; }
+  .hero .sub { font-size: .94rem; color: #99f6e4; margin: 0; line-height: 1.6; }
+  .eyebrow { display: inline-flex; align-items: center; gap: 7px; color: #5eead4;
+    font-size: .68rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
+  .eyebrow::before { content: ''; width: 16px; height: 2px; background: #2dd4bf; border-radius: 2px; }
+  .hero .lens { background: rgba(255,255,255,.16); color: #ccfbf1; }
+
+  pre { padding: 14px 16px; margin: 1.1em 0; }
+  pre code { padding: 0; font-size: .84rem; line-height: 1.55; }
+  code { font-size: .88em; padding: 1px 5px; }
+  pre.mermaid { background: var(--surface); color: var(--text); border: 1px solid var(--rule);
+    border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; text-align: center; }
+  pre.mermaid svg { max-width: 100%; height: auto; }
+  blockquote { border-left: 3px solid var(--accent); margin: 1.2em 0; padding: .2em 1.1em; color: var(--body-soft); }
+  table { margin: 1.2em 0; font-size: .9rem; }
+  th, td { padding: 8px 10px; }
+  th { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
+  .lens { display: inline-block; padding: 2px 9px; background: var(--accent-soft); color: var(--accent-ink);
+    border-radius: 999px; font-size: .78rem; font-weight: 600; }
+  nav.chapter-nav { margin: 3em 0 0; padding: 1.2em 0 0; border-top: 1px solid var(--rule);
+    display: flex; justify-content: space-between; font-size: .92rem; }
+  .staleness { font-size: .82rem; }"""
 
 
 INDEX_HTML_TEMPLATE = """<!doctype html>
@@ -107,14 +118,22 @@ INDEX_HTML_TEMPLATE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <title>{repo_name} tour</title>
+{head_assets}
 <style>
+{tokens}
 {shared_style}
+{dark_tokens}
 </style>
-{mermaid_script}
 </head>
 <body>
-  <h1>{repo_name}</h1>
-  <p class="muted">Lens: <span class="lens">{lens}</span> &middot; {n_chapters} chapters &middot; {n_files} files analyzed</p>
+  <header class="hero">
+    <div class="hero-inner">
+      <span class="eyebrow">Guided tour</span>
+      <h1>{repo_name}</h1>
+      <p class="sub">Lens: <span class="lens">{lens}</span> &middot; {n_chapters} chapters &middot; {n_files} files analyzed</p>
+    </div>
+  </header>
+  <main>
   <p class="muted staleness">{staleness}</p>
   <p>{summary}</p>
 
@@ -134,6 +153,7 @@ INDEX_HTML_TEMPLATE = """<!doctype html>
   <ul class="files">
 {files_list_html}
   </ul>
+  </main>
 </body>
 </html>
 """
@@ -144,12 +164,15 @@ CHAPTER_HTML_TEMPLATE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <title>{title}</title>
+{head_assets}
 <style>
+{tokens}
 {shared_style}
+{dark_tokens}
 </style>
-{mermaid_script}
 </head>
 <body>
+  <main>
   <p class="muted"><a href="index.html">&larr; {repo_name} tour</a></p>
   <p class="muted staleness">{staleness}</p>
 {body_html}
@@ -157,6 +180,7 @@ CHAPTER_HTML_TEMPLATE = """<!doctype html>
     <span>{prev_link}</span>
     <span>{next_link}</span>
   </nav>
+  </main>
 </body>
 </html>
 """
@@ -229,8 +253,8 @@ def write_chapter_files(chapters, repo_name, out, relationships, generated_at):
         )
         chapter_html = CHAPTER_HTML_TEMPLATE.format(
             title=f'{html.escape(ch["name"])} — {html.escape(repo_name)}',
+            head_assets=HEAD_ASSETS, tokens=TOKENS, dark_tokens=DARK_TOKENS,
             shared_style=SHARED_STYLE,
-            mermaid_script=MERMAID_SCRIPT,
             repo_name=html.escape(repo_name),
             body_html=md_to_html(body_md) + related_html,
             prev_link=prev_link,
@@ -275,8 +299,8 @@ def write_index_html(chapters, repo_name, lens, summary, mermaid, selected_files
         chapter_list_html=chapter_list_html,
         files_list_html=files_list_html,
         reasoning_html=md_to_html(selection_reasoning),
+        head_assets=HEAD_ASSETS, tokens=TOKENS, dark_tokens=DARK_TOKENS,
         shared_style=SHARED_STYLE,
-        mermaid_script=MERMAID_SCRIPT,
         staleness=html.escape(staleness_disclaimer(generated_at)),
     )
     write_text(os.path.join(out, "index.html"), rendered)

@@ -3,8 +3,9 @@ import subprocess
 import sys
 from importlib.metadata import version
 
+from crawl.core.theme import HEAD_ASSETS
+
 from crawl.analyses.tour.render import (
-    MERMAID_SCRIPT,
     available_lenses,
     build_mermaid,
     build_related_links,
@@ -79,9 +80,9 @@ def test_build_mermaid_renders_inferred_edge_as_dashed_arrow():
 
 
 def test_mermaid_script_is_pinned_and_has_integrity():
-    assert "mermaid/dist/mermaid.min.js\"" not in MERMAID_SCRIPT  # unpinned "latest"
-    assert "@11.17.2/dist/mermaid.min.js" in MERMAID_SCRIPT
-    assert 'integrity="sha384-' in MERMAID_SCRIPT
+    assert "mermaid/dist/mermaid.min.js\"" not in HEAD_ASSETS  # unpinned "latest"
+    assert "@11.17.2/dist/mermaid.min.js" in HEAD_ASSETS
+    assert 'integrity="sha384-' in HEAD_ASSETS
 
 
 def test_available_lenses_matches_instructions_directory():

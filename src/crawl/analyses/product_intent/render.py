@@ -9,6 +9,7 @@ on surprises, amber "on purpose" badges on absences.
 import html as _html
 
 from crawl.core.render import markdown_parser, md_cell, md_heading, md_line, md_quote
+from crawl.core.theme import DARK_TOKENS, HEAD_ASSETS, TOKENS
 
 from markdown_it import MarkdownIt
 
@@ -40,60 +41,38 @@ HTML_TEMPLATE = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{name}: product story</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js"
-  integrity="sha384-EOXBFmc3gx5mb+vn0vPvvGqACToJD24hhacX5Yx+8NUUQrHIle/Qi5Bg9o3zKwW2" crossorigin="anonymous"></script>
-<script>
-  // Disable auto-run synchronously; otherwise Mermaid renders every diagram itself
-  // and the loop below would re-process the finished SVG and wipe it.
-  // 'strict' sanitises LLM-authored diagram labels; see coderay-q2r.11.
-  if (window.mermaid) mermaid.initialize({{ startOnLoad: false, theme: 'neutral', securityLevel: 'strict' }});
-</script>
-<script>
-  window.addEventListener('load', async function () {{
-    if (!window.mermaid) return;
-    var blocks = document.querySelectorAll('pre.mermaid');
-    for (var i = 0; i < blocks.length; i++) {{
-      var el = blocks[i], src = el.textContent;
-      try {{
-        // Validate first, so a diagram the model got wrong is dropped silently
-        // (no "Syntax error" box) instead of rendered.
-        if ((await mermaid.parse(src, {{ suppressErrors: true }})) === false) {{ el.remove(); continue; }}
-        var out = await mermaid.render('mmd' + i, src);
-        el.innerHTML = out.svg;
-      }} catch (e) {{ el.remove(); }}
-    }}
-  }});
-</script>
+{head_assets}
 <style>
+{tokens}
   :root {{
-    --bg: #f8fafc;
-    --surface: #fff;
-    --text: #0f172a;
-    --muted: #64748b;
-    --rule: #e2e8f0;
-    --accent: #3b82f6;
-    --accent-soft: #eff6ff;
-    --good: #22c55e;
-    --warn: #f59e0b;
-    --warn-soft: #fffbeb;
-    --warn-ink: #92400e;
-    --danger: #ef4444;
+    --accent: #3b82f6; --accent-soft: #eff6ff; --accent-ink: #2a58a4; --good: #22c55e;
+    --warn: #f59e0b; --danger: #ef4444;
+    --warn-soft: #fffbeb; --warn-ink: #92400e; --warn-body: #422006;
+    --good-soft: #f0fdf4; --good-ink: #166534;
     --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
     --shadow-lg: 0 8px 24px rgba(15,23,42,.08), 0 2px 6px rgba(15,23,42,.04);
     --radius: 10px;
   }}
-  * {{ box-sizing: border-box; }}
+  /* The flat values above read correctly on a light page. Mixing them against
+     the page's own surface and text makes them follow the colour scheme, so
+     the callout and the gains card stay legible in dark mode too. The
+     @supports guard is what keeps the flat values on a browser without
+     color-mix; crawl.core.theme explains why a bare declaration would not. */
+  @supports (color: color-mix(in srgb, red 50%, blue)) {{
+    :root {{
+      --warn-soft: color-mix(in srgb, var(--warn) 14%, var(--surface));
+      --warn-ink: color-mix(in srgb, var(--warn) 55%, var(--text));
+      --warn-body: color-mix(in srgb, var(--warn) 28%, var(--text));
+      --good-soft: color-mix(in srgb, var(--good) 14%, var(--surface));
+      --good-ink: color-mix(in srgb, var(--good) 55%, var(--text));
+    }}
+  }}
   body {{
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    font-family: var(--font);
     background: var(--bg); color: var(--text); margin: 0;
     line-height: 1.6; -webkit-font-smoothing: antialiased;
   }}
-  code, .mono {{ font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; }}
   main {{ max-width: 920px; margin: 0 auto; padding: 0 24px 48px; }}
 
   /* Hero */
@@ -147,7 +126,7 @@ HTML_TEMPLATE = """<!doctype html>
     display: grid; grid-template-columns: 1fr; gap: 16px; align-items: center;
   }}
   .pain-card p {{
-    font-size: 1.02rem; line-height: 1.65; color: #334155;
+    font-size: 1.02rem; line-height: 1.65; color: var(--body-text);
     margin: 0;
   }}
 
@@ -171,14 +150,14 @@ HTML_TEMPLATE = """<!doctype html>
     width: 22px; height: 22px; background: var(--warn-soft);
     color: var(--warn); border-radius: 50%; font-weight: 800;
   }}
-  .pos-card.gains h3 {{ color: #166534; }}
+  .pos-card.gains h3 {{ color: var(--good-ink); }}
   .pos-card.gains h3::before {{
     content: '+'; display: inline-flex; align-items: center; justify-content: center;
-    width: 22px; height: 22px; background: #f0fdf4;
+    width: 22px; height: 22px; background: var(--good-soft);
     color: var(--good); border-radius: 50%; font-weight: 800;
   }}
   .pos-card ul {{ margin: 0; padding-left: 1.1em; }}
-  .pos-card li {{ margin: .4em 0; color: #334155; font-size: .92rem; line-height: 1.55; }}
+  .pos-card li {{ margin: .4em 0; color: var(--body-text); font-size: .92rem; line-height: 1.55; }}
 
   /* Callout (why incumbents can't copy) */
   .callout {{
@@ -189,7 +168,7 @@ HTML_TEMPLATE = """<!doctype html>
     font-size: .65rem; font-weight: 700; letter-spacing: .14em;
     color: var(--warn-ink); text-transform: uppercase; margin-bottom: 6px;
   }}
-  .callout p {{ margin: .4em 0 0; color: #422006; font-size: .95rem; line-height: 1.65; }}
+  .callout p {{ margin: .4em 0 0; color: var(--warn-body); font-size: .95rem; line-height: 1.65; }}
 
   /* Counter-positioning diagram */
   .trap-diagram {{ margin-top: 16px; background: var(--surface); border: 1px solid var(--rule);
@@ -205,7 +184,7 @@ HTML_TEMPLATE = """<!doctype html>
     border-radius: var(--radius); padding: 14px 18px; margin-bottom: 12px;
     box-shadow: var(--shadow); list-style: none;
   }}
-  .dim-defs li {{ margin: .35em 0; font-size: .9rem; color: #475569; }}
+  .dim-defs li {{ margin: .35em 0; font-size: .9rem; color: var(--body-soft); }}
   .dim-defs li strong {{ color: var(--text); font-weight: 700; }}
   .matrix-wrap {{
     border: 1px solid var(--rule); border-radius: var(--radius);
@@ -221,12 +200,12 @@ HTML_TEMPLATE = """<!doctype html>
   }}
   table.matrix tr:last-child td {{ border-bottom: none; }}
   table.matrix th {{
-    background: #f1f5f9; color: var(--muted);
+    background: var(--stone-bg); color: var(--muted);
     font-size: .68rem; font-weight: 700; letter-spacing: .08em;
     text-transform: uppercase;
   }}
   table.matrix td.row-head {{
-    background: #fafbfc; font-weight: 700; color: var(--text);
+    background: var(--stone-bg); font-weight: 700; color: var(--text);
     white-space: nowrap; font-size: .95rem;
   }}
   table.matrix td .verdict {{
@@ -237,8 +216,8 @@ HTML_TEMPLATE = """<!doctype html>
     display: block; color: var(--muted); font-size: .82rem; line-height: 1.5;
   }}
   table.matrix tr.you td {{ background: var(--accent-soft); }}
-  table.matrix tr.you td.row-head {{ color: var(--accent); }}
-  table.matrix tr.you td .verdict {{ color: var(--accent); }}
+  table.matrix tr.you td.row-head {{ color: var(--accent-ink); }}
+  table.matrix tr.you td .verdict {{ color: var(--accent-ink); }}
 
   /* Horizontal scrollable card rails for surprises and absences. */
   .scroll-hint {{
@@ -254,8 +233,8 @@ HTML_TEMPLATE = """<!doctype html>
   }}
   .card-rail::-webkit-scrollbar {{ height: 7px; }}
   .card-rail::-webkit-scrollbar-track {{ background: transparent; }}
-  .card-rail::-webkit-scrollbar-thumb {{ background: #cbd5e1; border-radius: 4px; }}
-  .card-rail::-webkit-scrollbar-thumb:hover {{ background: #94a3b8; }}
+  .card-rail::-webkit-scrollbar-thumb {{ background: var(--thumb); border-radius: 4px; }}
+  .card-rail::-webkit-scrollbar-thumb:hover {{ background: var(--stone); }}
   .card-rail > li {{
     scroll-snap-align: start;
     min-width: 300px; max-width: 300px; flex-shrink: 0;
@@ -286,14 +265,14 @@ HTML_TEMPLATE = """<!doctype html>
     word-break: break-word;
   }}
   .card-rail .body {{
-    color: #475569; font-size: .88rem; line-height: 1.55;
+    color: var(--body-soft); font-size: .88rem; line-height: 1.55;
     margin-top: auto;
   }}
 
   /* Inline code in body text */
   code {{
     font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
-    font-size: .85em; background: #f1f5f9; color: var(--text);
+    font-size: .85em; background: var(--stone-bg); color: var(--text);
     padding: 1px 6px; border-radius: 4px;
   }}
   .surprise-list code, .absence-list code {{ font-size: .82em; }}
@@ -302,6 +281,7 @@ HTML_TEMPLATE = """<!doctype html>
     color: var(--muted); font-size: .78rem; text-align: center;
     margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--rule);
   }}
+{dark_tokens}
 </style>
 </head>
 <body>
@@ -463,6 +443,7 @@ def render_html(name, shared):
     )
 
     return HTML_TEMPLATE.format(
+        head_assets=HEAD_ASSETS, tokens=TOKENS, dark_tokens=DARK_TOKENS,
         name=_esc(name),
         variant=md(shared["variant"]),
         pain=md(shared["pain"]),

@@ -17,7 +17,7 @@ import pytest
 
 from crawl.analyses import ANALYSES
 from crawl.analyses.tour import render as tour_render
-from crawl.core import render
+from crawl.core import render, theme
 
 GOLDEN = pathlib.Path(__file__).parent / "fixtures" / "golden"
 
@@ -47,11 +47,11 @@ def _sources():
     out = {}
     for d in sorted(p for p in GOLDEN.iterdir() if p.is_dir()):
         out[f"card/{d.name}"] = _card_html(d.name)
-    # tour's templates carry a {mermaid_script} slot rather than the tag, so
+    # tour's templates carry a {head_assets} slot rather than the tags, so
     # compose them the way write_index_html and write_chapter_files do.
     for label, template in (("tour/index", tour_render.INDEX_HTML_TEMPLATE),
                             ("tour/chapter", tour_render.CHAPTER_HTML_TEMPLATE)):
-        out[label] = template.replace("{mermaid_script}", tour_render.MERMAID_SCRIPT)
+        out[label] = template.replace("{head_assets}", theme.HEAD_ASSETS)
     return out
 
 
@@ -67,31 +67,33 @@ def test_every_cdn_resource_is_pinned_and_hash_checked(label):
             f"{label}: floating version, so the hash cannot match for long: {tag[:120]}")
 
 
-def test_the_card_engine_and_the_tour_agree_on_the_mermaid_build():
+def test_every_renderer_loads_one_mermaid_build_from_the_shared_layer():
     """Two renderers pinning different mermaid builds means two sets of
-    diagram-rendering behaviour to reason about, and only one gets audited."""
-    def mermaid_pin(html):
-        m = re.search(r'mermaid@([\d.]+)/dist/mermaid\.min\.js', html)
-        return m.group(1) if m else None
+    diagram-rendering behaviour to reason about, and only one gets audited.
 
-    card = mermaid_pin(_card_html("backend"))
-    tour = mermaid_pin(tour_render.MERMAID_SCRIPT)
-    assert card is not None and tour is not None
-    assert card == tour
+    Every page takes its mermaid tag from the one shared definition, so the
+    check is that each carries it exactly once rather than that two copies
+    happen to agree -- a copy reintroduced anywhere shows up as a second pin.
+    """
+    pin = re.compile(r'mermaid@([\d.]+)/dist/mermaid\.min\.js')
+    shared = pin.findall(theme.HEAD_ASSETS)
+    assert len(shared) == 1, f"shared layer pins {shared}"
+    for label, html in sorted(_sources().items()):
+        assert pin.findall(html) == shared, f"{label} pins {pin.findall(html)}, shared layer {shared}"
 
 
-def test_the_same_mermaid_build_carries_the_same_hash():
+def test_the_shared_mermaid_build_carries_exactly_one_hash():
     """A copied-but-stale hash is worse than none: it fails closed on the right
-    file. Both renderers pin one build, so both must name one digest."""
+    file. One build, one digest, on every page that loads it."""
     def sri(html):
         return set(re.findall(r'mermaid[^>]*?integrity="([^"]+)"', html, re.S))
 
-    card = sri(_card_html("backend"))
-    tour = sri(tour_render.MERMAID_SCRIPT)
+    shared = sri(theme.HEAD_ASSETS)
     # Without this, deleting every integrity attribute leaves two empty sets
     # and the comparison below passes.
-    assert card and tour, f"no mermaid integrity hash: card {card}, tour {tour}"
-    assert card == tour, f"card engine {card} vs tour {tour}"
+    assert len(shared) == 1, f"shared layer names {shared} mermaid integrity hashes"
+    for label, html in sorted(_sources().items()):
+        assert sri(html) == shared, f"{label} names {sri(html)}, shared layer {shared}"
 
 
 @pytest.mark.parametrize("label", sorted(_sources()))
