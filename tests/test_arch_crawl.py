@@ -504,6 +504,7 @@ def test_build_bundle_overlays_the_four_sources_and_counts_them(tmp_path):
                      "sdk_unavailable": "not a git repository", "sdk_capped": False,
                      "files": [".env.example", "Procfile", "deploy/k8s/api.yaml", "docker-compose.yml",
                                "infra/main.tf", "package.json"],
+                     "dropped_files": [],
                      "sdk_import_files": [], "integration_dirs": []}
     assert "PROCESS DECLARATION (compose / k8s): docker-compose.yml" in bundle
     assert "KUBERNETES MANIFESTS: deploy/k8s/api.yaml" in bundle

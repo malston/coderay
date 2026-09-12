@@ -899,10 +899,15 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
     # What left the machine (coderay-3eu): a section whose text starts past the
     # cut below never reaches the model, so its files are not listed. Sorted,
     # since the walk order differs by platform.
-    files, offset = [], 0
+    #
+    # Those paths are collected rather than counted: raising the budget brings
+    # them back, which makes them dropped by it (coderay-05w.4). They are taken
+    # here and not by subtracting `files` from the found count, because a config
+    # file that was empty or unreadable never became a section at all and
+    # belongs in neither set.
+    files, dropped, offset = [], [], 0
     for rels, text in parts:
-        if offset < max_chars:
-            files.extend(rels)
+        (files if offset < max_chars else dropped).extend(rels)
         offset += len(text) + 1
 
     whole = "\n".join(text for _rels, text in parts)
@@ -958,6 +963,7 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS):
         # model saw evidence that was itself capped."
         "sdk_capped": sdk_capped and bool(sdk_in_bundle),
         "files": sorted(files),
+        "dropped_files": sorted(dropped),
         "sdk_import_files": sdk_files,
         "integration_dirs": isubs,
     }

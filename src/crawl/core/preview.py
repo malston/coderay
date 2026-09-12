@@ -16,9 +16,11 @@ class Preview(TypedDict):
     Always present:
 
     counts: label -> how many, in the order the reader should meet them.
-    files:  label -> the repo-relative paths behind a count. Not every count has
-            a list (backend matches a layer without reading the file) and not
-            every analysis reads files at all (git-history reads commits).
+    files:  label -> the repo-relative paths behind it. Most labels are also a
+            count, but not all: a dropped list can exist where no count says so.
+            Not every count has a list (backend matches a layer without reading
+            the file) and not every analysis reads files at all (git-history
+            reads commits).
     notes:  what the counts alone would misstate: a budget that capped text
             rather than dropping files, a refusal, or a real run that stops here.
 
@@ -30,12 +32,16 @@ class Preview(TypedDict):
 
     included:        the repo-relative paths whose text reached the prompts.
     dropped:         the repo-relative paths a budget or cap kept out of them.
-                     Absent for a crawler that caps its assembled text instead of
-                     dropping whole files (architecture), and for one that reads
-                     no files at all (git-history).
+                     Absent for a crawler that reads no files at all
+                     (git-history). One file can be in `included` and still have
+                     reached the prompt cut short, where the budget landed inside
+                     its text; the truncation note covers that.
     assembled_chars: the length of the text the crawl assembled. Carried so the
                      token estimate and the counts describe one crawl rather than
-                     two, without re-running the crawl (coderay-05w.5).
+                     two, without re-running the crawl (coderay-05w.5). Absent
+                     where the crawl step produces a record rather than text:
+                     git-history returns commits, and the prompts are assembled
+                     downstream from them.
     """
     counts: Dict[str, int]
     files: Dict[str, List[str]]
