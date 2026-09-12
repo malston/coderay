@@ -25,14 +25,30 @@ def _tags(html):
 
 
 def _external_refs(html):
-    """A script or link pointing at an absolute http(s) URL, whatever the host.
+    """A script or link pointing off this page, whatever the host.
 
-    Broader than _tags, which sees one CDN. Narrower than every way a page can
-    reach the network: an @import or a url() inside a <style> block is not a
-    tag and is not covered here.
+    Broader than _tags, which sees one CDN. The scheme is optional and the
+    quote may be either kind, because `src='//host/x.js'` reaches the network
+    exactly as `src="https://host/x.js"` does and is what an unhashed tag
+    would most plausibly look like. Narrower than every way a page can reach
+    the network: an @import or a url() inside a <style> block is not a tag and
+    is not covered here.
     """
-    return re.findall(r'<(?:script|link)\b[^>]*(?:src|href)="https?://[^"]*"[^>]*>',
-                      html, re.S)
+    return re.findall(
+        r"""<(?:script|link)\b[^>]*(?:src|href)=["'](?:https?:)?//[^"']*["'][^>]*>""",
+        html, re.S)
+
+
+def _uncommented(css):
+    """css with its /* */ comments removed.
+
+    Every scan below reads either a selector or a declaration, and a comment
+    is neither. Left in, the comment above a rule becomes part of that rule's
+    selector -- "lands at 1.23:1" contributes a class named `.23`, and a note
+    mentioning `.hero` would exempt the rule underneath it from the literal
+    scan. A comment inside a block hides the declaration that follows it.
+    """
+    return re.sub(r"/\*.*?\*/", "", css, flags=re.S)
 
 
 # The font stylesheet and the two preconnect hints it needs. Exempt from the
@@ -180,8 +196,8 @@ LITERAL_COLOUR = re.compile(
     r"#[0-9a-fA-F]{3,8}\b|(?:rgba?|hsla?|oklch|oklab|lab|lch)\([^)]*\)"
     r"|\b(?:white|black|red|silver|gray|grey|whitesmoke|gainsboro|ivory)\b(?!-)")
 
-# Declarations whose value may name a colour word without painting one.
-NOT_A_COLOUR_DECLARATION = ("content", "font", "url(")
+# Properties whose value may name a colour word without painting one.
+NOT_A_COLOUR_PROPERTY = ("content", "font")
 
 
 def _literal_in(body):
@@ -192,15 +208,19 @@ def _literal_in(body):
     every border-*-color longhand, and its lookbehind for custom properties
     happened to blind the same longhands. Skipping --* declarations by name
     and reading whatever is left covers both.
+
+    A url() is dropped from the value rather than skipping the declaration:
+    an asset path can spell a colour word or carry a # fragment, and the rest
+    of `background: url(x) #fff` still has to be read.
     """
     for declaration in body.split(";"):
         if ":" not in declaration:
             continue
         prop, _, value = declaration.partition(":")
         prop = prop.strip()
-        if prop.startswith("--") or any(s in prop for s in NOT_A_COLOUR_DECLARATION):
+        if prop.startswith("--") or any(s in prop for s in NOT_A_COLOUR_PROPERTY):
             continue
-        found = LITERAL_COLOUR.search(value)
+        found = LITERAL_COLOUR.search(re.sub(r"url\([^)]*\)", "", value))
         if found:
             return prop, found.group(0)
     return None
@@ -237,7 +257,7 @@ def test_the_dark_block_only_redefines_tokens():
     """Four renderers share it, so naming any one renderer's selector there
     puts that renderer's own rule in everyone's stylesheet. Flipping a token
     does the same work and keeps the module's boundary honest."""
-    body = theme.DARK_TOKENS.split("{", 1)[1]
+    body = _uncommented(theme.DARK_TOKENS).split("{", 1)[1]
     selectors = [" ".join(s.split()) for s, _ in re.findall(r"([^{}]+)\{([^{}]*)\}", body)]
     assert selectors, "the dark block declares nothing"
     for sel in selectors:
@@ -271,11 +291,11 @@ def _rules(label, template):
     reached through a slot is substituted as a value and writes them single.
     """
     block = re.search(r"<style>(.*?)</style>", template, re.S)
-    inline = block.group(1) if block else ""
+    inline = _uncommented(block.group(1) if block else "")
     # Drop the template's own slot names so a rule carrying one still parses.
     inline = re.sub(r"\{([a-z_]+)\}", r"\1", inline)
     found = [(s.strip(), b) for s, b in re.findall(r"([^{}]+)\{\{([^{}]*)\}\}", inline)]
-    slotted = SLOT_CSS.get(label, "")
+    slotted = _uncommented(SLOT_CSS.get(label, ""))
     found += [(s.strip(), b) for s, b in re.findall(r"([^{}]+)\{([^{}]*)\}", slotted)]
     assert len(found) > 10, (
         f"{label}: only {len(found)} rules found, so this check is not reading "
@@ -412,6 +432,15 @@ def test_every_renderer_reaches_the_same_placeholder():
 RENDERED = pathlib.Path(__file__).parent / "fixtures" / "golden"
 
 
+def _after_the_block(css):
+    """Whatever follows the first balanced brace group in css."""
+    depth = 0
+    for i, ch in enumerate(css):
+        depth += (ch == "{") - (ch == "}")
+        if depth == 0 and ch == "}":
+            return css[i + 1:]
+    raise AssertionError("the block never closes")
+
 
 @pytest.mark.parametrize("name", sorted(p.name for p in RENDERED.iterdir() if p.is_dir()))
 def test_every_rendered_page_ships_the_shared_layer(name):
@@ -433,17 +462,8 @@ def test_the_dark_block_is_last_in_every_rendered_page(name):
     css = re.search(r"<style>(.*?)</style>",
                     render.render_html(ANALYSES[name], "toy_repo", shared), re.S).group(1)
     dark = css.index("@media (prefers-color-scheme: dark)")
-    tail = css[dark:]
-    # The block's own closing brace, then nothing but whitespace.
-    depth, end = 0, None
-    for i, ch in enumerate(tail):
-        depth += (ch == "{") - (ch == "}")
-        if depth == 0 and ch == "}":
-            end = i + 1
-            break
-    assert end, f"{name}: the dark block never closes"
-    assert not tail[end:].strip(), (
-        f"{name} writes {tail[end:].strip()[:60]!r} after the dark block")
+    trailing = _after_the_block(css[dark:]).strip()
+    assert not trailing, f"{name} writes {trailing[:60]!r} after the dark block"
 
 
 # Tokens whose light value is deliberately kept in the dark scheme. --accent
@@ -456,9 +476,14 @@ LIGHT_VALUE_HOLDS_IN_DARK = {
 
 
 def _tokens_with_a_colour(css):
-    """Every custom property in a :root block whose value names a colour."""
+    """Every custom property in a :root block whose value names a colour.
+
+    A declaration ends at a semicolon or at the closing brace: CSS allows the
+    last one in a block to drop its semicolon, and requiring it here made the
+    last token in every block invisible to the check.
+    """
     found = {}
-    for name, value in re.findall(r"(--[\w-]+):\s*([^;]+);", css):
+    for name, value in re.findall(r"(--[\w-]+):\s*([^;}]+)", _uncommented(css)):
         if re.search(r"#[0-9a-fA-F]{3,8}|rgba?\(|color-mix\(|var\(--", value):
             found[name] = " ".join(value.split())
     return found
@@ -488,17 +513,31 @@ def test_a_diagram_block_does_not_inherit_the_code_block_ink():
     """Until mermaid replaces it, a diagram block holds its own source. The
     shared `pre` rule paints ink meant for the dark code background, so on a
     light surface that source is invisible -- and if mermaid never loaded, no
-    placeholder is written either, so the reader gets an empty box."""
-    assert re.search(r"pre\.mermaid\s*\{[^}]*color:", theme.TOKENS), (
+    placeholder is written either, so the reader gets an empty box.
+
+    Both halves of that rule have to move together. Setting the ink alone
+    leaves the block on --code-bg, which turns the same defect around: page
+    text on the code surface is 1.05:1, no more readable than the inverse.
+    """
+    shared = re.search(r"pre\.mermaid\s*\{([^}]*)\}", theme.TOKENS)
+    assert shared, "pre.mermaid takes its colour from the pre rule, which is code-block ink"
+    assert "color:" in shared.group(1), (
         "pre.mermaid takes its colour from the pre rule, which is code-block ink")
-    assert not re.search(r"pre\.mermaid\s*\{[^}]*color:\s*inherit", theme.TOKENS), (
-        "inherit is wrong here: a diagram inside a hero band would inherit white")
+    assert "background" in shared.group(1), (
+        "pre.mermaid keeps --code-bg from the pre rule, so page ink lands on the code surface")
+    for label, template in TEMPLATES.items():
+        for sel, body in _rules(label, template):
+            if not sel.endswith("pre.mermaid"):
+                continue
+            assert not re.search(r"\bcolor:\s*inherit", body), (
+                f"{label}: inherit is wrong here -- a diagram inside a hero band "
+                "would inherit white")
 
 
 def test_every_head_asset_comes_from_a_host_we_chose():
     """A tag from anywhere else would have to be hashed, and the integrity
     check above only knows the hosts it is told about."""
-    hosts = {re.search(r"https?://([^/\"]+)", tag).group(1)
+    hosts = {re.search(r"""(?:https?:)?//([^/"']+)""", tag).group(1)
              for tag in _external_refs(theme.HEAD_ASSETS)}
     assert hosts == {"fonts.googleapis.com", "fonts.gstatic.com", "cdn.jsdelivr.net"}, (
         f"unexpected host in the shared head: {hosts}")
@@ -517,9 +556,8 @@ def test_each_template_carries_exactly_one_style_block(label):
 # parametrized checks above do not reach them. It is also the renderer whose
 # whole stylesheet arrives through a slot, which makes it the likeliest place
 # for one to be filled empty -- the failure those checks exist to catch.
-def test_the_rendered_tour_ships_the_shared_layer(tmp_path):
-    import sys
-    sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "scripts"))
+def test_the_rendered_tour_ships_the_shared_layer(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(pathlib.Path(__file__).parent.parent / "scripts")
     from regen_tour_golden import render_into
 
     render_into(tmp_path)
@@ -538,16 +576,6 @@ def test_the_rendered_tour_ships_the_shared_layer(tmp_path):
             f"{page.name} writes rules after the dark block")
 
 
-def _after_the_block(css):
-    """Whatever follows the first balanced brace group in css."""
-    depth = 0
-    for i, ch in enumerate(css):
-        depth += (ch == "{") - (ch == "}")
-        if depth == 0 and ch == "}":
-            return css[i + 1:]
-    raise AssertionError("the block never closes")
-
-
 def test_a_code_block_is_neutral_before_highlighting_runs():
     """highlight.js adds .hljs to what it processes, so pre code.hljs only
     applies once it has run. A blocked CDN, a failed hash, or simply the
@@ -561,11 +589,20 @@ def test_a_code_block_is_neutral_before_highlighting_runs():
 
 def test_the_dark_block_declares_only_custom_properties():
     """Selectors are checked above. A plain declaration inside :root is the
-    other way a renderer's own rule reaches everyone's stylesheet."""
-    for body in re.findall(r":root\s*\{([^{}]*)\}", theme.DARK_TOKENS):
+    other way a renderer's own rule reaches everyone's stylesheet.
+
+    Comments come out first. Skipping a chunk that opens with one skips the
+    declaration behind it too, which is how --faint and --code-bg went
+    unchecked and how `/* note */ background: red;` would have passed.
+    """
+    checked = 0
+    for body in re.findall(r":root\s*\{([^{}]*)\}", _uncommented(theme.DARK_TOKENS)):
         for declaration in body.split(";"):
             prop = declaration.partition(":")[0].strip()
-            if not prop or prop.startswith("/*"):
+            if not prop:
                 continue
+            checked += 1
             assert prop.startswith("--"), (
                 f"the dark block sets {prop!r}, which is a rule rather than a token")
+    assert checked > 10, (
+        f"only {checked} declarations read; this check is not seeing the dark block")

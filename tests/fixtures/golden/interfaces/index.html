@@ -94,8 +94,11 @@
      the block keeps --code-fg from the `pre` rule above, which is near-white
      and meant for the dark code background, so on a light surface the source
      lands at 1.23:1 and the reader sees an empty box. `inherit` is not the
-     answer: a diagram inside a hero band would inherit white. */
-  pre.mermaid { color: var(--text); }
+     answer: a diagram inside a hero band would inherit white. The background
+     has to come off in the same rule: page ink on --code-bg is 1.01:1, the
+     same defect turned around. transparent takes whichever token surface the
+     block sits on, which is right in both schemes. */
+  pre.mermaid { background: transparent; color: var(--text); }
   /* Stands in for a diagram the model got wrong (coderay-2l9). Quiet enough
      not to read as an error in a report someone forwards, present enough that
      the reader knows something is missing rather than absent. */

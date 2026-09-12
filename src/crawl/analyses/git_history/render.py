@@ -243,7 +243,7 @@ HTML_TEMPLATE = """<!doctype html>
   /* Code + Mermaid inside cards */
   pre {{ padding: 11px 13px; margin: 11px 0; }}
   pre code {{ padding: 0; font-size: .74rem; line-height: 1.55; }}
-  pre.mermaid {{ background: var(--stone-bg); color: inherit; text-align: center; padding: 12px; }}
+  pre.mermaid {{ background: var(--stone-bg); color: var(--text); text-align: center; padding: 12px; }}
   pre.mermaid svg {{ max-width: 100%; height: auto; }}
   code {{ font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: .84em;
     background: var(--stone-bg); color: var(--text); padding: 1px 5px; border-radius: 4px; }}
