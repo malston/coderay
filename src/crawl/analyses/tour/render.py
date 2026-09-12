@@ -300,7 +300,7 @@ def write_index_html(chapters, repo_name, lens, summary, mermaid, selected_files
         files_list_html=files_list_html,
         reasoning_html=md_to_html(selection_reasoning),
         head_assets=HEAD_ASSETS, tokens=TOKENS, dark_tokens=DARK_TOKENS,
-            shared_style=SHARED_STYLE,
+        shared_style=SHARED_STYLE,
         staleness=html.escape(staleness_disclaimer(generated_at)),
     )
     write_text(os.path.join(out, "index.html"), rendered)
