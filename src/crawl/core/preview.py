@@ -7,10 +7,10 @@ and a count no crawler computed would be a number this command invented. Labels
 are the reader's phrases, not field names, so each says what it counted.
 """
 import textwrap
-from typing import Dict, List, TypedDict
+from typing import Dict, List, NotRequired, TypedDict
 
 
-class Preview(TypedDict, total=False):
+class Preview(TypedDict):
     """What a crawl step found. Not validated at runtime -- documents the contract.
 
     Always present:
@@ -40,9 +40,12 @@ class Preview(TypedDict, total=False):
     counts: Dict[str, int]
     files: Dict[str, List[str]]
     notes: List[str]
-    included: List[str]
-    dropped: List[str]
-    assembled_chars: int
+    # NotRequired per key rather than total=False on the class: the three above
+    # are always present, format_preview reads counts unguarded, and a blanket
+    # total=False would say otherwise.
+    included: NotRequired[List[str]]
+    dropped: NotRequired[List[str]]
+    assembled_chars: NotRequired[int]
 
 
 def aborts(reason: str) -> str:

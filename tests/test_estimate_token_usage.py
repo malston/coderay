@@ -947,3 +947,13 @@ def test_git_history_carries_no_file_quantities_at_all(tmp_path):
     result = ANALYSES["git-history"].preview(_parser_for("git-history").parse_args([str(repo)]))
 
     assert set(result) == {"counts", "files", "notes"}
+
+
+def test_preview_still_requires_the_three_keys_every_analysis_returns():
+    """total=False on the whole TypedDict would make counts, files and notes
+    optional too, which is what the docstring says they are not, and
+    format_preview reads counts unguarded."""
+    from crawl.core.preview import Preview
+
+    assert set(Preview.__required_keys__) == {"counts", "files", "notes"}
+    assert set(Preview.__optional_keys__) == {"included", "dropped", "assembled_chars"}
