@@ -72,13 +72,16 @@
     --font: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     --mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
     --code-bg: #0f172a; --code-fg: #e2e8f0; --thumb: #cbd2dc;
+    /* The top edge of a card, tinted in light and flat in dark. */
+    --card-top: #fbfcfe;
   }
   * { box-sizing: border-box; }
   code, .mono { font-family: var(--mono); }
   pre { background: var(--code-bg); color: var(--code-fg); border-radius: 8px; overflow-x: auto; }
+  pre code { background: transparent; color: inherit; }
   /* let highlight.js color the tokens, but keep our own dark pre background */
   pre code.hljs { background: transparent; padding: 0; color: var(--code-fg); }
-  code { font-family: var(--mono); background: var(--stone-bg); color: var(--text); border-radius: 4px; }
+  code { background: var(--stone-bg); color: var(--text); border-radius: 4px; }
   table { border-collapse: collapse; width: 100%; }
   th, td { border: 1px solid var(--rule); text-align: left; vertical-align: top; }
   th { background: var(--stone-bg); color: var(--muted); }
@@ -154,7 +157,7 @@
       --body-text: #c3c9d5; --body-soft: #a6aebd; --thumb: #2a3346;
       /* A step lighter than the page, so a code block still reads as raised. */
       --code-bg: #161d2c;
-      --accent-soft: #1d2a44;
+      --accent-soft: #1d2a44; --card-top: var(--surface);
     }
     /* Derived where the browser can, so the tint follows whichever renderer set
        --accent. The @supports guard is what preserves the flat value above: a
@@ -166,7 +169,6 @@
     @supports (color: color-mix(in srgb, red 50%, blue)) {
       :root { --accent-soft: color-mix(in srgb, var(--accent) 22%, var(--surface)); }
     }
-    .card-top { background: var(--surface); }
   }
 </style>
 </head>

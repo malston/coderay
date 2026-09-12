@@ -5,9 +5,13 @@ a multi-file reading tour, two hand-built data pages -- but they present the
 same product, so the fonts, colour tokens, code typography and third-party
 head tags are defined once in crawl.core.theme and included by all of them.
 """
+import json
+import pathlib
 import re
 
 import pytest
+
+from crawl.analyses import ANALYSES
 
 from crawl.analyses.git_history import render as git_history_render
 from crawl.analyses.product_intent import render as product_intent_render
@@ -16,7 +20,21 @@ from crawl.core import render, theme
 
 
 def _tags(html):
+    """Tags from the CDN whose builds are pinned and hash-checked."""
     return re.findall(r'<(?:script|link)\b[^>]*cdn\.jsdelivr\.net[^>]*>', html, re.S)
+
+
+def _external_refs(html):
+    """Any tag pulling a resource off the network, whatever the host.
+
+    Broader than _tags on purpose. Google Fonts is exempt from integrity
+    checking, because its css2 endpoint serves different @font-face sources per
+    user-agent and one hash would block the stylesheet for some visitors. That
+    is a separate question from whether a renderer declares the font link
+    itself, which is what the shared layer exists to stop.
+    """
+    return re.findall(r'<(?:script|link)\b[^>]*(?:src|href)="https?://[^"]*"[^>]*>',
+                      html, re.S)
 
 
 # Every page template that carries a <style> block of its own.
@@ -77,7 +95,20 @@ def test_every_renderer_takes_the_head_and_the_tokens_from_one_place():
     for label, template in TEMPLATES.items():
         assert "{head_assets}" in template, f"{label} writes its own head"
         assert "{tokens}" in template, f"{label} writes its own palette"
-        assert not _tags(template), f"{label} writes its own CDN tag instead of sharing one"
+        assert not _external_refs(template), (
+            f"{label} pulls a resource off the network itself instead of sharing one: "
+            f"{_external_refs(template)[0][:90]}")
+
+
+def test_the_renderer_accent_override_follows_the_shared_tokens():
+    """TOKENS carries a default --accent, so an override written above it loses
+    and every analysis renders the same blue. Only the docstring said so."""
+    for label, template in TEMPLATES.items():
+        own = re.search(r":root\s*\{\{?[^}]*--accent:", template)
+        if not own:
+            continue
+        assert template.index("{tokens}") < own.start(), (
+            f"{label} sets its --accent before {{tokens}}, so the default wins")
 
 
 def test_dark_tokens_redefine_the_surface_palette():
@@ -114,17 +145,30 @@ def test_diagrams_follow_the_colour_scheme():
     assert "'dark' : 'neutral'" in theme.HEAD_ASSETS
 
 
+# A colour written out rather than taken from a token. The value side covers
+# more than hex on purpose: rgba() and the bare keywords are just as fixed, and
+# a light one leaves a bright band on a dark page exactly the same way. The
+# property side includes border, because a light rule on a dark surface is the
+# same defect drawn thinner.
+LITERAL_COLOUR = re.compile(
+    r"(?<!-)\b(color|background(?:-color)?|border(?:-color|-top|-bottom|-left|-right)?)"
+    r":[^;]*?(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)|\b(?:white|black)\b)")
+
 # Elements whose colour is fixed by design rather than by the scheme.
 SCHEME_INDEPENDENT = (".hero", ".eyebrow", ".gc-bar", ".bar-fill", ".tl-era", ".num")
 # .gc-bar, .tl-era and .num carry white text; .bar-fill is a saturated bar
 # with no text of its own.
 
 
-def _repainted_in_the_dark():
-    """Selectors the dark block repaints, which may therefore
-    keep a literal value in the light scheme."""
-    return {sel.strip() for sel, _ in
-            re.findall(r"([.\w-]+)\s*\{([^{}]*background[^{}]*)\}", theme.DARK_TOKENS)}
+def test_the_dark_block_only_redefines_tokens():
+    """Four renderers share it, so naming any one renderer's selector there
+    puts that renderer's layout in everyone's stylesheet. Flipping a token does
+    the same work and keeps the module's own boundary honest."""
+    body = theme.DARK_TOKENS.split("{", 1)[1]
+    selectors = [" ".join(s.split()) for s, _ in re.findall(r"([^{}]+)\{([^{}]*)\}", body)]
+    assert selectors, "the dark block declares nothing"
+    for sel in selectors:
+        assert sel.endswith(":root"), f"the dark block styles {sel!r} rather than a token"
 
 
 def test_no_page_hardcodes_a_colour_that_dark_mode_cannot_reach():
@@ -134,16 +178,14 @@ def test_no_page_hardcodes_a_colour_that_dark_mode_cannot_reach():
     one leaves unreadable text on it. Both have happened here, so the check
     runs on every literal rather than on light ones alone.
     """
-    repainted = _repainted_in_the_dark()
-    assert repainted, "the dark block repaints nothing; this allowance is stale"
     for label, template in TEMPLATES.items():
         for sel, body in _rules(label, template):
             # :root declares the tokens; the dark block redefines them there.
-            if sel.endswith(":root") or sel in repainted:
+            if sel.endswith(":root"):
                 continue
             if any(d in sel for d in SCHEME_INDEPENDENT):
                 continue
-            literal = re.search(r"(?<!-)\b(color|background(?:-color)?):[^;]*?(#[0-9a-fA-F]{3,6})", body)
+            literal = LITERAL_COLOUR.search(body)
             assert not literal, (
                 f"{label}: {sel} hardcodes {literal.group(2)} for "
                 f"{literal.group(1)}: {' '.join(body.split())}")
@@ -288,3 +330,51 @@ def test_every_renderer_reaches_the_same_placeholder():
     for label, template in TEMPLATES.items():
         assert "{head_assets}" in template, f"{label} does not take the shared bootstrap"
         assert "el.remove()" not in template, f"{label} drops diagrams on its own terms"
+
+
+# Everything above reads templates and constants. These read what a browser
+# would actually receive, because a template can carry every slot and still
+# ship a page with the slot filled empty -- the golden fixtures would catch
+# that, but a golden is a change-detector, so a regeneration blesses it.
+RENDERED = pathlib.Path(__file__).parent / "fixtures" / "golden"
+
+
+def _rendered_pages():
+    pages = {}
+    for d in sorted(p for p in RENDERED.iterdir() if p.is_dir()):
+        shared = json.loads((d / "shared.json").read_text(encoding="utf-8"))
+        pages[d.name] = render.render_html(ANALYSES[d.name], "toy_repo", shared)
+    return pages
+
+
+@pytest.mark.parametrize("name", sorted(p.name for p in RENDERED.iterdir() if p.is_dir()))
+def test_every_rendered_page_ships_the_shared_layer(name):
+    """Rendered live rather than read off disk, so it holds the renderer itself
+    rather than the bytes someone last regenerated."""
+    shared = json.loads((RENDERED / name / "shared.json").read_text(encoding="utf-8"))
+    page = render.render_html(ANALYSES[name], "toy_repo", shared)
+    assert "@media (prefers-color-scheme: dark)" in page, f"{name} ships no dark mode"
+    assert "family=Inter" in page, f"{name} ships no web fonts"
+    assert "--accent-ink" in page, f"{name} ships no readable accent"
+    assert ".diagram-failed" in page, f"{name} ships no placeholder for a failed diagram"
+
+
+@pytest.mark.parametrize("name", sorted(p.name for p in RENDERED.iterdir() if p.is_dir()))
+def test_the_dark_block_is_last_in_every_rendered_page(name):
+    """The template order is checked above; this checks it survived rendering,
+    since a slot fills with whatever the renderer passes."""
+    shared = json.loads((RENDERED / name / "shared.json").read_text(encoding="utf-8"))
+    css = re.search(r"<style>(.*?)</style>",
+                    render.render_html(ANALYSES[name], "toy_repo", shared), re.S).group(1)
+    dark = css.index("@media (prefers-color-scheme: dark)")
+    tail = css[dark:]
+    # The block's own closing brace, then nothing but whitespace.
+    depth, end = 0, None
+    for i, ch in enumerate(tail):
+        depth += (ch == "{") - (ch == "}")
+        if depth == 0 and ch == "}":
+            end = i + 1
+            break
+    assert end, f"{name}: the dark block never closes"
+    assert not tail[end:].strip(), (
+        f"{name} writes {tail[end:].strip()[:60]!r} after the dark block")

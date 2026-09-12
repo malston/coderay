@@ -188,7 +188,7 @@ HTML_TEMPLATE = """<!doctype html>
     border-radius: var(--radius); box-shadow: var(--shadow);
     display: flex; flex-direction: column; overflow: hidden; }}
   .card-top {{ flex-shrink: 0; padding: 15px 20px 13px; border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, #fbfcfe, var(--surface)); }}
+    background: linear-gradient(180deg, var(--card-top), var(--surface)); }}
   .card-num {{ font-family: 'JetBrains Mono', monospace; font-size: .64rem; font-weight: 700;
     letter-spacing: .12em; color: var(--accent-ink); }}
   .card-name {{ font-size: 1.12rem; font-weight: 800; letter-spacing: -.01em; margin: 3px 0 7px; }}
