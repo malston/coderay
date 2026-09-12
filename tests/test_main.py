@@ -84,8 +84,17 @@ def test_the_tour_opts_back_into_markdown_images():
     prompt-injected model (coderay-q2r.53).
 
     The tour builds its parser with image=True, on the judgment that a reading
-    document should show the diagrams a README embeds. Pinned in both
-    directions so the divergence stays a decision on the record.
+    document should show the diagrams a README embeds.
+
+    That is an accepted risk, not an absent one. Tour prose is LLM output over
+    the target repo's own files, so a prompt-injected model can emit an image
+    whose URL carries repo text, and it fetches when the page opens. What
+    bounds it: the reader is the operator who ran the tour, the output is a
+    local file rather than something served, and no credential is in scope.
+    Revisit the trade if any of those three stop being true.
+
+    Pinned in both directions, so turning it off is a decision someone makes
+    rather than a flip nobody notices.
     """
     out = md_to_html("![a diagram](https://example.com/d.png?who=me)")
     assert "<img" in out, "the tour no longer renders images; was that deliberate?"
