@@ -1,11 +1,11 @@
 ---
 name: epic-loop
-description: Work every open child of a beads epic unattended in Claude Code. One worktree, branch and PR per bead, a failing test first with the guard mutated to prove it bites, a fresh-context review pass, serious findings fixed and the rest filed to a sibling findings epic, then the PR merged (or held for human approval with --hold) and the bead closed before the next one starts. Design and keep-or-delete questions get a recommendation and a `human` tag instead of a decision. Pairs with /goal for the completion condition and a turn budget stored in the epic. Invoke as /epic-loop EPIC-ID, with --hold to stop at ready-for-review instead of merging. Not for a single bead, an epic with no children, or work that needs a human decision at every step.
-argument-hint: <epic-id> [--hold]
+description: Work every open child of a beads epic unattended. Type /epic-loop EPIC-ID in any Claude Code session that has bd, gh, git and claude available. It checks the epic, starts the run in the background, and hands back a log path and a resume command. Nothing to install first and no setup to understand. The run gives each bead its own worktree, branch and PR, writes a failing test first with the guard mutated to prove it bites, reviews in a fresh context, fixes serious findings and files the rest to a sibling findings epic, then merges the PR (or holds it for approval with --hold) and closes the bead before the next one starts. Design and keep-or-delete questions get a recommendation and a `human` tag instead of a decision. Takes --hold, --repo DIR and --dry-run. Not for a single bead, an epic with no children, or work that needs a human decision at every step.
+argument-hint: <epic-id> [--hold] [--repo DIR] [--dry-run]
 compatibility: >-
   Needs the beads issue tracker (bd) and a repository whose work is tracked as
-  beads with parent/child links, plus git and gh. The bundled driver script
-  also needs claude, jq and uuidgen.
+  beads with parent/child links, plus git, gh, jq, uuidgen and the claude CLI.
+  Everything else it finds for itself.
 disable-model-invocation: true
 ---
 
@@ -13,101 +13,83 @@ disable-model-invocation: true
 
 Work the open children of a beads epic, one at a time, until every one is closed, blocked on a held PR, or tagged `human`.
 
-## Arguments
+## Which half of this file you are in
 
-`$ARGUMENTS` is the epic id, optionally followed by `--hold`.
+Read `$ARGUMENTS` before anything else. The bead id is the first word that is not a flag, and it can appear anywhere in the line.
 
-* `EPIC` is the first word.
-* `HOLD` is true if `--hold` appears anywhere. In hold mode you never merge. You stop at ready-for-review and move on.
+* **`--worker` is present.** You are the run. Skip to [Working the run](#working-the-run) and follow it to the end. Everything in the next section is for a session that has not started yet.
+* **`--worker` is absent.** Someone typed this in their own session. You are starting a run, not working beads. Follow [Starting a run](#starting-a-run) and stop there.
 
-Run `bd show $EPIC` first. Its DESIGN field may carry epic-specific instructions, most often the order to work the children in and which beads pair into one PR. Follow those. If DESIGN carries a full loop protocol, that protocol wins over anything below.
+The distinction matters because the two jobs look alike and the failure is expensive: a session that mistakes itself for the launcher spawns a run that spawns a run.
 
 ## Starting a run
 
-Two calls, in this order. The first arms a `/goal`; the second invokes this
-skill in the same session.
+The whole job is to check the epic, launch the driver in the background, and report where it went. Four steps, no questions.
 
-```bash
-claude -p "/goal <condition>" --session-id "$SID" --max-turns 1 \
-    --disallowedTools "Bash,Edit,Write,NotebookEdit,Task,Agent"
-claude -p "/epic-loop <epic-id> [--hold]" --resume "$SID" \
-    --permission-mode bypassPermissions --max-turns 400
-```
+1. **Find the driver.** It is `scripts/epic-loop` under this skill's base directory, named at the top of this invocation. Use that absolute path. `epic-loop` on `PATH` is the same file when it is there, but do not depend on it.
 
-Both calls are required, and the order matters, for three reasons.
+2. **Check the plan.** Run the driver with `--dry-run` and everything the user gave you except the bead id:
 
-The CLI expands only the **first** slash command in a prompt; everything after
-it becomes that command's arguments. A `/goal` on a later line is dead text, so
-the two cannot share one call.
+   ```bash
+   "$DRIVER" <bead> --dry-run [their other flags]
+   ```
 
-This skill sets `disable-model-invocation: true`, so the model will not reach
-either command on its own. They have to be typed.
+   Pass their flags through untouched rather than deciding which ones you recognize. `--hold`, `--repo`, `--budget`, `--model`, `--max-turns`, `--turn-budget` and `--log-dir` all belong to the driver.
 
-The arming call is denied every tool that can change the repository and capped
-at one turn. Without that it starts satisfying the goal in the arming call
-itself, working beads before this protocol is loaded. The goal is still
-recorded, and it survives both the cap and the denial.
+   A dry run spends nothing. It refuses, with a message that names the fix, a bead that does not exist, is closed, has no children or whose children are all settled, and it refuses a linked worktree or a missing dependency.
 
-The condition to arm:
+   If it fails with **"no such bead"**, `bd` is scoped to a repository and you are standing in the wrong one. Ask which repository holds it, then retry with `--repo DIR`. Do not go looking for it.
 
-```text
-/goal Every open child of beads epic <epic-id> is closed, blocked on a held PR, or tagged `human`, worked per /epic-loop; or stop when the epic's turn counter reaches 20
-```
+   On any other failure, relay the driver's message as it stands and stop. It is written for a person.
 
-Interactively it is the same two steps: `/goal <condition>`, then
-`/epic-loop <epic-id>`.
+   If the user passed `--dry-run` themselves, this step is the whole job. Show them the plan, say nothing was spent, and stop.
 
-### The driver script
+3. **Launch it.** Start the driver **in the background** with the user's flags. Background matters: the run outlives your turn, and a foreground call would tie up the session for hours and die with it.
 
-`scripts/epic-loop` assembles both calls. It is a convenience, not a
-requirement -- the two calls above are the whole mechanism.
+   ```bash
+   "$DRIVER" <bead> [their other flags]
+   ```
 
-```bash
-epic-loop <epic-id> --dry-run     # print the calls, spend nothing
-epic-loop <epic-id> --hold        # stop each bead at ready-for-review
-epic-loop <epic-id> --repo DIR --budget 50
-```
+4. **Report and stop.** The driver prints the repo, bead, mode, session, budget and log path before its first `claude` call, so give it a couple of seconds and read the background job's output back. If those lines are an error instead, the run did not start: pass the error on and stop. Otherwise say plainly which mode it is in, because merge mode merges PRs into `main` without asking again:
 
-What it adds beyond typing the calls: it refuses a bead that does not exist, is
-closed, has no children, or whose children are all settled, before spending
-anything. It refuses to run from a linked worktree, since this skill creates
-worktrees under the main checkout and must not nest them. It logs the run and
-prints the resume command when a cap stops it.
+   ```text
+   coderay-q2r -- epic, 7 children needing work
+   repo:    ~/code/coderay
+   mode:    merge (each PR lands on main once its review passes)
+   budget:  $200, stops at 20 epic turns
+   log:     ~/.local/state/epic-loop/20260912T220114Z-coderay-q2r.log
+   resume:  claude --resume 3f2a...
+   ```
 
-It also strips `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` from both calls.
-A repository that exports a key for its own tooling hands it to `claude` too,
-where it outranks the claude.ai login; the run then bills a pay-as-you-go
-account and can die on "Credit balance is too low" before working a single
-bead. Set `EPIC_LOOP_KEEP_API_KEY=1` when that account is the one you mean to
-spend. **Typing the calls by hand carries the same risk**, so prefix them with
-`env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN`.
+   Then stop. Do not work beads yourself, and do not poll the log. The run is a separate session; you will be told when it exits.
 
-`scripts/epic-loop-test` proves the driver still assembles both calls
-correctly. It stubs `claude`, so it spends nothing and touches no repository,
-and it cleans up the throwaway beads it creates. Run it after editing the
-driver.
+If the driver is missing, unrunnable, or you cannot establish which repository is meant, say so and stop. Never fall back to working the beads in this session: this session has no `/goal` driving it, no turn budget, and it will stop after the first bead with the epic half finished.
 
-## How the loop runs
+The two `claude` calls behind the driver, the arming of `/goal`, the API key it strips and why, and the full option list are in `references/how-the-run-works.md`. Read it only if the driver misbehaves or you are changing it.
 
-The user drives this with `/goal`, which re-evaluates the condition after every turn, waits for background review agents before judging, and survives a resumed session. The goal line looks like:
+## Working the run
 
-```text
-/goal Every open child of beads epic <epic-id> is closed, blocked on a held PR, or tagged `human`, worked per /epic-loop; or stop when the epic's turn counter reaches 20
-```
+Everything below here runs in the session the driver started. `EPIC` is the first word of `$ARGUMENTS`; `HOLD` is true if `--hold` appears.
 
-The turn counter lives in the epic so a resumed session doesn't reset it. End every turn, whatever else happened in it, by reading the epic's notes with `bd show $EPIC --json`, replacing the `turns: N` line (or appending one if absent), and writing the whole notes field back with `bd update $EPIC --notes "..."`. Notes is a single field and the user keeps their own remarks in it, so never write only the counter.
+Run `bd show $EPIC` first. Its DESIGN field may carry epic-specific instructions, most often the order to work the children in and which beads pair into one PR. Follow those. If DESIGN carries a full loop protocol, that protocol wins over anything below.
+
+### The turn counter
+
+A `/goal` re-evaluates the completion condition after every turn, waits for background review agents before judging, and survives a resumed session. The counter it stops at lives in the epic so a resumed session does not reset it.
+
+End every turn, whatever else happened in it, by reading the epic's notes with `bd show $EPIC --json`, replacing the `turns: N` line (or appending one if absent), and writing the whole notes field back with `bd update $EPIC --notes "..."`. Notes is a single field and the user keeps their own remarks in it, so never write only the counter.
 
 If no goal is active, keep going anyway. End each turn by picking up the next bead, and stop only at the stop condition at the bottom of this file.
 
-## Paths
+### Paths
 
 `ROOT` is the main checkout, `git rev-parse --show-toplevel` run from where the session started. Worktrees live at `$ROOT/.claude/worktrees/<bead-id>`, always as absolute paths so a worktree is never created inside another. The main checkout belongs to the user. Never switch its branch, and never run a bare `git stash` (the stash stack is shared across worktrees).
 
-## Findings epic
+### Findings epic
 
 Review findings you don't fix go under a sibling epic, never under `$EPIC`. On the first filing of a run, look for an open epic titled `$EPIC review findings` with `bd list --type=epic`. If none exists, create it (`bd create "$EPIC review findings" --type epic`) and record its id in the PR body. Every finding filed there names the PR it came from in its description.
 
-## Per bead
+### Per bead
 
 1. **Pick and isolate.** From `$ROOT`, `git fetch origin`. List open PRs from this loop (`gh pr list --label epic-loop --json number,headRefName,files`). For each held PR whose bead is blocked, check `gh pr view <n> --json state`. If it merged, remove its worktree and branch as in step 7 and `bd close` its bead with the PR number. Then pick the next open bead whose files don't overlap any still-open PR from this loop. If every remaining bead overlaps an open PR, report which PRs need to land and stop. Never base a worktree on another PR's branch. Create the worktree with `git worktree add --no-track -b <branch> $ROOT/.claude/worktrees/<bead-id> origin/main` (`--no-track` so `git push -u origin <branch>` works). If `git worktree list` already shows one for this bead, reuse it. `cd` into it, `uv sync --locked`, and run steps 2 to 6 from there.
 
@@ -125,11 +107,11 @@ Review findings you don't fix go under a sibling epic, never under `$EPIC`. On t
    * Merge mode: `gh pr merge <n> --merge` (a merge commit, not a squash, so the branch tip stays reachable from `origin/main`). Back in `$ROOT`, `git fetch origin`. Once `git branch -r --contains <branch>` lists `origin/main`, `git worktree remove $ROOT/.claude/worktrees/<bead-id>` and `git branch -D <branch>`. The remote branch stays. `bd close <id> --reason="PR <n>: ..."` including any trim, then `bd show <id>` to confirm the status changed. Then the next bead.
    * Hold mode: `gh pr ready <n>` if it's a draft. `bd update <id> --status blocked` and append a line `held: PR <n>` to the bead's notes, preserving whatever is already there. Leave the worktree and branch in place. Then the next non-overlapping bead. The cleanup and close happen in step 1 of a later pass once the PR has merged.
 
-## Decision beads
+### Decision beads
 
 A bead that asks whether to keep or delete code, or that has an open design question, isn't yours to decide. Investigate, write the recommendation with `bd update <id> --notes`, run `bd tag <id> human` (listed by `bd human list`; `bd human <id>` on its own only prints a help menu), and move on. Never delete code that seems unused or rewrite an implementation without the user.
 
-## Never
+### Never
 
 * Edit a bead's title or description. Trims go in the PR body and close reason.
 * Overwrite a notes field. Read it, change your line, write the whole thing back.
@@ -139,6 +121,6 @@ A bead that asks whether to keep or delete code, or that has an open design ques
 * Merge in hold mode.
 * Bump the version, tag, or cut a release.
 
-## Stop
+### Stop
 
 When every child of `$EPIC` is closed, blocked on a held PR, or tagged `human`, report the state in a few lines. Name the findings epic id and how many beads it holds, and in hold mode list the PRs waiting for approval. Then stop.
