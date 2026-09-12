@@ -36,6 +36,10 @@ PROMPTS_DIR = resources.files("crawl.analyses.tour") / "prompts"
 INSTRUCTIONS_DIR = resources.files("crawl.analyses.tour") / "instructions"
 
 PREVIEW_CHARS_PER_FILE = 800
+# How much of the repository the file-selection prompt may show the model.
+# The dry-run estimator counts from the same population, so it reads the
+# same default rather than repeating the number.
+PREVIEW_BUDGET = 1_000_000
 
 NO_SOURCE = ("No source files found. list_files keeps recognised source "
              "extensions outside the skipped directories, under "
@@ -136,7 +140,7 @@ class SmartCrawl(Node):
             # empty manifest reaches the model, and every index it answers with
             # is out of range, so yaml_call burns its retries at full price.
             raise SystemExit(NO_SOURCE)
-        budget = shared.get("preview_budget", 1_000_000)
+        budget = shared.get("preview_budget", PREVIEW_BUDGET)
         chars_per_file = PREVIEW_CHARS_PER_FILE
         max_files = max(1, budget // chars_per_file)
         files = all_files[:max_files]

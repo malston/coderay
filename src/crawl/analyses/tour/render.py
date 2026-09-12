@@ -19,6 +19,8 @@ from crawl.core import (
 from crawl.analyses.tour.nodes import (
     CODEBASE_BUDGET,
     INSTRUCTIONS_DIR,
+    PREVIEW_BUDGET,
+    PREVIEW_CHARS_PER_FILE,
     PROMPTS_DIR,
     PipelineState,
     SmartCrawl,
@@ -333,22 +335,64 @@ def format_session_summary(usage_records, wall_seconds):
 DRY_RUN_CHAPTER_GUESS = 8
 
 
+#: The block SmartCrawl.post wraps each file in: a rule, the path, a rule, and
+#: the blank line joining it to the next. The path length is added per file.
+_BLOCK_CHROME = len("=" * 60) * 2 + len("\nFile: \n") + len("\n\n")
+
+#: How much heavier the model's pick is than a size-blind one of the same
+#: count. Measured on the four recorded runs whose bundle fit under the
+#: budget: 0.8x, 1.8x, 2.1x and 2.4x. The spread is wide, so this is a
+#: correction with an error bar, not a constant. It errs high on purpose --
+#: a cost estimate that reads low is the one that surprises someone.
+SELECTION_SKEW = 2.0
+
+
+def estimated_codebase_chars(repo_path, budget):
+    """How many characters of codebase a real run would send.
+
+    A run does not send the repository. SmartCrawl asks the model for
+    target_files of them, and SmartCrawl.post bundles those whole, each inside
+    a header block, until the budget is spent. Sizing every readable file
+    instead overstated the bundle by 2.6x to 5.8x on the recorded runs whose
+    real selection fits under the budget, and matched only on a repository big
+    enough that both figures were clamped at the ceiling (coderay-3le).
+
+    The count and the block chrome are exact. Which files the model picks is
+    not knowable without asking it, so the mean previewed file stands in for
+    one, carrying SELECTION_SKEW.
+    """
+    all_files = list_files(repo_path)
+    if not all_files:
+        return 0
+    # SmartCrawl.prep previews this many and targets a share of what it saw, so
+    # the estimate has to count from the same population.
+    previewed = all_files[:max(1, PREVIEW_BUDGET // PREVIEW_CHARS_PER_FILE)]
+    sizes = [(len(text), len(os.path.relpath(p, repo_path)))
+             for p, text in ((p, safe_read(p)) for p in previewed) if text is not None]
+    if not sizes:
+        return 0
+
+    # SmartCrawl.prep's target is a floor of 20, which on a small repository
+    # asks for more files than exist. The model can only pick what it was
+    # shown, so the count to size is whichever is smaller.
+    target = min(50, max(20, len(previewed) // 20), len(sizes))
+    mean_block = sum(n + path for n, path in sizes) / len(sizes) + _BLOCK_CHROME
+    # Skew is what a selection costs. Where the target covers every file there
+    # is no selection to be made, so applying it would inflate the one case
+    # the estimate can otherwise get exactly right.
+    skew = SELECTION_SKEW if target < len(sizes) else 1.0
+    return int(min(budget, target * mean_block * skew))
+
+
 def _codebase_preview_text(repo_path, budget):
-    """Best-guess codebase text for dry-run sizing: the first files
-    list_files() returns, up to budget chars. Not the same files the real
-    SmartCrawl LLM call would pick, but close enough in total size to
-    estimate prompt length."""
-    parts = []
-    total = 0
-    for p in list_files(repo_path):
-        if total >= budget:
-            break
-        text = safe_read(p)
-        if text is None:
-            continue
-        parts.append(text)
-        total += len(text)
-    return "\n\n".join(parts)
+    """Filler standing in for the codebase inside a prompt being sized.
+
+    Only its length matters, and estimated_codebase_chars is what decides
+    that, so this is a block of that length rather than the repository's own
+    text: reading every file to throw the content away cost a second or more
+    on a large repository.
+    """
+    return "x" * estimated_codebase_chars(repo_path, budget)
 
 
 def estimate_dry_run_cost(repo_path, instructions, provider, model, chapter_guess=DRY_RUN_CHAPTER_GUESS,
@@ -419,7 +463,11 @@ def format_dry_run_summary(estimate):
         f"up to ~{estimate['estimated_output_tokens_worst_case']} output tokens\n"
         "Note: this estimate does not account for prompt caching -- a real run "
         "reuses the same codebase block across calls, so actual cost is often "
-        "lower than the low end shown here."
+        "lower than the low end shown here.\n"
+        "The codebase figure models the files a run sends rather than the whole "
+        "repository, but which files the model picks is not knowable in advance. "
+        "Against five recorded runs it landed between 0.7x and 2.3x the real "
+        "bundle (coderay-3le)."
         + _dry_run_refusal_note(estimate)
     )
 

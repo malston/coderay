@@ -9,6 +9,7 @@ from crawl.analyses.tour.render import (
     build_related_links,
     default_output_dir,
     estimate_dry_run_cost,
+    estimated_codebase_chars,
     format_dry_run_summary,
     format_session_summary,
     md_to_html,
@@ -17,6 +18,7 @@ from crawl.analyses.tour.render import (
     write_index_html,
     write_index_md,
 )
+from crawl.analyses.tour import render as render_theme
 from crawl.analyses.tour.nodes import slug
 
 
@@ -451,3 +453,83 @@ def test_dry_run_flag_reports_the_codebase_budget_it_would_use(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert "Codebase budget: 2,000,000 chars" in result.stdout
+
+
+# coderay-3le. The dry-run estimator sized the codebase from every readable
+# file, where a real run sends the ~20 the model picks, each wrapped in a
+# header block. Measured against five past runs whose selections are on
+# record, that overstated by 2.6x to 5.8x on repos under the budget.
+def _repo(tmp_path, sizes):
+    """A repo of len(sizes) python files, sizes[i] chars each."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    for i, n in enumerate(sizes):
+        (tmp_path / f"mod_{i:03d}.py").write_text("x" * n, encoding="utf-8")
+    return str(tmp_path)
+
+
+def test_the_estimate_sizes_the_files_a_run_sends_not_every_file(tmp_path):
+    """100 files, of which SmartCrawl targets 20. Sizing all 100 is the bug."""
+    repo = _repo(tmp_path, [1000] * 100)
+    chars = estimated_codebase_chars(repo, budget=10_000_000)
+    every_file = 100 * 1000
+    assert chars < every_file / 2, (
+        f"{chars:,} is closer to all 100 files ({every_file:,}) than to the 20 sent")
+
+
+def test_the_estimate_counts_the_header_each_file_is_wrapped_in(tmp_path):
+    """SmartCrawl.post wraps every file in a rule, its path and another rule.
+    On twenty small files that chrome is most of the bundle."""
+    repo = _repo(tmp_path, [10] * 100)
+    chars = estimated_codebase_chars(repo, budget=10_000_000)
+    assert chars > 20 * 100, f"{chars:,} looks like bare text with no block chrome"
+
+
+def test_the_estimate_stops_at_the_budget(tmp_path):
+    """The real bundle stops there, so an estimate above it is unreachable."""
+    repo = _repo(tmp_path, [50_000] * 100)
+    assert estimated_codebase_chars(repo, budget=200_000) <= 200_000
+
+
+def test_the_estimate_carries_the_measured_skew(tmp_path):
+    """The model picks architecturally important files, which ran 0.8x to 2.4x
+    a size-blind pick over the four uncapped runs measured. Without the
+    correction the estimate understated three of those four."""
+    repo = _repo(tmp_path, [1000] * 100)
+    chars = estimated_codebase_chars(repo, budget=10_000_000)
+    # The block chrome alone puts the figure above the bare text, so compare
+    # against twenty whole blocks: only the skew can carry it past that.
+    one_block = 1000 + len("mod_000.py") + render_theme._BLOCK_CHROME
+    assert chars > 20 * one_block * 1.5, (
+        f"{chars:,} is one skew-free bundle of {20 * one_block:,}")
+
+
+def test_an_empty_repo_estimates_nothing(tmp_path):
+    assert estimated_codebase_chars(str(tmp_path), budget=1000) == 0
+
+
+def test_the_estimate_tracks_the_real_bundle_on_a_recorded_run(tmp_path):
+    """A repo shaped like intapp-ai-pdlc, the closest of the measured runs:
+    270 files, 20 picked, a real bundle of 384,428 chars. The estimate should
+    land within a factor of two of that rather than the 2.6x it did."""
+    repo = _repo(tmp_path, [9_500] * 270)
+    chars = estimated_codebase_chars(repo, budget=1_000_000)
+    real = 384_428
+    assert real / 2 < chars < real * 2, f"{chars:,} is not within 2x of {real:,}"
+
+
+def test_a_repo_smaller_than_the_target_is_not_sized_as_if_it_were_bigger(tmp_path):
+    """SmartCrawl's target has a floor of 20, which on a seven-file repository
+    asks for more files than exist. Sizing 20 of them put a measured run from
+    1.2x to 7.5x before the count was capped at what the model was shown."""
+    repo = _repo(tmp_path, [1000] * 7)
+    chars = estimated_codebase_chars(repo, budget=10_000_000)
+    every_file = 7 * (1000 + 130)
+    assert chars < every_file * 1.5, (
+        f"{chars:,} sizes more than the {7} files that exist ({every_file:,})")
+
+
+def test_a_repo_the_model_cannot_select_within_carries_no_skew(tmp_path):
+    """Skew is what choosing costs. Where the target covers every file there is
+    no choice, and applying it inflates the one case this can get exact."""
+    small = estimated_codebase_chars(_repo(tmp_path / "s", [1000] * 5), budget=10_000_000)
+    assert small < 5 * (1000 + 130) * 1.5, f"{small:,} applies skew with nothing to choose"
