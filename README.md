@@ -93,7 +93,6 @@ Requires Python 3.11 or newer.
 ```bash
 pip install -e .            # or: pip install -e ".[openai,gemini]" for those providers
 cp .env.example .env        # fill in the one key you need, see .env.example for all options
-export GEMINI_API_KEY=...   # or ANTHROPIC_API_KEY / OPENAI_API_KEY
 
 crawl tour path/to/repo     # multi-chapter codebase tour
 # OR

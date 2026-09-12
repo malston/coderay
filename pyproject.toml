@@ -19,6 +19,7 @@ dependencies = [
     "tree-sitter-typescript>=0.23.2,<0.25",
     # go 0.25.0 needs language ABI 15, which core 0.26 still loads; the other grammars stay at 0.23.x.
     "tree-sitter-go>=0.23,<0.26",
+    "python-dotenv>=1.0,<2",
 ]
 
 [project.optional-dependencies]

@@ -5,6 +5,7 @@ import sys
 from importlib.metadata import version
 
 from crawl.analyses import ANALYSES
+from crawl.core.env import load_dotenv
 from crawl.core.preview import format_preview
 from crawl.core.runner import require_directory
 
@@ -44,6 +45,10 @@ def _drop_arguments(parser, flags):
 
 
 def main():
+    # Before any provider is resolved, so the key can live in .env rather than
+    # in the shell where every other process would inherit it (coderay-ebq).
+    load_dotenv()
+
     parser = argparse.ArgumentParser(prog="crawl")
     parser.add_argument("--version", action="version", version=f"crawl {version('crawl')}")
     subparsers = parser.add_subparsers(dest="analysis", required=True)
