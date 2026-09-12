@@ -34,14 +34,14 @@ A five-stage pipeline (BuildBundle, Inventory, TechStack, TraceRequest, Overview
 - Expects a multi-service application. The run stops before it spends an LLM call only when the whole bundle is empty; a repo with no config files but some dependencies or SDK imports still proceeds, which is how the CDK case below reports `0 config files` and carries on.
 - Known limitations, worth reading before you spend a run:
   - Infrastructure written in a general-purpose language is invisible. AWS CDK and Pulumi stacks are ordinary `.ts`/`.py` programs, and SAM `template.yaml` is an ordinary YAML file, so none of them are classified. A CDK repository reports `0 config files` while its stacks sit in `infra/lib/`. Tracked as `coderay-q2r.10`.
-  - Credential values are stripped from the bundle before it is sent, by key name (`password`, `token`, `secret`, and similar), by connection-string position (`postgres://user:pw@host`), and for every value under a Kubernetes `Secret`. Names, service topology, images and ports survive. This is a redactor, not a secret scanner: a credential under an unguessable key name in a file that is not a `Secret` can still get through, so treat the bundle as sensitive.
-  - SDK import evidence comes from `git grep`, so it needs the target to be its own git checkout. Outside one (a tarball export, a directory inside some other repository, no git binary) the bundle, the run's stats line and the report footer say the evidence was unavailable and that every connection is configured, not proven live.
+  - Credential values are stripped from the bundle before it is sent, by key name (`password`, `token`, `secret`, and similar), by connection-string position (`postgres://user:pw@host`), and for every value under a Kubernetes `Secret`. Names, service topology, images, and ports survive. This is a redactor, not a secret scanner: a credential under an unguessable key name in a file that is not a `Secret` can still get through, so treat the bundle as sensitive.
+  - SDK import evidence comes from `git grep`, so it needs the target to be its own git checkout. Outside one (a tarball export, a directory inside some other repository, no git binary) the bundle, the run's stats line, and the report footer say the evidence was unavailable and that every connection is configured, not proven live.
 
 ### Interfaces
 
 A five-stage pipeline (FindRoutes, ApiMenu, TraceActions, EndpointSequence, OverviewNode) that reads a product's API surface at three levels of zoom:
 
-- Collects the files that declare entry points by framework convention: Rails `config/routes.rb`, Django `urls.py`, Express and Fastify routers, Next.js `pages/api/` and `app/**/route.ts`, tRPC, GraphQL and gRPC schemas, and any Go file whose text registers handlers, since Go has no route-file name. Manifests and aggregators are read first, so a size cap trims single handlers rather than the map.
+- Collects the files that declare entry points by framework convention: Rails `config/routes.rb`, Django `urls.py`, Express and Fastify routers, Next.js `pages/api/` and `app/**/route.ts`, tRPC, GraphQL, and gRPC schemas, and any Go file whose text registers handlers, since Go has no route-file name. Manifests and aggregators are read first, so a size cap trims single handlers rather than the map.
 - Renders four views: every endpoint grouped by feature and sized against the biggest group, a short tour of the groups that say the most about the product, one user gesture traced across service lanes, and a message-by-message sequence diagram of a single endpoint. The tour is omitted rather than rendered empty when the model writes none.
 - Expects a web API. Pointed at a repository with no surface files, the run stops before it spends an LLM call.
 - Known limitation, worth reading before you spend a run:
@@ -62,7 +62,7 @@ A six-stage pipeline (FindSchema, SchemaTour, TraceFlows, TableDeepDive, Migrati
 A five-stage pipeline (FetchHistory, NameEras, ProfileEras, Graveyard, OverviewNode) that reads a product's story out of its commit log:
 
 - Compresses the whole history into a directory-by-month survey, then asks the model to name three to five eras from it. Each era is then profiled one at a time, in order, so a later era can be contrasted with the ones before it.
-- The graveyard reads the biggest deletions -- the features the team built and later removed -- skipping vendored and build churn so `node_modules/` does not bury the real ones. `--max-graves` and `--grave-min-files` tune it.
+- The graveyard reads the biggest deletions: the features the team built and later removed. It skips vendored and build churn so `node_modules/` does not bury the real ones. `--max-graves` and `--grave-min-files` tune it.
 - Builds its page from structured data rather than markdown blobs, so it ships its own renderer instead of the shared card engine.
 - Needs a git checkout. Pointed at a directory that is not one, `git log` fails and the run stops with git's own message.
 
@@ -81,8 +81,8 @@ A five-stage pipeline (FetchRepo, PainScene, VariantSentence, CompetitivePositio
 Every analysis sends repository content to an LLM provider. Three rules hold across all of them:
 
 - Files discovered by the crawl are read only if they resolve inside the target repository, so a checked-in symlink pointing at `~/.aws/credentials` is refused rather than read.
-- `product-intent` sends whole source files to the model, up to a fixed budget, in directory order rather than by LLM selection as the tour does. The crawler's skip list applies, so credential-named files (`.env*`, `*.pem`, `secrets.yml` and the rest) are never read; a key pasted inline in `config.py` still goes.
-- `git-history` sends commit diffs to the model. The body of a credential-bearing file (`.env*`, `*.pem`, `terraform.tfvars` and the rest of the crawler's skip list) is stripped from those diffs first, while its path and the `--stat` line stay, since a secret being deleted is itself worth reporting.
+- `product-intent` sends whole source files to the model, up to a fixed budget, in directory order rather than by LLM selection as the tour does. The crawler's skip list applies, so credential-named files (`.env*`, `*.pem`, `secrets.yml`, and the rest) are never read; a key pasted inline in `config.py` still goes.
+- `git-history` sends commit diffs to the model. The body of a credential-bearing file (`.env*`, `*.pem`, `terraform.tfvars`, and the rest of the crawler's skip list) is stripped from those diffs first, while its path and the `--stat` line stay, since a secret being deleted is itself worth reporting.
 - The `architecture` bundle strips credential values by key name, by position in a connection string, from Kubernetes `name`/`value` env pairs, and from every value in a Kubernetes `Secret`. This is a redactor, not a secret scanner: a credential under an unguessable key name in a file that is not a `Secret` can still get through.
 - `crawl schema --schema <path>` is exempt from the containment rule, because that path is yours rather than the repository's.
 
@@ -217,9 +217,9 @@ A tour analyses a small selection of a repository. It arrives at that selection 
 | 2. The preview manifest | 1,250 | The first 800 chars of each file, until a 1,000,000-char budget is spent                                       |
 | 3. The selection        | ~50   | The LLM picks from the manifest; those files are read whole. Needs a model, so the preview stops before it |
 
-**Step 1 counts what the crawler kept.** [`list_files`](src/crawl/core/files.py) drops unrecognised extensions, skipped directories (`node_modules`, `.git`, `dist`, vendored trees) and files over 500 KB before it returns. `Source files found` is the count that survives all three filters, so it runs well below the file count of the folder itself.
+**Step 1 counts what the crawler kept.** [`list_files`](src/crawl/core/files.py) drops unrecognised extensions, skipped directories (`node_modules`, `.git`, `dist`, vendored trees), and files over 500 KB before it returns. `Source files found` is the count that survives all three filters, so it runs well below the file count of the folder itself.
 
-**What the preview manifest is.** To ask the model which files matter, `SmartCrawl.prep` in [`src/crawl/analyses/tour/nodes.py`](src/crawl/analyses/tour/nodes.py) builds one block of text holding the first 800 characters of each file, enough to show the imports, the class names and the opening docstring. That block fills the `{manifest}` slot in [`src/crawl/analyses/tour/prompts/select-files.md`](src/crawl/analyses/tour/prompts/select-files.md) and goes out as the selection prompt. It lives in memory for the length of that one call.
+**What the preview manifest is.** To ask the model which files matter, `SmartCrawl.prep` in [`src/crawl/analyses/tour/nodes.py`](src/crawl/analyses/tour/nodes.py) builds one block of text holding the first 800 characters of each file, enough to show the imports, the class names, and the opening docstring. That block fills the `{manifest}` slot in [`src/crawl/analyses/tour/prompts/select-files.md`](src/crawl/analyses/tour/prompts/select-files.md) and goes out as the selection prompt. It lives in memory for the length of that one call.
 
 > Two different things share the word "manifest" here. The preview manifest above is the text the model chooses from. The `manifest.json` a successful run writes beside its report is a separate file, written afterwards, recording which repo files the prompts carried. The preview manifest never reaches disk.
 
@@ -286,7 +286,7 @@ flowchart LR
     relate --> write[WriteChapters]
 ```
 
-1. **SmartCrawl.** Two phases. First, filter files by extension and skip obvious noise (`tests/`, `docs/`, lock files, anything over 500 KB). Then build a preview manifest — the first few hundred characters of each remaining file — and ask the LLM to select the roughly 0.1-2% of files that matter most, using the selection rules in [`src/crawl/analyses/tour/prompts/select-files.md`](src/crawl/analyses/tour/prompts/select-files.md).
+1. **SmartCrawl.** Two phases. First, filter files by extension and skip obvious noise (`tests/`, `docs/`, lock files, anything over 500 KB). Then build a preview manifest holding the first 800 characters of each remaining file, and ask the LLM to select the roughly 0.1-2% of files that matter most, using the selection rules in [`src/crawl/analyses/tour/prompts/select-files.md`](src/crawl/analyses/tour/prompts/select-files.md).
 2. **ExtractGraph.** No LLM call: deterministically parses each selected file's imports (Python/JS/TS/Go) into `symbol_graph`, the edges Relate later checks against.
 3. **Analyze.** One LLM call. Returns a YAML list of 5-10 abstractions, each with a short description, plus a suggested learning order.
 4. **Relate.** One LLM call. Returns the relationships (edges) between those abstractions, each tagged `EXTRACTED` (backed by a real import edge between the abstractions' files, Python/JS/TS/Go only) or `INFERRED` (LLM judgment). The mermaid diagram in `index.html` draws `EXTRACTED` edges solid, `INFERRED` edges dashed.
@@ -296,7 +296,7 @@ WriteChapters runs sequentially on purpose: running it in parallel would lose th
 
 ## Example output
 
-One real tour, generated end to end against [karpathy/micrograd](https://github.com/karpathy/micrograd) (`output/` is gitignored, so this isn't checked in — run the quickstart above to generate your own):
+One real tour, generated end to end against [karpathy/micrograd](https://github.com/karpathy/micrograd) (`output/` is gitignored, so this isn't checked in -- run the quickstart above to generate your own):
 
 | Tour             | Files selected | Chars selected | Abstractions | Relationships | Chapters |
 | ---------------- | -------------- | -------------- | ------------ | ------------- | -------- |
