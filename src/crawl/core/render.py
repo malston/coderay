@@ -14,6 +14,7 @@ from markdown_it import MarkdownIt
 
 from .llm import extract_mermaid  # noqa: F401  (re-exported for custom renderers)
 from .text import printable  # noqa: F401  (the renderers' callers reach it from here)
+from .theme import DARK_TOKENS, HEAD_ASSETS, TOKENS
 
 # coderay-q2r.53: image syntax is off. `![x](https://host/p?leak=...)` became a
 # live <img> that fires on page open, an egress channel from repo text via
@@ -192,48 +193,13 @@ PAGE = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{name}: {title_suffix}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css"
-  integrity="sha384-wH75j6z1lH97ZOpMOInqhgKzFkAInZPPSPlZpYKYTOqsaizPvhQZmAtLcPKXpLyH" crossorigin="anonymous">
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"
-  integrity="sha384-F/bZzf7p3Joyp5psL90p/p89AZJsndkSoGwRpXcZhleCWhd8SnRuoYo4d0yirjJp" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js"
-  integrity="sha384-EOXBFmc3gx5mb+vn0vPvvGqACToJD24hhacX5Yx+8NUUQrHIle/Qi5Bg9o3zKwW2" crossorigin="anonymous"></script>
-<script>
-  // 'strict' sanitises LLM-authored diagram labels; see coderay-q2r.11.
-  if (window.mermaid) mermaid.initialize({{ startOnLoad: false, theme: 'neutral', securityLevel: 'strict' }});
-</script>
-<script>
-  window.addEventListener('load', async function () {{
-    if (window.hljs) {{ try {{ hljs.highlightAll(); }} catch (e) {{}} }}
-    if (!window.mermaid) return;
-    var blocks = document.querySelectorAll('pre.mermaid');
-    for (var i = 0; i < blocks.length; i++) {{
-      var el = blocks[i], src = el.textContent;
-      try {{
-        if ((await mermaid.parse(src, {{ suppressErrors: true }})) === false) {{ el.remove(); continue; }}
-        var out = await mermaid.render('mmd' + i, src);
-        el.innerHTML = out.svg;
-      }} catch (e) {{ el.remove(); }}
-    }}
-  }});
-</script>
+{head_assets}
 <style>
-  :root {{
-    --bg: #f7f8fa; --surface: #fff; --text: #101828; --muted: #667085;
-    --faint: #98a2b3; --rule: #e4e7ec; --line: #eef0f3;
-    --accent: {accent}; --accent-soft: {accent_soft}; --good: #16a34a; --stone: #9aa4b2;
-    --stone-bg: #f2f4f7; --shadow: 0 1px 2px rgba(16,24,40,.05); --radius: 12px;
-  }}
-  * {{ box-sizing: border-box; }}
-  body {{ font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-    font-size: 13.5px; line-height: 1.5; background: var(--bg); color: var(--text); margin: 0;
-    -webkit-font-smoothing: antialiased; }}
-  code, .mono {{ font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; }}
+{tokens}
+  :root {{ --accent: {accent}; --accent-soft: {accent_soft}; }}
+  body {{ font-family: var(--font); font-size: 13.5px; line-height: 1.5;
+    background: var(--bg); color: var(--text); margin: 0; -webkit-font-smoothing: antialiased; }}
   main {{ max-width: 1280px; margin: 0 auto; padding: 0 24px 56px; }}
 
   .hero {{ background: radial-gradient(120% 140% at 50% 0%, {hero_from} 0%, {hero_to} 70%);
@@ -261,10 +227,10 @@ PAGE = """<!doctype html>
     border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px 24px; margin: 30px 0 4px; }}
   .intro-label {{ font-size: .68rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
     color: var(--accent); margin-bottom: 10px; }}
-  .intro p {{ margin: .5em 0; font-size: .96rem; color: #344054; line-height: 1.7; }}
+  .intro p {{ margin: .5em 0; font-size: .96rem; color: var(--body-text); line-height: 1.7; }}
   .intro p:first-child {{ margin-top: 0; }}
   .intro strong {{ color: var(--text); }}
-  .sec-intro {{ font-size: .9rem; color: #475467; line-height: 1.6; margin: -4px 2px 12px; }}
+  .sec-intro {{ font-size: .9rem; color: var(--body-soft); line-height: 1.6; margin: -4px 2px 12px; }}
   .sec-intro p {{ margin: 0; }}
 
   .diagram {{ background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius);
@@ -287,41 +253,40 @@ PAGE = """<!doctype html>
     scroll-snap-type: x proximity; padding: 4px 2px 18px; margin: 0; list-style: none; }}
   .rail::-webkit-scrollbar {{ height: 9px; }}
   .rail::-webkit-scrollbar-track {{ background: var(--line); border-radius: 5px; }}
-  .rail::-webkit-scrollbar-thumb {{ background: #cbd2dc; border-radius: 5px; }}
+  .rail::-webkit-scrollbar-thumb {{ background: var(--thumb); border-radius: 5px; }}
 {rail_widths}
 
   .scroll {{ flex: 1; overflow-y: auto; overscroll-behavior: contain; }}
   .scroll::-webkit-scrollbar {{ width: 9px; }}
-  .scroll::-webkit-scrollbar-thumb {{ background: #dce0e7; border-radius: 5px; }}
+  .scroll::-webkit-scrollbar-thumb {{ background: var(--thumb); border-radius: 5px; }}
 
   .card {{ scroll-snap-align: start; background: var(--surface); border: 1px solid var(--rule);
     border-radius: var(--radius); box-shadow: var(--shadow); border-top: 3px solid var(--accent);
     display: flex; flex-direction: column; overflow: hidden; max-height: 72vh; }}
   .card-top {{ flex-shrink: 0; padding: 14px 18px 12px; border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, {card_top_from}, #fff); font-weight: 700; font-size: .96rem; line-height: 1.35; }}
+    background: linear-gradient(180deg, {card_top_from}, var(--surface)); font-weight: 700; font-size: .96rem; line-height: 1.35; }}
   .card-top code {{ font-size: .82em; }}
   .card-body {{ padding: 13px 18px 16px; font-size: .84rem; }}
-  .card-body p {{ margin: .5em 0; color: #344054; line-height: 1.6; }}
+  .card-body p {{ margin: .5em 0; color: var(--body-text); line-height: 1.6; }}
   .card-body p:first-child {{ margin-top: 0; }}
   .card-body strong {{ color: var(--text); }}
   .card-body em {{ color: var(--muted); }}
   .card-body ul, .card-body ol {{ margin: .5em 0; padding-left: 1.3em; }}
-  .card-body li {{ margin: .28em 0; color: #344054; line-height: 1.55; }}
+  .card-body li {{ margin: .28em 0; color: var(--body-text); line-height: 1.55; }}
 
-  pre {{ background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 11px 13px; overflow-x: auto; margin: 10px 0; }}
+  pre {{ padding: 11px 13px; margin: 10px 0; }}
   pre code {{ padding: 0; font-size: .74rem; line-height: 1.5; }}
-  pre code.hljs {{ background: transparent; padding: 0; color: #e2e8f0; }}
-  code {{ font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: .84em;
-    background: var(--stone-bg); color: var(--text); padding: 1px 5px; border-radius: 4px; }}
+  code {{ font-size: .84em; padding: 1px 5px; }}
 
-  table {{ border-collapse: collapse; width: 100%; margin: 10px 0; font-size: .78rem; }}
-  th, td {{ border: 1px solid var(--rule); padding: 6px 8px; text-align: left; vertical-align: top; }}
-  th {{ background: var(--stone-bg); font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }}
+  table {{ margin: 10px 0; font-size: .78rem; }}
+  th, td {{ padding: 6px 8px; }}
+  th {{ font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; }}
   td code {{ font-size: .92em; }}
 
   footer {{ color: var(--faint); font-size: .74rem; text-align: center; margin-top: 44px;
     padding-top: 18px; border-top: 1px solid var(--rule); }}
   @media (max-width: 560px) {{ .card {{ flex-basis: 86vw !important; width: 86vw !important; }} }}
+{dark_tokens}
 </style>
 </head>
 <body>
@@ -372,6 +337,7 @@ def _render_card_page(analysis, name, shared):
         hero_from=theme.hero_from, hero_to=theme.hero_to,
         eyebrow_color=theme.eyebrow_color, eyebrow_bar=theme.eyebrow_bar,
         sub_color=theme.sub_color, card_top_from=theme.card_top_from,
+        head_assets=HEAD_ASSETS, tokens=TOKENS, dark_tokens=DARK_TOKENS,
         rail_widths=_rail_widths(analysis.SECTIONS),
         subtitle=theme.subtitle(shared),
         intro=theme.hero_prefix(shared) if theme.hero_prefix else "",

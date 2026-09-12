@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>toy_repo: backend</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -14,12 +14,26 @@
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js"
   integrity="sha384-EOXBFmc3gx5mb+vn0vPvvGqACToJD24hhacX5Yx+8NUUQrHIle/Qi5Bg9o3zKwW2" crossorigin="anonymous"></script>
 <script>
+  // Disable auto-run SYNCHRONOUSLY, before DOMContentLoaded -- otherwise Mermaid
+  // renders every diagram itself, and our loop below would re-process the
+  // already-rendered SVG and wipe it.
   // 'strict' sanitises LLM-authored diagram labels; see coderay-q2r.11.
-  if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'strict' });
+  var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  if (window.mermaid) mermaid.initialize({
+    startOnLoad: false, theme: prefersDark ? 'dark' : 'neutral', securityLevel: 'strict' });
 </script>
 <script>
   window.addEventListener('load', async function () {
-    if (window.hljs) { try { hljs.highlightAll(); } catch (e) {} }
+    // Syntax-highlight code blocks. (Mermaid pres have no <code>, so they're skipped.)
+    // The catch keeps a highlighting failure from aborting this listener, which
+    // would leave every diagram below unrendered.
+    if (window.hljs) {
+      try { hljs.highlightAll(); } catch (e) { console.warn('crawl: syntax highlighting failed', e); }
+    }
+    // Render each diagram, but validate first with parse() so a diagram the model
+    // got wrong is silently DROPPED -- no "Syntax error" box, no orphan graphics.
+    // A data-driven page can't guarantee valid Mermaid; a missing diagram beats
+    // an error box.
     if (!window.mermaid) return;
     var blocks = document.querySelectorAll('pre.mermaid');
     for (var i = 0; i < blocks.length; i++) {
@@ -28,7 +42,10 @@
         if ((await mermaid.parse(src, { suppressErrors: true })) === false) { el.remove(); continue; }
         var out = await mermaid.render('mmd' + i, src);
         el.innerHTML = out.svg;
-      } catch (e) { el.remove(); }
+      } catch (e) {
+        console.warn('crawl: diagram ' + i + ' failed to render', e);
+        el.remove();
+      }
     }
   });
 </script>
@@ -36,14 +53,26 @@
   :root {
     --bg: #f7f8fa; --surface: #fff; --text: #101828; --muted: #667085;
     --faint: #98a2b3; --rule: #e4e7ec; --line: #eef0f3;
-    --accent: #4f46e5; --accent-soft: #eef2ff; --good: #16a34a; --stone: #9aa4b2;
+    --accent: #2563eb; --accent-soft: #dbeafe; --good: #16a34a; --stone: #9aa4b2;
     --stone-bg: #f2f4f7; --shadow: 0 1px 2px rgba(16,24,40,.05); --radius: 12px;
+    --body-text: #344054; --body-soft: #475467;
+    --font: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+    --code-bg: #0f172a; --code-fg: #e2e8f0; --thumb: #cbd2dc;
   }
   * { box-sizing: border-box; }
-  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-    font-size: 13.5px; line-height: 1.5; background: var(--bg); color: var(--text); margin: 0;
-    -webkit-font-smoothing: antialiased; }
-  code, .mono { font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; }
+  code, .mono { font-family: var(--mono); }
+  pre { background: var(--code-bg); color: var(--code-fg); border-radius: 8px; overflow-x: auto; }
+  /* let highlight.js color the tokens, but keep our own dark pre background */
+  pre code.hljs { background: transparent; padding: 0; color: var(--code-fg); }
+  code { font-family: var(--mono); background: var(--stone-bg); color: var(--text); border-radius: 4px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid var(--rule); text-align: left; vertical-align: top; }
+  th { background: var(--stone-bg); color: var(--muted); }
+
+  :root { --accent: #4f46e5; --accent-soft: #eef2ff; }
+  body { font-family: var(--font); font-size: 13.5px; line-height: 1.5;
+    background: var(--bg); color: var(--text); margin: 0; -webkit-font-smoothing: antialiased; }
   main { max-width: 1280px; margin: 0 auto; padding: 0 24px 56px; }
 
   .hero { background: radial-gradient(120% 140% at 50% 0%, #1e1b4b 0%, #0f0d2b 70%);
@@ -71,10 +100,10 @@
     border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px 24px; margin: 30px 0 4px; }
   .intro-label { font-size: .68rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
     color: var(--accent); margin-bottom: 10px; }
-  .intro p { margin: .5em 0; font-size: .96rem; color: #344054; line-height: 1.7; }
+  .intro p { margin: .5em 0; font-size: .96rem; color: var(--body-text); line-height: 1.7; }
   .intro p:first-child { margin-top: 0; }
   .intro strong { color: var(--text); }
-  .sec-intro { font-size: .9rem; color: #475467; line-height: 1.6; margin: -4px 2px 12px; }
+  .sec-intro { font-size: .9rem; color: var(--body-soft); line-height: 1.6; margin: -4px 2px 12px; }
   .sec-intro p { margin: 0; }
 
   .diagram { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius);
@@ -97,43 +126,63 @@
     scroll-snap-type: x proximity; padding: 4px 2px 18px; margin: 0; list-style: none; }
   .rail::-webkit-scrollbar { height: 9px; }
   .rail::-webkit-scrollbar-track { background: var(--line); border-radius: 5px; }
-  .rail::-webkit-scrollbar-thumb { background: #cbd2dc; border-radius: 5px; }
+  .rail::-webkit-scrollbar-thumb { background: var(--thumb); border-radius: 5px; }
   .rail.pipe .card { flex: 0 0 400px; width: 400px; }
   .rail.code .card { flex: 0 0 520px; width: 520px; }
   .rail.trace .card { flex: 0 0 460px; width: 460px; }
 
   .scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
   .scroll::-webkit-scrollbar { width: 9px; }
-  .scroll::-webkit-scrollbar-thumb { background: #dce0e7; border-radius: 5px; }
+  .scroll::-webkit-scrollbar-thumb { background: var(--thumb); border-radius: 5px; }
 
   .card { scroll-snap-align: start; background: var(--surface); border: 1px solid var(--rule);
     border-radius: var(--radius); box-shadow: var(--shadow); border-top: 3px solid var(--accent);
     display: flex; flex-direction: column; overflow: hidden; max-height: 72vh; }
   .card-top { flex-shrink: 0; padding: 14px 18px 12px; border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, #fafaff, #fff); font-weight: 700; font-size: .96rem; line-height: 1.35; }
+    background: linear-gradient(180deg, #fafaff, var(--surface)); font-weight: 700; font-size: .96rem; line-height: 1.35; }
   .card-top code { font-size: .82em; }
   .card-body { padding: 13px 18px 16px; font-size: .84rem; }
-  .card-body p { margin: .5em 0; color: #344054; line-height: 1.6; }
+  .card-body p { margin: .5em 0; color: var(--body-text); line-height: 1.6; }
   .card-body p:first-child { margin-top: 0; }
   .card-body strong { color: var(--text); }
   .card-body em { color: var(--muted); }
   .card-body ul, .card-body ol { margin: .5em 0; padding-left: 1.3em; }
-  .card-body li { margin: .28em 0; color: #344054; line-height: 1.55; }
+  .card-body li { margin: .28em 0; color: var(--body-text); line-height: 1.55; }
 
-  pre { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 11px 13px; overflow-x: auto; margin: 10px 0; }
+  pre { padding: 11px 13px; margin: 10px 0; }
   pre code { padding: 0; font-size: .74rem; line-height: 1.5; }
-  pre code.hljs { background: transparent; padding: 0; color: #e2e8f0; }
-  code { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: .84em;
-    background: var(--stone-bg); color: var(--text); padding: 1px 5px; border-radius: 4px; }
+  code { font-size: .84em; padding: 1px 5px; }
 
-  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: .78rem; }
-  th, td { border: 1px solid var(--rule); padding: 6px 8px; text-align: left; vertical-align: top; }
-  th { background: var(--stone-bg); font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  table { margin: 10px 0; font-size: .78rem; }
+  th, td { padding: 6px 8px; }
+  th { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; }
   td code { font-size: .92em; }
 
   footer { color: var(--faint); font-size: .74rem; text-align: center; margin-top: 44px;
     padding-top: 18px; border-top: 1px solid var(--rule); }
   @media (max-width: 560px) { .card { flex-basis: 86vw !important; width: 86vw !important; } }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0f19; --surface: #141a27; --text: #e6e9ef; --muted: #98a2b3;
+      --faint: #6c7689; --rule: #232b3a; --line: #1b2230;
+      --stone-bg: #1b2230; --shadow: 0 1px 2px rgba(0,0,0,.4);
+      --body-text: #c3c9d5; --body-soft: #a6aebd; --thumb: #2a3346;
+      /* A step lighter than the page, so a code block still reads as raised. */
+      --code-bg: #161d2c;
+      --accent-soft: #1d2a44;
+    }
+    /* Derived where the browser can, so the tint follows whichever renderer set
+       --accent. The @supports guard is what preserves the flat value above: a
+       custom property holding an unsupported color-mix is accepted at parse
+       time and only fails in the property that USES it, where MDN says "the
+       initial or inherited value of the property is used" -- the earlier flat
+       declaration does not come back. color-mix has been Baseline "widely
+       available" since May 2023. */
+    @supports (color: color-mix(in srgb, red 50%, blue)) {
+      :root { --accent-soft: color-mix(in srgb, var(--accent) 22%, var(--surface)); }
+    }
+    .card-top { background: var(--surface); }
+  }
 </style>
 </head>
 <body>

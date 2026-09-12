@@ -1,0 +1,33 @@
+{
+  "repo_name": "toy_repo <script>alert(1)</script>",
+  "lens": "beginner-tutorial",
+  "generated_at": "2026-01-01",
+  "summary": "A small service that reads orders off a queue and writes them to a ledger.",
+  "mermaid": "flowchart TD\n    A0[\"Queue reader\"]\n    A1[\"Ledger writer\"]\n    A0 -- \"hands each order to\" --> A1",
+  "selected_files": [
+    "src/reader.py",
+    "src/<img src=x onerror=alert(1)>.py",
+    "README.md"
+  ],
+  "selection_reasoning": "Picked the two modules that carry the order path, plus the README for the vocabulary.\n\nSkipped the test fixtures: they restate the same shapes.",
+  "relationships": [
+    {
+      "from": "Queue <script>alert(1)</script> reader",
+      "to": "Ledger <img src=x onerror=alert(1)> writer",
+      "label": "hands each order to",
+      "source": "EXTRACTED"
+    }
+  ],
+  "chapters": [
+    {
+      "name": "Queue <script>alert(1)</script> reader",
+      "filename": "01_queue_reader.md",
+      "content": "# Queue reader\n\nThe reader pulls one order at a time from the queue and hands it on.\n\n```python\ndef read_one(queue):\n    \"\"\"Block until an order arrives, then return it.\"\"\"\n    return queue.get(timeout=30)\n```\n\n> A timeout is set so a stalled queue surfaces as an error rather than a hang.\n\n| Setting | Value | Where |\n| --- | --- | --- |\n| `timeout` | 30s | `src/reader.py` |\n| `batch` | 1 | `src/reader.py` |\n\nNext, see [Ledger writer](02_ledger_writer.md).\n"
+    },
+    {
+      "name": "Ledger <img src=x onerror=alert(1)> writer",
+      "filename": "02_ledger_writer.md",
+      "content": "# Ledger writer\n\nThe writer appends each order to the ledger and returns the new balance.\n\n```mermaid\nsequenceDiagram\n    Reader->>Writer: order\n    Writer->>Ledger: append\n    Ledger-->>Writer: balance\n```\n\n```go\nfunc Append(l *Ledger, o Order) (int64, error) {\n\treturn l.rows.Insert(o)\n}\n```\n\nBack to [Queue reader](01_queue_reader.md).\n"
+    }
+  ]
+}

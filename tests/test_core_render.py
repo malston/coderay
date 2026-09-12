@@ -115,13 +115,13 @@ def test_mermaid_runs_at_security_level_strict():
     Escaping the diagram into the HTML source is not enough on its own:
     mermaid reads the element back out of textContent, which the browser has
     already decoded to the raw characters. securityLevel decides what happens
-    next, and 'loose' does not sanitise. tour has always used 'strict' and the
-    card engine now matches it. Deliberate divergence from the port source,
-    was coderay-q2r.11, now closed and reproduced by scripts/regen_golden.py.
+    next, and 'loose' does not sanitise. Every renderer takes its setting from
+    the one initialisation in crawl.core.theme, so this holds them all at once.
+    Deliberate divergence from the port source, was coderay-q2r.11.
     """
     import pathlib as _p
 
-    engine = _p.Path(__file__).parent.parent / "src" / "crawl" / "core" / "render.py"
+    engine = _p.Path(__file__).parent.parent / "src" / "crawl" / "core" / "theme.py"
     text = engine.read_text(encoding="utf-8")
     assert "securityLevel: 'strict'" in text
     assert "securityLevel: 'loose'" not in text
@@ -130,16 +130,20 @@ def test_mermaid_runs_at_security_level_strict():
     assert "htmlLabels" not in text
 
 
-def test_card_engine_and_tour_agree_on_mermaid_security():
-    """The two renderers must not drift apart on this setting again."""
+def test_no_renderer_sets_its_own_mermaid_security_level():
+    """The renderers must not drift apart on this setting again.
+
+    They take it from the one shared initialisation, so the check is that none
+    of them names the setting at all -- a renderer that starts mermaid itself
+    is the drift this guards against, whichever level it picks.
+    """
     import pathlib as _p
     import re as _re
 
     root = _p.Path(__file__).parent.parent / "src" / "crawl"
-    found = set()
-    for path in (root / "core" / "render.py", root / "analyses" / "tour" / "render.py"):
-        found |= set(_re.findall(r"securityLevel: '(\w+)'", path.read_text(encoding="utf-8")))
-    assert found == {"strict"}, found
+    for path in sorted(root.rglob("render.py")):
+        found = _re.findall(r"securityLevel: '(\w+)'", path.read_text(encoding="utf-8"))
+        assert not found, f"{path.relative_to(root)} starts its own mermaid at {found}"
 
 
 # coderay-q2r.55: LLM text reaches markdown tables, headings and the terminal.
