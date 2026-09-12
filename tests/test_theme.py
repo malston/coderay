@@ -239,3 +239,52 @@ def test_faint_reads_on_the_dark_surfaces():
     for surface in ("#0b0f19", "#141a27"):
         got = _contrast(faint, surface)
         assert got >= WCAG_AA, f"--faint {faint} on {surface} is {got:.2f}:1"
+
+
+# coderay-2l9. A diagram the model got wrong used to be removed outright. The
+# heading and the legend around it stayed, so the tour index showed a caption
+# for artwork that was not there and the card family showed an empty framed
+# box. Worse, a reader could not tell a dropped diagram from one the page
+# never had, so an incomplete report read as a complete one.
+FAILED_CLASS = "diagram-failed"
+
+
+def test_a_diagram_that_cannot_be_rendered_leaves_a_placeholder():
+    """Keeping the element is what closes both holes: the tour's heading and
+    legend still bracket something, and the card family's box is not empty."""
+    assert "el.remove()" not in theme.HEAD_ASSETS, (
+        "a removed element orphans the heading and legend around it")
+    assert FAILED_CLASS in theme.HEAD_ASSETS
+
+
+def test_the_placeholder_text_is_fixed_rather_than_taken_from_the_diagram():
+    """The diagram source is LLM output over the target repo. textContent does
+    not parse markup, but building the notice out of that source would put it
+    one refactor away from a sink that does."""
+    marker = re.search(r"textContent\s*=\s*(.+)", theme.HEAD_ASSETS)
+    assert marker, "nothing sets the placeholder text"
+    assert re.match(r"""['"][^'"]+['"];""", marker.group(1).strip()), (
+        f"placeholder text is not a literal: {marker.group(1).strip()[:60]}")
+
+
+def test_the_failed_block_stops_being_a_diagram():
+    """It must not keep the mermaid class, or a later pass would try to render
+    the placeholder text as a diagram."""
+    swap = re.search(r"className\s*=\s*['\"]([\w-]+)['\"]", theme.HEAD_ASSETS)
+    assert swap, "the failed block keeps whatever classes it had"
+    assert "mermaid" not in swap.group(1)
+
+
+def test_the_placeholder_is_styled_by_the_shared_layer():
+    """One policy for every renderer, so the notice cannot look like four
+    different things."""
+    assert f".{FAILED_CLASS}" in theme.TOKENS
+
+
+def test_every_renderer_reaches_the_same_placeholder():
+    """coderay-2l9 settled that the tour does not get its own policy. Each
+    renderer takes the bootstrap from the shared layer, so none of them can
+    quietly choose differently."""
+    for label, template in TEMPLATES.items():
+        assert "{head_assets}" in template, f"{label} does not take the shared bootstrap"
+        assert "el.remove()" not in template, f"{label} drops diagrams on its own terms"

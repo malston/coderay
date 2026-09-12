@@ -67,21 +67,33 @@ HEAD_ASSETS = """<meta name="viewport" content="width=device-width, initial-scal
     if (window.hljs) {
       try { hljs.highlightAll(); } catch (e) { console.warn('crawl: syntax highlighting failed', e); }
     }
-    // Render each diagram, but validate first with parse() so a diagram the model
-    // got wrong is silently DROPPED -- no "Syntax error" box, no orphan graphics.
-    // A data-driven page can't guarantee valid Mermaid; a missing diagram beats
-    // an error box.
+    // Render each diagram, but validate first with parse(): a data-driven page
+    // can't guarantee valid Mermaid, and mermaid's own "Syntax error" box is
+    // not what a reader should be handed. One that fails becomes a placeholder
+    // rather than disappearing (coderay-2l9): the headings and captions around
+    // it are written by the template and stay either way, so removing the block
+    // left a caption for artwork that was not there, and left the reader unable
+    // to tell an incomplete report from a complete one.
+    function markFailed(el) {
+      // Drops the mermaid class too, so nothing tries to render the notice.
+      el.className = 'diagram-failed';
+      el.textContent = 'This diagram could not be rendered.';
+    }
     if (!window.mermaid) return;
     var blocks = document.querySelectorAll('pre.mermaid');
     for (var i = 0; i < blocks.length; i++) {
       var el = blocks[i], src = el.textContent;
       try {
-        if ((await mermaid.parse(src, { suppressErrors: true })) === false) { el.remove(); continue; }
+        if ((await mermaid.parse(src, { suppressErrors: true })) === false) {
+          console.warn('crawl: diagram ' + i + ' is not valid mermaid');
+          markFailed(el);
+          continue;
+        }
         var out = await mermaid.render('mmd' + i, src);
         el.innerHTML = out.svg;
       } catch (e) {
         console.warn('crawl: diagram ' + i + ' failed to render', e);
-        el.remove();
+        markFailed(el);
       }
     }
   });
@@ -107,6 +119,12 @@ TOKENS = """  :root {
   table { border-collapse: collapse; width: 100%; }
   th, td { border: 1px solid var(--rule); text-align: left; vertical-align: top; }
   th { background: var(--stone-bg); color: var(--muted); }
+  /* Stands in for a diagram the model got wrong (coderay-2l9). Quiet enough
+     not to read as an error in a report someone forwards, present enough that
+     the reader knows something is missing rather than absent. */
+  .diagram-failed { background: var(--surface); color: var(--faint);
+    border: 1px dashed var(--rule); border-radius: 8px; padding: 16px;
+    text-align: center; font-size: .8rem; font-style: italic; margin: 0; }
 
   /* --accent is the brand hue, picked to look right as a bar, a border or a
      fill. Reading it as small text is a different question: every analysis
