@@ -66,7 +66,7 @@ def test_find_schema_concatenates_model_files_when_there_is_no_single_file(tmp_p
 
 def test_find_schema_returns_nothing_for_a_repo_with_no_schema(tmp_path):
     found = sf.find_schema(_repo(tmp_path, {"README.md": "# hi\n"}))
-    assert found == {"kind": None, "path": None, "files": [], "text": ""}
+    assert found == {"kind": None, "path": None, "files": [], "dropped": [], "text": ""}
 
 
 def test_find_schema_honours_an_explicit_override(tmp_path):

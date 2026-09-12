@@ -120,8 +120,13 @@ def preview(args) -> Preview:
     if mig_names and len(mig_names) < MIGRATION_FLOOR:
         notes.append(f"{len(mig_names)} migrations is below the floor of {MIGRATION_FLOOR}; "
                      "a real run skips the migration pass entirely.")
+    # assembled_chars is the schema text alone. The migration names also reach a
+    # prompt, but as names, not text, and they are listed beside it.
     return {"counts": {"schema files read": len(read), "migrations found": len(mig_names)},
-            "files": {"schema": read, "migrations": mig_names}, "notes": notes}
+            "files": {"schema": read, "migrations": mig_names,
+                      "left out of the schema": schema["dropped"]},
+            "included": read, "dropped": schema["dropped"],
+            "assembled_chars": len(schema["text"]), "notes": notes}
 
 
 def sent(shared):

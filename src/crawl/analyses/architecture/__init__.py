@@ -168,7 +168,12 @@ def preview(args) -> Preview:
         notes.append("SDK import evidence was capped; more imports may exist than are counted.")
     if not bundle.strip():
         notes.append(aborts(empty_bundle_reason(stats["sdk_unavailable"])))
-    return {"counts": counts, "files": {"bundle": stats["files"]}, "notes": notes}
+    # No `dropped`: this crawler caps its assembled text rather than dropping
+    # whole files, so there is no dropped set to name. A zero here would be a
+    # count no crawler computed (coderay-05w.6); the truncation note carries
+    # what the counts alone would misstate.
+    return {"counts": counts, "files": {"bundle": stats["files"]},
+            "included": stats["files"], "assembled_chars": len(bundle), "notes": notes}
 
 
 def run(args) -> None:

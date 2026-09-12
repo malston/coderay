@@ -204,16 +204,19 @@ def add_arguments(parser) -> None:
 def preview(args) -> Preview:
     """What the crawl step found, before any LLM call: the surface files found by
     convention, and the ones whose text actually reached the bundle. A found file
-    is left out when it is empty or would not fit the budget (coderay-q2r.24)."""
+    is left out when it is empty or would not fit the budget (coderay-q2r.24), and
+    is named as well as counted (coderay-05w.4)."""
     routes, found, read = crawl_routes(args.repo_path, max_chars=args.codebase_budget)
+    dropped = [rel for rel in found if rel not in set(read)]
     notes = []
-    if len(found) > len(read):
-        notes.append(f"{len(found) - len(read)} of {len(found)} surface files "
+    if dropped:
+        notes.append(f"{len(dropped)} of {len(found)} surface files "
                      "did not reach the bundle: empty, or past the budget.")
     if not routes.strip():
         notes.append(aborts(NO_SURFACE))
     return {"counts": {"surface files found": len(found), "surface files read": len(read)},
-            "files": {"found": found, "read": read}, "notes": notes}
+            "files": {"found": found, "read": read, "did not reach the bundle": dropped},
+            "included": read, "dropped": dropped, "assembled_chars": len(routes), "notes": notes}
 
 
 def run(args) -> None:

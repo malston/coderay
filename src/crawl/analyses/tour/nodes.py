@@ -67,6 +67,8 @@ class PipelineState(TypedDict, total=False):
     writer, and this analysis's preview():
       previewed_files          list[str]  files whose head went into the selection prompt
       source_files_found       int        files list_files kept, before the preview cap
+      preview_dropped_files    list[str]  files the preview cap kept out of that prompt
+      preview_manifest_chars   int        length of the manifest those heads built
 
     Written by SmartCrawl.post; read by Analyze/Relate/WriteChapters.prep and
     crawl.analyses.tour.render's renderers:
@@ -144,6 +146,9 @@ class SmartCrawl(Node):
         # count of what was read cannot be told from the count list_files kept.
         shared["previewed_files"] = [os.path.relpath(p, root) for p in files]
         shared["source_files_found"] = len(all_files)
+        # The cap is silent, so the files past it are named as well as counted:
+        # the model cannot pick a file it never saw (coderay-05w.4).
+        shared["preview_dropped_files"] = [os.path.relpath(p, root) for p in all_files[max_files:]]
         target = shared.get("target_files", min(50, max(20, len(files) // 20)))
 
         manifest_parts = []
@@ -152,6 +157,7 @@ class SmartCrawl(Node):
             rel = os.path.relpath(path, root)
             manifest_parts.append(f"  [{i}] {rel}\n{preview}\n")
         manifest = "\n".join(manifest_parts)
+        shared["preview_manifest_chars"] = len(manifest)
 
         prompt = fill(
             read_prompt(PROMPTS_DIR, "select-files.md"),

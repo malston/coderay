@@ -61,7 +61,9 @@ def test_bundle_keeps_whole_files_and_reports_what_the_budget_dropped(tmp_path):
     assert "File: src/f0.py" in bundle
     whole, whole_stats = n.bundle(repo, max_chars=10 ** 6)
     assert whole_stats == {"included": 10, "dropped": 0, "unreadable": 0,
-                           "files": [f"src/f{i}.py" for i in range(10)]}
+                           "files": [f"src/f{i}.py" for i in range(10)], "dropped_files": []}
+    # The count and the names are the same list, so they cannot disagree (coderay-05w.4)
+    assert stats["dropped_files"] == [f"src/f{i}.py" for i in range(stats["included"], 10)]
     # coderay-3eu: the list is what reached the bundle, headers both ways
     assert stats["files"] == [b.split("\n", 1)[0] for b in bundle.split("File: ")[1:]]
 
@@ -156,7 +158,8 @@ def test_bundle_counts_the_files_it_could_not_read(tmp_path, capsys):
     repo = _tree(tmp_path, {"src/a.py": "a\n"})
     pathlib.Path(repo, "src/b.py").write_bytes(b"\xff\xfe\x00binary")
     bundle, stats = n.bundle(repo)
-    assert stats == {"included": 1, "dropped": 0, "unreadable": 1, "files": ["src/a.py"]}
+    assert stats == {"included": 1, "dropped": 0, "unreadable": 1, "files": ["src/a.py"],
+                     "dropped_files": []}
     n.FetchRepo().run({"repo_path": repo, "include": [], "exclude": []})
     assert "1 files could not be read" in capsys.readouterr().out
 

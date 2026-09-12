@@ -284,7 +284,8 @@ def test_build_bundle_samples_from_readable_files_not_from_the_first_n_paths(tmp
     files["app/views/zeta.py"] = "def z(): pass\n"
     repo = _repo(tmp_path, files)
     bundle, stats = bc.build_bundle(repo)
-    assert stats == {"counts": {"handler": 19}, "included": 1, "files": ["app/views/zeta.py"]}
+    assert stats == {"counts": {"handler": 19}, "included": 1, "files": ["app/views/zeta.py"],
+                     "dropped_files": [f"app/views/a{i:02d}.py" for i in range(18)]}
     assert "app/views/zeta.py" in bundle
 
 

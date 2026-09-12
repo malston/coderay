@@ -102,15 +102,17 @@ def _read(path, repo=None, limit=None):
 
 
 def _one_file(kind, repo, path, text):
-    """The result for a schema that is one file: `path` and `files` agree."""
+    """The result for a schema that is one file: `path` and `files` agree. A
+    single file is truncated rather than dropped, so nothing is left out by name."""
     rel = os.path.relpath(path, repo)
-    return {"kind": kind, "path": rel, "files": [rel], "text": text}
+    return {"kind": kind, "path": rel, "files": [rel], "dropped": [], "text": text}
 
 
 def find_schema(repo, override=None, budget=SCHEMA_BUDGET):
-    """Return {kind, path, files, text}: `path` names the schema for a reader (a
-    sentence for the models and embedded-SQL cases), `files` lists what was
-    read for the manifest. `override` forces a specific file. `budget` caps the
+    """Return {kind, path, files, dropped, text}: `path` names the schema for a
+    reader (a sentence for the models and embedded-SQL cases), `files` lists what
+    was read for the manifest and `dropped` the candidates the budget left out of
+    a multi-file schema. `override` forces a specific file. `budget` caps the
     text in characters."""
     if override:
         # No containment check: --schema is the user pointing at their own file,
@@ -147,10 +149,12 @@ def find_schema(repo, override=None, budget=SCHEMA_BUDGET):
     if models:
         # No single-file schema: concatenate the model files (Django/SQLAlchemy).
         models = sorted(models, key=lambda p: os.path.getsize(p), reverse=True)
+        rels = [os.path.relpath(m, repo) for m in models]
         text, kept = _join_within_budget(
-            [(os.path.relpath(m, repo), _read(m, repo, budget)) for m in models], "#", budget)
+            [(rel, _read(m, repo, budget)) for rel, m in zip(rels, models)], "#", budget)
         note = "" if len(kept) == len(models) else f" of {len(models)} found"
-        return {"kind": "models", "path": f"{len(kept)} models.py files{note}", "files": kept, "text": text}
+        return {"kind": "models", "path": f"{len(kept)} models.py files{note}",
+                "files": kept, "dropped": _left_out(rels, kept), "text": text}
 
     # Go, last: a models.py is a convention, DDL inside string literals is a
     # heuristic, and reading every Go file is the costly part, so it only
@@ -173,14 +177,21 @@ def find_schema(repo, override=None, budget=SCHEMA_BUDGET):
         # The file creating the most tables first; a file of ALTERs follows,
         # since the columns it adds are part of the schema too.
         embedded.sort(key=lambda e: (-e[0], e[1]))
-        text, kept = _join_within_budget(
-            [(os.path.relpath(full, repo), ddl) for _c, full, ddl in embedded], "--", budget)
+        blocks = [(os.path.relpath(full, repo), ddl) for _c, full, ddl in embedded]
+        text, kept = _join_within_budget(blocks, "--", budget)
         note = "" if len(kept) == len(embedded) else f" of {len(embedded)} found"
         return {"kind": "embedded-sql",
                 "path": f"{len(kept)} Go file{'s' if len(kept) != 1 else ''} with embedded SQL ({', '.join(kept)}){note}",
-                "files": kept, "text": text}
+                "files": kept, "dropped": _left_out([rel for rel, _ddl in blocks], kept), "text": text}
 
-    return {"kind": None, "path": None, "files": [], "text": ""}
+    return {"kind": None, "path": None, "files": [], "dropped": [], "text": ""}
+
+
+def _left_out(candidates, kept):
+    """The candidate files the budget (or MAX_SCHEMA_FILES) left out of the
+    concatenation, in candidate order (coderay-05w.4)."""
+    chosen = set(kept)
+    return [rel for rel in candidates if rel not in chosen]
 
 
 def find_migrations(repo):

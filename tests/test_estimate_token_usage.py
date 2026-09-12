@@ -91,7 +91,7 @@ def test_preview_reports_counts_and_the_files_behind_them(tmp_path, name):
     parser = _parser_for(name)
     result = ANALYSES[name].preview(parser.parse_args([str(repo)]))
 
-    assert set(result) == {"counts", "files", "notes"}
+    assert {"counts", "files", "notes"} <= set(result)
     assert result["counts"], f"{name} reported no counts at all"
     assert all(isinstance(v, int) for v in result["counts"].values()), \
         f"{name} put a non-count in counts: {result['counts']}"
@@ -771,3 +771,189 @@ def test_require_directory_refuses_a_directory_it_cannot_walk(tmp_path):
         assert "cannot be read" in result.stderr
     finally:
         locked.chmod(0o700)
+
+
+# ------------------------------- the canonical quantities (coderay-05w.4/.5/.6)
+#
+# `counts` labels stay the reader's phrases, so a consumer cannot find the kept
+# and dropped sets by matching text (coderay-05w.6). Three optional keys carry
+# them under fixed names, present only where the crawler genuinely computes one:
+# `included` and `dropped` (repo-relative paths) and `assembled_chars` (the
+# length of the text the crawl built, which the cost estimate needs and every
+# preview used to throw away, coderay-05w.5).
+
+# Crawlers that drop whole files and can name them. architecture is absent by
+# design: it truncates its assembled text rather than dropping files, so it has
+# no dropped set to report. git-history reads commits, not files.
+NAMES_ITS_DROPS = ["backend", "interfaces", "product-intent", "schema", "tour"]
+ASSEMBLES_TEXT = ["architecture", "backend", "interfaces", "product-intent", "schema", "tour"]
+
+
+@pytest.mark.parametrize("name", ANALYSIS_NAMES)
+def test_preview_carries_only_the_canonical_keys_it_computes(tmp_path, name):
+    """An analysis that computes no kept/dropped set leaves the key out rather
+    than reporting a zero a crawler never counted (coderay-05w.6)."""
+    repo = _repo(tmp_path)
+    result = ANALYSES[name].preview(_parser_for(name).parse_args([str(repo)]))
+
+    assert set(result) <= {"counts", "files", "notes", "included", "dropped", "assembled_chars"}
+    assert ("dropped" in result) == (name in NAMES_ITS_DROPS), \
+        f"{name} dropped-set presence disagrees with what its crawler computes"
+    assert ("assembled_chars" in result) == (name in ASSEMBLES_TEXT)
+    assert ("included" in result) == (name in ASSEMBLES_TEXT)
+    for key in ("included", "dropped"):
+        if key in result:
+            assert all(isinstance(p, str) for p in result[key]), \
+                f"{name} put a non-path in {key}: {result[key]}"
+            assert not any(os.path.isabs(p) for p in result[key]), \
+                f"{name} put an absolute path in {key}: {result[key]}"
+    if "assembled_chars" in result:
+        assert isinstance(result["assembled_chars"], int)
+
+
+# tour is absent: its assembled text is the file-selection manifest, which
+# preview_budget sizes. --codebase-budget reaches only its later prompts. schema
+# is absent too: it truncates a single-file schema and appends a marker saying so,
+# which can leave the assembled text longer than the budget that cut it. Its
+# length is pinned exactly below instead.
+BUDGET_SIZES_THE_TEXT = ["architecture", "backend", "interfaces", "product-intent"]
+
+
+@pytest.mark.parametrize("name", ASSEMBLES_TEXT)
+def test_preview_reports_the_length_of_the_text_it_assembled(tmp_path, name):
+    repo = _repo(tmp_path)
+    result = ANALYSES[name].preview(_parser_for(name).parse_args([str(repo)]))
+    assert result["assembled_chars"] > 0, f"{name} assembled nothing in a repo built for all seven"
+
+
+@pytest.mark.parametrize("name", BUDGET_SIZES_THE_TEXT)
+def test_a_smaller_budget_assembles_less_text(tmp_path, name):
+    """The estimate and the counts must describe one crawl, not two (05w.5): the
+    length comes back from the same crawl that produced the counts, so the budget
+    the user passed is already in it."""
+    repo = _repo(tmp_path)
+    parser = _parser_for(name)
+    generous = ANALYSES[name].preview(parser.parse_args([str(repo), "--codebase-budget", "200000"]))
+    tiny = ANALYSES[name].preview(parser.parse_args([str(repo), "--codebase-budget", "60"]))
+
+    assert tiny["assembled_chars"] < generous["assembled_chars"], \
+        f"{name}'s assembled length did not move with the budget"
+
+
+def test_schema_assembled_length_is_the_text_not_the_file_count(tmp_path):
+    """coderay-05w.2 sizes input tokens from this number, so it has to be
+    characters of schema text; a file count would be off by three orders."""
+    repo = tmp_path / "sql"
+    repo.mkdir()
+    ddl = "CREATE TABLE t (id INT PRIMARY KEY, name TEXT);\n" * 100
+    (repo / "schema.sql").write_text(ddl, encoding="utf-8")
+
+    result = ANALYSES["schema"].preview(_parser_for("schema").parse_args([str(repo)]))
+
+    assert result["counts"]["schema files read"] == 1
+    assert result["assembled_chars"] == len(ddl)
+
+
+@pytest.mark.parametrize("name", NAMES_ITS_DROPS)
+def test_the_dropped_list_and_the_included_list_do_not_overlap(tmp_path, name):
+    repo = _repo(tmp_path)
+    result = ANALYSES[name].preview(_parser_for(name).parse_args([str(repo)]))
+    assert not set(result["dropped"]) & set(result["included"]), \
+        f"{name} reported the same file as both included and dropped"
+
+
+def test_product_intent_names_the_files_the_budget_dropped(tmp_path):
+    """The count was always there; the names were thrown away (coderay-05w.4)."""
+    repo = _repo(tmp_path)
+    tiny = ANALYSES["product-intent"].preview(
+        _parser_for("product-intent").parse_args([str(repo), "--codebase-budget", "200"]))
+
+    assert tiny["counts"]["dropped by the budget"] == len(tiny["dropped"])
+    assert tiny["dropped"], "the budget dropped files but named none of them"
+    assert "app/models.py" in tiny["dropped"] or "app/views.py" in tiny["dropped"]
+
+
+def test_tour_names_the_files_the_preview_cap_kept_from_the_model(tmp_path, monkeypatch):
+    monkeypatch.setattr(tour_nodes, "PREVIEW_CHARS_PER_FILE", 500_000)  # fits 2 files
+    repo = tmp_path / "wide"
+    repo.mkdir()
+    for i in range(12):
+        (repo / f"m{i}.py").write_text(f"def f{i}():\n    return {i}\n", encoding="utf-8")
+
+    result = ANALYSES["tour"].preview(_parser_for("tour").parse_args([str(repo)]))
+
+    assert result["counts"]["dropped before the model saw them"] == len(result["dropped"])
+    assert len(result["dropped"]) == 10
+    assert set(result["included"]) | set(result["dropped"]) == {f"m{i}.py" for i in range(12)}
+
+
+def test_interfaces_names_the_surface_files_that_did_not_reach_the_bundle(tmp_path):
+    repo = tmp_path / "api"
+    (repo / "app").mkdir(parents=True)
+    (repo / "app" / "urls.py").write_text("urlpatterns = [path('a', a)]\n" * 200, encoding="utf-8")
+    (repo / "app" / "views.py").write_text("def a(r): pass\n", encoding="utf-8")
+
+    result = ANALYSES["interfaces"].preview(
+        _parser_for("interfaces").parse_args([str(repo), "--codebase-budget", "600"]))
+
+    assert result["counts"]["surface files found"] - result["counts"]["surface files read"] \
+        == len(result["dropped"])
+    assert result["included"] == result["files"]["read"]
+
+
+def test_backend_names_the_layer_files_that_did_not_reach_the_bundle(tmp_path):
+    repo = tmp_path / "svc"
+    (repo / "app").mkdir(parents=True)
+    (repo / "app" / "urls.py").write_text("urlpatterns = []\n" * 400, encoding="utf-8")
+    (repo / "app" / "views.py").write_text("def index(r): pass\n" * 400, encoding="utf-8")
+    (repo / "app" / "models.py").write_text("class U: pass\n" * 400, encoding="utf-8")
+
+    result = ANALYSES["backend"].preview(
+        _parser_for("backend").parse_args([str(repo), "--codebase-budget", "3000"]))
+
+    assert result["dropped"], "the budget kept layer files out but named none of them"
+    assert result["included"] == result["files"]["bundle"]
+    assert result["counts"]["files in the bundle"] == len(result["included"])
+
+
+def test_schema_names_the_model_files_the_budget_left_out(tmp_path):
+    repo = tmp_path / "django"
+    for app in ("a", "b", "c"):
+        (repo / app).mkdir(parents=True)
+        (repo / app / "models.py").write_text("class M: pass\n" * 200, encoding="utf-8")
+
+    result = ANALYSES["schema"].preview(
+        _parser_for("schema").parse_args([str(repo), "--codebase-budget", "3000"]))
+
+    assert result["included"] == result["files"]["schema"]
+    assert result["dropped"], "the budget left model files out but named none of them"
+    assert len(result["included"]) + len(result["dropped"]) == 3
+
+
+def test_architecture_reports_no_dropped_set_because_it_truncates_text(tmp_path):
+    """It caps the assembled bundle rather than dropping whole files, so there is
+    no dropped set to name. The note says what the counts alone would misstate."""
+    repo = _repo(tmp_path)
+    result = ANALYSES["architecture"].preview(
+        _parser_for("architecture").parse_args([str(repo), "--codebase-budget", "40"]))
+
+    assert "dropped" not in result
+    assert result["assembled_chars"] > 0
+    assert any("truncated" in note for note in result["notes"])
+
+
+def test_git_history_carries_no_file_quantities_at_all(tmp_path):
+    repo = _repo(tmp_path)
+    result = ANALYSES["git-history"].preview(_parser_for("git-history").parse_args([str(repo)]))
+
+    assert set(result) == {"counts", "files", "notes"}
+
+
+def test_preview_still_requires_the_three_keys_every_analysis_returns():
+    """total=False on the whole TypedDict would make counts, files and notes
+    optional too, which is what the docstring says they are not, and
+    format_preview reads counts unguarded."""
+    from crawl.core.preview import Preview
+
+    assert set(Preview.__required_keys__) == {"counts", "files", "notes"}
+    assert set(Preview.__optional_keys__) == {"included", "dropped", "assembled_chars"}
