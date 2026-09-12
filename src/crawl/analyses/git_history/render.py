@@ -120,7 +120,7 @@ HTML_TEMPLATE = """<!doctype html>
 <style>
 {tokens}
   :root {{ --accent: #3b82f6; --accent-soft: #eff6ff; --accent-ink: #2a58a4;
-    --shadow-lg: 0 8px 26px rgba(16,24,40,.10); }}
+    --card-top: #fbfcfe; --shadow-lg: 0 8px 26px rgba(16,24,40,.10); }}
   html {{ -webkit-text-size-adjust: 100%; }}
   body {{ font-family: var(--font); font-size: 13.5px; line-height: 1.5;
     background: var(--bg); color: var(--text); margin: 0; -webkit-font-smoothing: antialiased; }}

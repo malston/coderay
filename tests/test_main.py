@@ -84,14 +84,14 @@ def test_the_tour_opts_back_into_markdown_images():
     prompt-injected model (coderay-q2r.53).
 
     The tour builds its parser with image=True, on the judgment that a reading
-    document should show the diagrams a README embeds. Nothing recorded that
-    choice, so it read as an oversight rather than a decision.
+    document should show the diagrams a README embeds. Pinned in both
+    directions so the divergence stays a decision on the record.
     """
     out = md_to_html("![a diagram](https://example.com/d.png?who=me)")
     assert "<img" in out, "the tour no longer renders images; was that deliberate?"
     from crawl.core.render import markdown_parser
     assert "<img" not in markdown_parser().render("![a](https://example.com/d.png)"), (
-        "core now renders images too, so the tour is no longer diverging")
+        "core renders images too, so the tour is not diverging")
 
 
 def test_available_lenses_matches_instructions_directory():

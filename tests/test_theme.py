@@ -25,16 +25,23 @@ def _tags(html):
 
 
 def _external_refs(html):
-    """Any tag pulling a resource off the network, whatever the host.
+    """A script or link pointing at an absolute http(s) URL, whatever the host.
 
-    Broader than _tags on purpose. Google Fonts is exempt from integrity
-    checking, because its css2 endpoint serves different @font-face sources per
-    user-agent and one hash would block the stylesheet for some visitors. That
-    is a separate question from whether a renderer declares the font link
-    itself, which is what the shared layer exists to stop.
+    Broader than _tags, which sees one CDN. Narrower than every way a page can
+    reach the network: an @import or a url() inside a <style> block is not a
+    tag and is not covered here.
     """
     return re.findall(r'<(?:script|link)\b[^>]*(?:src|href)="https?://[^"]*"[^>]*>',
                       html, re.S)
+
+
+# The font stylesheet and the two preconnect hints it needs. Exempt from the
+# integrity check below, and only from that one: the css2 endpoint serves
+# different @font-face sources per user-agent -- a woff2 URL to a modern
+# browser and a /l/font?kit= fallback to an old one -- so a single hash would
+# block the stylesheet for some visitors rather than protect them. A preconnect
+# opens a connection and fetches nothing, so there is nothing to hash.
+FONT_HOSTS = ("fonts.googleapis.com", "fonts.gstatic.com")
 
 
 # Every page template that carries a <style> block of its own.
@@ -67,13 +74,28 @@ def test_head_assets_loads_highlighting_and_diagrams():
     assert "mermaid.min.js" in theme.HEAD_ASSETS
 
 
-def test_every_head_asset_from_the_cdn_is_pinned_and_hash_checked():
-    tags = _tags(theme.HEAD_ASSETS)
-    assert tags, "HEAD_ASSETS loads nothing from the CDN; this test no longer guards it"
-    for tag in tags:
+def test_every_head_asset_is_pinned_and_hash_checked():
+    """Every third-party script and stylesheet, whatever the host.
+
+    These pages render diagram labels and code the LLM wrote out of the target
+    repository's own files, and one is exactly the artifact someone opens
+    without reading it first. A host that swapped a script would run it with
+    the page. Checking only the CDN we happen to use today would let a tag
+    added from anywhere else ship with no hash at all.
+    """
+    refs = _external_refs(theme.HEAD_ASSETS)
+    assert refs, "HEAD_ASSETS loads nothing; this test no longer guards it"
+    checked = 0
+    for tag in refs:
+        if any(host in tag for host in FONT_HOSTS):
+            continue
+        checked += 1
         assert "integrity=" in tag, f"no integrity hash on {tag[:120]}"
+        assert re.search(r'integrity="sha(?:384|512)-', tag), (
+            f"weaker than sha384: {tag[:120]}")
         assert 'crossorigin="anonymous"' in tag, f"integrity without crossorigin: {tag[:120]}"
         assert re.search(r'@\d+\.\d+\.\d+/', tag), f"floating version: {tag[:120]}"
+    assert checked, "every head asset was exempted; the allowlist has swallowed the check"
 
 
 def test_head_assets_initialises_mermaid_at_strict():
@@ -100,15 +122,19 @@ def test_every_renderer_takes_the_head_and_the_tokens_from_one_place():
             f"{_external_refs(template)[0][:90]}")
 
 
-def test_the_renderer_accent_override_follows_the_shared_tokens():
-    """TOKENS carries a default --accent, so an override written above it loses
-    and every analysis renders the same blue. Only the docstring said so."""
+def test_the_shared_tokens_open_every_style_sheet():
+    """TOKENS carries defaults every renderer is entitled to override, so a
+    renderer rule written above it would lose to the default: an --accent
+    override above {tokens} makes every analysis render the same blue.
+
+    Asserting that {tokens} opens the block says that for every override at
+    once, whether it is written inline or arrives through a slot. Looking for
+    the override itself instead misses the tour, whose stylesheet is entirely
+    behind {shared_style}.
+    """
     for label, template in TEMPLATES.items():
-        own = re.search(r":root\s*\{\{?[^}]*--accent:", template)
-        if not own:
-            continue
-        assert template.index("{tokens}") < own.start(), (
-            f"{label} sets its --accent before {{tokens}}, so the default wins")
+        assert re.search(r"<style>\s*\{tokens\}", template), (
+            f"{label} writes rules before {{tokens}}, where the shared defaults would win")
 
 
 def test_dark_tokens_redefine_the_surface_palette():
@@ -151,19 +177,66 @@ def test_diagrams_follow_the_colour_scheme():
 # property side includes border, because a light rule on a dark surface is the
 # same defect drawn thinner.
 LITERAL_COLOUR = re.compile(
-    r"(?<!-)\b(color|background(?:-color)?|border(?:-color|-top|-bottom|-left|-right)?)"
-    r":[^;]*?(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)|\b(?:white|black)\b)")
+    r"#[0-9a-fA-F]{3,8}\b|(?:rgba?|hsla?|oklch|oklab|lab|lch)\([^)]*\)"
+    r"|\b(?:white|black|red|silver|gray|grey|whitesmoke|gainsboro|ivory)\b(?!-)")
+
+# Declarations whose value may name a colour word without painting one.
+NOT_A_COLOUR_DECLARATION = ("content", "font", "url(")
+
+
+def _literal_in(body):
+    """The first literal colour in a declaration block, or None.
+
+    Scans values rather than an enumerated property list. Enumerating was
+    wrong twice over: it missed background-image, box-shadow, outline and
+    every border-*-color longhand, and its lookbehind for custom properties
+    happened to blind the same longhands. Skipping --* declarations by name
+    and reading whatever is left covers both.
+    """
+    for declaration in body.split(";"):
+        if ":" not in declaration:
+            continue
+        prop, _, value = declaration.partition(":")
+        prop = prop.strip()
+        if prop.startswith("--") or any(s in prop for s in NOT_A_COLOUR_DECLARATION):
+            continue
+        found = LITERAL_COLOUR.search(value)
+        if found:
+            return prop, found.group(0)
+    return None
 
 # Elements whose colour is fixed by design rather than by the scheme.
 SCHEME_INDEPENDENT = (".hero", ".eyebrow", ".gc-bar", ".bar-fill", ".tl-era", ".num")
 # .gc-bar, .tl-era and .num carry white text; .bar-fill is a saturated bar
-# with no text of its own.
+# with no text of its own; .hero and .eyebrow sit on a band that is dark in
+# both schemes.
+
+
+def _scheme_independent(selector):
+    """Whether a rule is exempt, matching whole class names.
+
+    A substring test reads naturally and exempts far more than it names:
+    `.hero` alone would cover `.hero-diagram`, a container for artwork that
+    does follow the scheme.
+    """
+    classes = set(re.findall(r"\.[\w-]+", selector))
+    return bool(classes & set(SCHEME_INDEPENDENT))
+
+
+def test_the_exemptions_all_match_something_that_ships():
+    """An entry matching nothing is an exemption nobody can see is stale."""
+    live = set()
+    for label, template in TEMPLATES.items():
+        for sel, _ in _rules(label, template):
+            live |= set(re.findall(r"\.[\w-]+", sel))
+    unused = sorted(set(SCHEME_INDEPENDENT) - live)
+    assert not unused, f"exemptions matching no live selector: {unused}"
 
 
 def test_the_dark_block_only_redefines_tokens():
     """Four renderers share it, so naming any one renderer's selector there
-    puts that renderer's layout in everyone's stylesheet. Flipping a token does
-    the same work and keeps the module's own boundary honest."""
+    puts that renderer's own rule in everyone's stylesheet. Flipping a token
+    does the same work and keeps the module's boundary honest."""
     body = theme.DARK_TOKENS.split("{", 1)[1]
     selectors = [" ".join(s.split()) for s, _ in re.findall(r"([^{}]+)\{([^{}]*)\}", body)]
     assert selectors, "the dark block declares nothing"
@@ -183,12 +256,12 @@ def test_no_page_hardcodes_a_colour_that_dark_mode_cannot_reach():
             # :root declares the tokens; the dark block redefines them there.
             if sel.endswith(":root"):
                 continue
-            if any(d in sel for d in SCHEME_INDEPENDENT):
+            if _scheme_independent(sel):
                 continue
-            literal = LITERAL_COLOUR.search(body)
+            literal = _literal_in(body)
             assert not literal, (
-                f"{label}: {sel} hardcodes {literal.group(2)} for "
-                f"{literal.group(1)}: {' '.join(body.split())}")
+                f"{label}: {sel} hardcodes {literal[1]} for "
+                f"{literal[0]}: {' '.join(body.split())}")
 
 
 def _rules(label, template):
@@ -339,13 +412,6 @@ def test_every_renderer_reaches_the_same_placeholder():
 RENDERED = pathlib.Path(__file__).parent / "fixtures" / "golden"
 
 
-def _rendered_pages():
-    pages = {}
-    for d in sorted(p for p in RENDERED.iterdir() if p.is_dir()):
-        shared = json.loads((d / "shared.json").read_text(encoding="utf-8"))
-        pages[d.name] = render.render_html(ANALYSES[d.name], "toy_repo", shared)
-    return pages
-
 
 @pytest.mark.parametrize("name", sorted(p.name for p in RENDERED.iterdir() if p.is_dir()))
 def test_every_rendered_page_ships_the_shared_layer(name):
@@ -378,3 +444,128 @@ def test_the_dark_block_is_last_in_every_rendered_page(name):
     assert end, f"{name}: the dark block never closes"
     assert not tail[end:].strip(), (
         f"{name} writes {tail[end:].strip()[:60]!r} after the dark block")
+
+
+# Tokens whose light value is deliberately kept in the dark scheme. --accent
+# and its derivations belong to each renderer and are handled separately;
+# --code-fg is the ink on a block that is dark in both; --good and --stone are
+# saturated and read on either surface.
+LIGHT_VALUE_HOLDS_IN_DARK = {
+    "--accent", "--accent-soft", "--accent-ink", "--code-fg", "--good", "--stone",
+}
+
+
+def _tokens_with_a_colour(css):
+    """Every custom property in a :root block whose value names a colour."""
+    found = {}
+    for name, value in re.findall(r"(--[\w-]+):\s*([^;]+);", css):
+        if re.search(r"#[0-9a-fA-F]{3,8}|rgba?\(|color-mix\(|var\(--", value):
+            found[name] = " ".join(value.split())
+    return found
+
+
+def test_every_colour_token_is_answered_by_the_dark_scheme():
+    """A token declared light and never redefined ships its light value onto a
+    dark page. Naming the ones that matter in a list goes stale the moment a
+    token is added; deriving the set from TOKENS does not."""
+    light = _tokens_with_a_colour(theme.TOKENS)
+    dark = _tokens_with_a_colour(theme.DARK_TOKENS)
+    assert light, "no colour tokens found in TOKENS; this check is not reading it"
+    missing = sorted(set(light) - set(dark) - LIGHT_VALUE_HOLDS_IN_DARK)
+    assert not missing, (
+        "these carry a light value into dark mode: "
+        + ", ".join(f"{n} ({light[n]})" for n in missing))
+
+
+def test_the_light_value_allowlist_has_no_stale_entries():
+    """An entry naming a token that no longer exists hides the next one."""
+    declared = set(_tokens_with_a_colour(theme.TOKENS))
+    stale = sorted(LIGHT_VALUE_HOLDS_IN_DARK - declared)
+    assert not stale, f"allowlist names tokens TOKENS does not declare: {stale}"
+
+
+def test_a_diagram_block_does_not_inherit_the_code_block_ink():
+    """Until mermaid replaces it, a diagram block holds its own source. The
+    shared `pre` rule paints ink meant for the dark code background, so on a
+    light surface that source is invisible -- and if mermaid never loaded, no
+    placeholder is written either, so the reader gets an empty box."""
+    assert re.search(r"pre\.mermaid\s*\{[^}]*color:", theme.TOKENS), (
+        "pre.mermaid takes its colour from the pre rule, which is code-block ink")
+    assert not re.search(r"pre\.mermaid\s*\{[^}]*color:\s*inherit", theme.TOKENS), (
+        "inherit is wrong here: a diagram inside a hero band would inherit white")
+
+
+def test_every_head_asset_comes_from_a_host_we_chose():
+    """A tag from anywhere else would have to be hashed, and the integrity
+    check above only knows the hosts it is told about."""
+    hosts = {re.search(r"https?://([^/\"]+)", tag).group(1)
+             for tag in _external_refs(theme.HEAD_ASSETS)}
+    assert hosts == {"fonts.googleapis.com", "fonts.gstatic.com", "cdn.jsdelivr.net"}, (
+        f"unexpected host in the shared head: {hosts}")
+
+
+@pytest.mark.parametrize("label", sorted(TEMPLATES))
+def test_each_template_carries_exactly_one_style_block(label):
+    """Every CSS check here reads the first block. A second one is the natural
+    way round a rule that says nothing may follow the dark block."""
+    assert TEMPLATES[label].count("<style>") == 1, (
+        f"{label} has more than one style block, so the checks below read only part of it")
+
+
+# The tour writes multi-file output from its own functions rather than through
+# crawl.core.runner, so its pages are not under fixtures/golden and the
+# parametrized checks above do not reach them. It is also the renderer whose
+# whole stylesheet arrives through a slot, which makes it the likeliest place
+# for one to be filled empty -- the failure those checks exist to catch.
+def test_the_rendered_tour_ships_the_shared_layer(tmp_path):
+    import sys
+    sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "scripts"))
+    from regen_tour_golden import render_into
+
+    render_into(tmp_path)
+    pages = sorted(tmp_path.glob("*.html"))
+    assert len(pages) >= 3, f"the tour rendered {len(pages)} pages; expected an index and chapters"
+    for page in pages:
+        html = page.read_text(encoding="utf-8")
+        assert "@media (prefers-color-scheme: dark)" in html, f"{page.name} ships no dark mode"
+        assert "family=Inter" in html, f"{page.name} ships no web fonts"
+        assert ".diagram-failed" in html, f"{page.name} ships no placeholder rule"
+        assert "--accent-ink" in html, f"{page.name} ships no readable accent"
+        css = re.search(r"<style>(.*?)</style>", html, re.S).group(1)
+        assert css.count("@media (prefers-color-scheme: dark)") == 1
+        dark = css.index("@media (prefers-color-scheme: dark)")
+        assert not _after_the_block(css[dark:]).strip(), (
+            f"{page.name} writes rules after the dark block")
+
+
+def _after_the_block(css):
+    """Whatever follows the first balanced brace group in css."""
+    depth = 0
+    for i, ch in enumerate(css):
+        depth += (ch == "{") - (ch == "}")
+        if depth == 0 and ch == "}":
+            return css[i + 1:]
+    raise AssertionError("the block never closes")
+
+
+def test_a_code_block_is_neutral_before_highlighting_runs():
+    """highlight.js adds .hljs to what it processes, so pre code.hljs only
+    applies once it has run. A blocked CDN, a failed hash, or simply the
+    interval before the load handler fires leaves the block without it, and
+    the inline-code rule then paints a light chip inside the dark pre."""
+    neutral = re.search(r"\bpre code \{([^}]*)\}", theme.TOKENS)
+    assert neutral, "nothing neutralises pre code independently of .hljs"
+    assert "background" in neutral.group(1), (
+        "pre code does not clear the inline-code chip background")
+
+
+def test_the_dark_block_declares_only_custom_properties():
+    """Selectors are checked above. A plain declaration inside :root is the
+    other way a renderer's own rule reaches everyone's stylesheet."""
+    for body in re.findall(r":root\s*\{([^{}]*)\}", theme.DARK_TOKENS):
+        for declaration in body.split(";"):
+            prop = declaration.partition(":")[0].strip()
+            if not prop or prop.startswith("/*"):
+                continue
+            assert prop.startswith("--"), (
+                f"the dark block sets {prop!r}, which is a rule rather than a token")

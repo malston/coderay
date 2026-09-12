@@ -115,6 +115,9 @@ TOKENS = """  :root {
   * { box-sizing: border-box; }
   code, .mono { font-family: var(--mono); }
   pre { background: var(--code-bg); color: var(--code-fg); border-radius: 8px; overflow-x: auto; }
+  /* Until highlight.js runs, a code block carries no .hljs class and falls
+     to the `code` rule below, whose chip background lands on top of the
+     dark pre. A blocked CDN or a failed hash leaves it that way. */
   pre code { background: transparent; color: inherit; }
   /* let highlight.js color the tokens, but keep our own dark pre background */
   pre code.hljs { background: transparent; padding: 0; color: var(--code-fg); }
@@ -122,6 +125,14 @@ TOKENS = """  :root {
   table { border-collapse: collapse; width: 100%; }
   th, td { border: 1px solid var(--rule); text-align: left; vertical-align: top; }
   th { background: var(--stone-bg); color: var(--muted); }
+  /* A diagram block holds its own source until mermaid replaces it with an
+     SVG. If mermaid never loads -- a blocked CDN, a failed hash, no network --
+     it is never replaced, and the source is what the reader gets. Without this
+     the block keeps --code-fg from the `pre` rule above, which is near-white
+     and meant for the dark code background, so on a light surface the source
+     lands at 1.23:1 and the reader sees an empty box. `inherit` is not the
+     answer: a diagram inside a hero band would inherit white. */
+  pre.mermaid { color: var(--text); }
   /* Stands in for a diagram the model got wrong (coderay-2l9). Quiet enough
      not to read as an error in a report someone forwards, present enough that
      the reader knows something is missing rather than absent. */
