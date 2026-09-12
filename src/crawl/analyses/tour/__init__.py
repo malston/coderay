@@ -71,20 +71,27 @@ def preview(args) -> Preview:
     except SystemExit as no_source:
         return {"counts": {"source files found": 0, "read into the selection pass": 0,
                            "dropped before the model saw them": 0},
-                "files": {"previewed": []}, "notes": [aborts(str(no_source))]}
+                "files": {"previewed": [], "dropped before the model saw them": []},
+                "included": [], "dropped": [], "assembled_chars": 0,
+                "notes": [aborts(str(no_source))]}
     previewed = shared["previewed_files"]
+    dropped = shared["preview_dropped_files"]
     found = shared["source_files_found"]
-    dropped = found - len(previewed)
     notes = []
     if dropped:
         notes.append(
-            f"{dropped:,} of {found:,} source files never reach the file-selection "
+            f"{len(dropped):,} of {found:,} source files never reach the file-selection "
             f"prompt: it holds {len(previewed):,} at {PREVIEW_CHARS_PER_FILE:,} chars "
             "each. The model cannot pick a file it never saw.")
+    # assembled_chars is the manifest, not the codebase bundle: the bundle is
+    # built in SmartCrawl.post from the files the model picks, which no preview
+    # can know. The manifest is the text this crawl step actually assembled.
     return {"counts": {"source files found": found,
                        "read into the selection pass": len(previewed),
-                       "dropped before the model saw them": dropped},
-            "files": {"previewed": previewed}, "notes": notes}
+                       "dropped before the model saw them": len(dropped)},
+            "files": {"previewed": previewed, "dropped before the model saw them": dropped},
+            "included": previewed, "dropped": dropped,
+            "assembled_chars": shared["preview_manifest_chars"], "notes": notes}
 
 
 

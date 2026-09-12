@@ -40,7 +40,7 @@ def bundle(repo, include=None, exclude=None, max_chars=DEFAULT_MAX_CHARS):
     mid-way reads as a finished one to the model. Files come in list_files
     order, which already refuses symlinks that resolve outside the repo.
     """
-    parts, total, files, dropped, unreadable = [], 0, [], 0, 0
+    parts, total, files, dropped, unreadable = [], 0, [], [], 0
     for path in list_files(repo, include=include or None, exclude=exclude or None):
         text = safe_read(path)
         if text is None:
@@ -49,12 +49,15 @@ def bundle(repo, include=None, exclude=None, max_chars=DEFAULT_MAX_CHARS):
         rel = os.path.relpath(path, repo)
         block = f"{'=' * 60}\nFile: {rel}\n{'=' * 60}\n{text}\n"
         if total + len(block) + 1 > max_chars:
-            dropped += 1
+            # Named, not just counted: a user asked to steer the budget needs to
+            # know which files it kept out (coderay-05w.4).
+            dropped.append(rel)
             continue
         parts.append(block)
         total += len(block) + 1
         files.append(rel)
-    return "\n".join(parts), {"included": len(files), "dropped": dropped, "unreadable": unreadable, "files": files}
+    return "\n".join(parts), {"included": len(files), "dropped": len(dropped), "unreadable": unreadable,
+                              "files": files, "dropped_files": dropped}
 
 
 def no_source_reason(repo_path, include, exclude):

@@ -79,14 +79,20 @@ def preview(args) -> Preview:
     and still not reach the bundle: it can be empty, unreadable, past the budget,
     or past its layer's sample cap (PER_LAYER_SAMPLE, applied to handler, service
     and database). So the matched counts sit beside the bundle
-    count, never instead of it."""
+    count, never instead of it.
+
+    `dropped` is those four outcomes as one set, not bucketed by reason: a user
+    steering the budget acts on which files missed it, not on why."""
     bundle, stats = build_bundle(args.repo_path, max_chars=args.codebase_budget)
-    counts = {"files in the bundle": stats["included"]}
+    counts = {"files in the bundle": len(stats["files"])}
     counts.update({f"matched as {layer}": stats["counts"].get(layer, 0) for layer in LAYERS})
     notes = []
     if not bundle.strip():
         notes.append(aborts(empty_bundle_reason(stats["counts"])))
-    return {"counts": counts, "files": {"bundle": stats["files"]}, "notes": notes}
+    return {"counts": counts,
+            "files": {"bundle": stats["files"], "matched but not bundled": stats["dropped_files"]},
+            "included": stats["files"], "dropped": stats["dropped_files"],
+            "assembled_chars": len(bundle), "notes": notes}
 
 
 

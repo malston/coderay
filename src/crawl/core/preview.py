@@ -10,8 +10,10 @@ import textwrap
 from typing import Dict, List, TypedDict
 
 
-class Preview(TypedDict):
+class Preview(TypedDict, total=False):
     """What a crawl step found. Not validated at runtime -- documents the contract.
+
+    Always present:
 
     counts: label -> how many, in the order the reader should meet them.
     files:  label -> the repo-relative paths behind a count. Not every count has
@@ -19,10 +21,28 @@ class Preview(TypedDict):
             every analysis reads files at all (git-history reads commits).
     notes:  what the counts alone would misstate: a budget that capped text
             rather than dropping files, a refusal, or a real run that stops here.
+
+    Present only where the crawler genuinely computes the quantity. The labels
+    above are the reader's phrases, so a consumer that needs the kept or dropped
+    set cannot find it by matching text; these three keys carry it under a fixed
+    name. Absent means "this crawler computes no such quantity", which is the
+    honest answer where a zero would be an invented count (coderay-05w.6):
+
+    included:        the repo-relative paths whose text reached the prompts.
+    dropped:         the repo-relative paths a budget or cap kept out of them.
+                     Absent for a crawler that caps its assembled text instead of
+                     dropping whole files (architecture), and for one that reads
+                     no files at all (git-history).
+    assembled_chars: the length of the text the crawl assembled. Carried so the
+                     token estimate and the counts describe one crawl rather than
+                     two, without re-running the crawl (coderay-05w.5).
     """
     counts: Dict[str, int]
     files: Dict[str, List[str]]
     notes: List[str]
+    included: List[str]
+    dropped: List[str]
+    assembled_chars: int
 
 
 def aborts(reason: str) -> str:

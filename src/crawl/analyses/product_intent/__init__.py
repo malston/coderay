@@ -31,7 +31,10 @@ def add_arguments(parser):
 def preview(args) -> Preview:
     """What the crawl step found, before any LLM call. This is the one crawler
     that counts all three outright: what went in, what the budget dropped, and
-    what would not decode."""
+    what would not decode. The dropped files are named as well as counted, which
+    is what a recommendation about --include/--exclude has to be grounded in
+    (coderay-05w.4). Unreadable files are counted but not named: they never
+    became a repo-relative path."""
     include = list(getattr(args, "include", []) or [])
     exclude = list(getattr(args, "exclude", []) or [])
     codebase, stats = bundle(args.repo_path, include=include or None,
@@ -39,10 +42,12 @@ def preview(args) -> Preview:
     notes = []
     if not codebase.strip():
         notes.append(aborts(no_source_reason(args.repo_path, include, exclude)))
-    return {"counts": {"files in the bundle": stats["included"],
-                       "dropped by the budget": stats["dropped"],
+    return {"counts": {"files in the bundle": len(stats["files"]),
+                       "dropped by the budget": len(stats["dropped_files"]),
                        "unreadable": stats["unreadable"]},
-            "files": {"bundle": stats["files"]}, "notes": notes}
+            "files": {"bundle": stats["files"], "dropped by the budget": stats["dropped_files"]},
+            "included": stats["files"], "dropped": stats["dropped_files"],
+            "assembled_chars": len(codebase), "notes": notes}
 
 
 def sent(shared):

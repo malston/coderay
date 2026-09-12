@@ -187,10 +187,18 @@ def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS, per_layer_sample=PER_LAYER_S
     ordered = [(rel, block) for layer in BUNDLE_ORDER for _rank, rel, block in sorted(chosen[layer])]
     parts = [header] + [block for _rel, block in ordered]
     files = [rel for rel, _block in ordered]  # what left the machine (coderay-3eu)
+    # A file can match a layer and still not reach the bundle: empty, unreadable,
+    # past the budget, or past its layer's sample cap. They are named as one set
+    # rather than bucketed by reason -- the user steers the budget, not the
+    # reason a given file missed it (coderay-05w.4).
+    bundled = set(files)
+    dropped = sorted(rel for layer in BUNDLE_ORDER for rel in files_by_layer[layer]
+                     if rel not in bundled)
 
     if not files:
         # The counts header alone tells the model nothing it can read a backend
         # from, and a truthy bundle hides "found nothing" from the caller.
-        return "", {"counts": dict(counts), "included": 0, "files": []}
+        return "", {"counts": dict(counts), "included": 0, "files": [], "dropped_files": dropped}
 
-    return "".join(parts), {"counts": dict(counts), "included": len(files), "files": files}
+    return "".join(parts), {"counts": dict(counts), "included": len(files), "files": files,
+                            "dropped_files": dropped}

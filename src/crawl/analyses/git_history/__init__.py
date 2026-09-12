@@ -35,7 +35,9 @@ def add_arguments(parser):
 
 def preview(args) -> Preview:
     """What the crawl step found, before any LLM call. There are no file counts
-    here: this analysis reads commits. The eras are the model's answer, so a
+    here: this analysis reads commits, so it carries none of the three canonical
+    file quantities -- an empty included/dropped set would claim it looked at
+    files and found none (coderay-05w.6). The eras are the model's answer, so a
     preview cannot report them.
 
     repo_root first, as run() does: `git -C` walks up to the enclosing .git, so a
