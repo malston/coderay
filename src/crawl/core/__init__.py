@@ -35,7 +35,7 @@ from .files import (  # noqa: F401
     credential_named,
     readable,
 )
-from .env import env_defaults  # noqa: F401
+from .env import env_defaults, load_dotenv  # noqa: F401
 from .nodes import OverviewNode  # noqa: F401
 from .overview import write_overview  # noqa: F401
 from .pricing import (  # noqa: F401

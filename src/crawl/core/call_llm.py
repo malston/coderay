@@ -191,7 +191,9 @@ def _pick():
     if os.environ.get("GEMINI_API_KEY"):
         return "gemini"
     raise RuntimeError(
-        "No LLM key set. Export ANTHROPIC_API_KEY or OPENAI_API_KEY or GEMINI_API_KEY."
+        "No LLM key set. Put ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY "
+        "in a .env file in this directory (cp .env.example .env), or set one in "
+        "the environment."
     )
 
 
