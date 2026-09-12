@@ -16,6 +16,7 @@ and know why it moved.
 
     uv run scripts/regen_tour_golden.py
 """
+import argparse
 import json
 import pathlib
 import sys
@@ -43,6 +44,12 @@ def render_into(out_dir):
 
 
 def main():
+    # No positional, unlike scripts/regen_golden.py, which names an analysis.
+    # Parsing anyway so a stray argument is refused rather than ignored: this
+    # script overwrites the committed fixture, and `--help` silently doing that
+    # is the last thing an operator checking usage expects.
+    argparse.ArgumentParser(description=__doc__,
+                            formatter_class=argparse.RawDescriptionHelpFormatter).parse_args()
     if not (FIXTURE / "input.json").is_file():
         sys.exit(f"no fixture input at {FIXTURE / 'input.json'}")
     render_into(FIXTURE)

@@ -119,7 +119,7 @@ HTML_TEMPLATE = """<!doctype html>
 {head_assets}
 <style>
 {tokens}
-  :root {{ --accent: #3b82f6; --accent-soft: #eff6ff;
+  :root {{ --accent: #3b82f6; --accent-soft: #eff6ff; --accent-ink: #2a58a4;
     --shadow-lg: 0 8px 26px rgba(16,24,40,.10); }}
   html {{ -webkit-text-size-adjust: 100%; }}
   body {{ font-family: var(--font); font-size: 13.5px; line-height: 1.5;
@@ -132,7 +132,7 @@ HTML_TEMPLATE = """<!doctype html>
   .hero-inner {{ max-width: 1120px; margin: 0 auto; }}
   .hero-diagram {{ margin: 26px 0 4px; }}
   .hero-diagram-cap {{ font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-    color: var(--accent); margin: 0 2px 9px; }}
+    color: var(--accent-ink); margin: 0 2px 9px; }}
   .timeline {{ display: flex; gap: 4px; align-items: stretch; }}
   .tl-era {{ min-width: 0; padding: 15px 13px; border-radius: 8px; color: #fff; overflow: hidden; }}
   .tl-name {{ font-weight: 800; font-size: .92rem; letter-spacing: -.01em; line-height: 1.2;
@@ -149,7 +149,7 @@ HTML_TEMPLATE = """<!doctype html>
   /* Section header with a scroll hint */
   .sec-head {{ display: flex; align-items: baseline; gap: 10px; margin: 42px 2px 14px; }}
   .sec-n {{ font-family: 'JetBrains Mono', monospace; font-size: .68rem; font-weight: 700;
-    color: var(--accent); }}
+    color: var(--accent-ink); }}
   .sec-label {{ display: flex; align-items: center; gap: 9px; font-size: .68rem; font-weight: 700;
     letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }}
   .sec-label::before {{ content: ''; width: 3px; height: 14px; background: var(--accent); border-radius: 2px; }}
@@ -160,7 +160,7 @@ HTML_TEMPLATE = """<!doctype html>
   .intro {{ background: var(--surface); border: 1px solid var(--rule); border-left: 4px solid var(--accent);
     border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px 24px; margin: 30px 0 4px; }}
   .intro-label {{ font-size: .68rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
-    color: var(--accent); margin-bottom: 10px; }}
+    color: var(--accent-ink); margin-bottom: 10px; }}
   .intro p {{ margin: .5em 0; font-size: .96rem; color: var(--body-text); line-height: 1.7; }}
   .intro p:first-child {{ margin-top: 0; }}
   .intro strong {{ color: var(--text); }}
@@ -190,7 +190,7 @@ HTML_TEMPLATE = """<!doctype html>
   .card-top {{ flex-shrink: 0; padding: 15px 20px 13px; border-bottom: 1px solid var(--line);
     background: linear-gradient(180deg, #fbfcfe, var(--surface)); }}
   .card-num {{ font-family: 'JetBrains Mono', monospace; font-size: .64rem; font-weight: 700;
-    letter-spacing: .12em; color: var(--accent); }}
+    letter-spacing: .12em; color: var(--accent-ink); }}
   .card-name {{ font-size: 1.12rem; font-weight: 800; letter-spacing: -.01em; margin: 3px 0 7px; }}
   .card-meta {{ display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }}
   .chip {{ font-family: 'JetBrains Mono', monospace; font-size: .66rem; color: var(--muted);
@@ -204,9 +204,9 @@ HTML_TEMPLATE = """<!doctype html>
   .era-desc p {{ margin: 0 0 .55em; }}
   .turning {{ font-size: .8rem; color: var(--muted); background: var(--accent-soft);
     border-radius: 8px; padding: 10px 12px; margin: 10px 0 0; }}
-  .turning b {{ color: var(--accent); }}
+  .turning b {{ color: var(--accent-ink); }}
   .turning .hash {{ font-family: 'JetBrains Mono', monospace; font-size: .72rem;
-    background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; color: var(--accent); }}
+    background: var(--surface); padding: 1px 5px; border-radius: 4px; color: var(--accent-ink); }}
 
   /* Section 2 — cast & mood (fixed frame, inner scroll) */
   .profile {{ flex: 0 0 440px; width: 440px; height: 66vh; min-height: 460px; max-height: 720px;

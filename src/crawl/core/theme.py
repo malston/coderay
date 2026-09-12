@@ -7,11 +7,38 @@ structured data -- but they are the same product, so the fonts, the palette,
 the code typography and the third-party head tags are defined here once and
 included by all four. Layout and type sizes stay with each renderer.
 
-Each template carries a {head_assets}, {tokens} and {dark_tokens} slot, in
-that order. These are substituted into a template rather than formatted, so
-their braces are literal. TOKENS carries a default --accent; a renderer that
-wants its own writes a one-line :root override after it.
+Five templates across those four renderers each carry a {head_assets},
+{tokens} and {dark_tokens} slot, in that order, with {dark_tokens} closing the
+<style> block. These arrive as .format() values rather than as part of a format
+string, so .format() never rescans them and their braces are not doubled.
+
+TOKENS carries default colours; a renderer that wants its own writes a :root
+override after it. Anything derived with color-mix is declared flat first and
+mixed inside an @supports block, never as a bare second declaration.
 """
+
+#: How far --accent-ink pulls the accent toward the text colour. Matches the
+#: color-mix percentage in TOKENS, so the flat and derived values agree.
+INK_MIX = 0.60
+#: The light scheme's --text. flat_ink mixes toward it, because the flat value
+#: only ever renders on a browser that has no color-mix and no dark block.
+_LIGHT_TEXT = (0x10, 0x18, 0x28)
+
+
+def flat_ink(accent):
+    """The fallback --accent-ink for an accent, for browsers without color-mix.
+
+    color-mix in srgb interpolates each channel, so this is the same arithmetic
+    the stylesheet does, kept here rather than written out per analysis.
+    """
+    hexed = accent.lstrip("#")
+    if len(hexed) == 3:  # CSS shorthand: #abc means #aabbcc
+        hexed = "".join(c * 2 for c in hexed)
+    channels = (int(hexed[i:i + 2], 16) for i in (0, 2, 4))
+    mixed = (round(c * INK_MIX + t * (1 - INK_MIX))
+             for c, t in zip(channels, _LIGHT_TEXT))
+    return "#%02x%02x%02x" % tuple(mixed)
+
 
 HEAD_ASSETS = """<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -63,7 +90,8 @@ HEAD_ASSETS = """<meta name="viewport" content="width=device-width, initial-scal
 TOKENS = """  :root {
     --bg: #f7f8fa; --surface: #fff; --text: #101828; --muted: #667085;
     --faint: #98a2b3; --rule: #e4e7ec; --line: #eef0f3;
-    --accent: #2563eb; --accent-soft: #dbeafe; --good: #16a34a; --stone: #9aa4b2;
+    --accent: #2563eb; --accent-soft: #dbeafe; --accent-ink: #1d459d;
+    --good: #16a34a; --stone: #9aa4b2;
     --stone-bg: #f2f4f7; --shadow: 0 1px 2px rgba(16,24,40,.05); --radius: 12px;
     --body-text: #344054; --body-soft: #475467;
     --font: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
@@ -79,15 +107,30 @@ TOKENS = """  :root {
   table { border-collapse: collapse; width: 100%; }
   th, td { border: 1px solid var(--rule); text-align: left; vertical-align: top; }
   th { background: var(--stone-bg); color: var(--muted); }
+
+  /* --accent is the brand hue, picked to look right as a bar, a border or a
+     fill. Reading it as small text is a different question: every analysis
+     accent lands under WCAG AA against one scheme's surfaces or the other's
+     (schema is 2.63:1 on the dark surface, architecture 3.00:1 on the light
+     one). --accent-ink carries the same hue pulled toward whichever text
+     colour is in force, which clears AA in both. Use it wherever the accent
+     is the ink; the flat value above is the default accent's, and a renderer
+     that sets its own --accent sets its own flat ink beside it. */
+  @supports (color: color-mix(in srgb, red 50%, blue)) {
+    :root { --accent-ink: color-mix(in srgb, var(--accent) 60%, var(--text)); }
+  }
 """
 
-# Included after each renderer's own rules, so a per-analysis accent or a
-# layout rule set in between cannot outrank the dark surface it sits on.
+# Included after each renderer's own rules, so an --accent-soft or a layout
+# rule set in between cannot outrank the dark surface it sits on.
 DARK_TOKENS = """  @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0b0f19; --surface: #141a27; --text: #e6e9ef; --muted: #98a2b3;
-      --faint: #6c7689; --rule: #232b3a; --line: #1b2230;
+      /* #6c7689 reads as 3.80:1 on --surface, under AA for the small text
+         that carries it. */
+      --faint: #7d8798; --rule: #232b3a; --line: #1b2230;
       --stone-bg: #1b2230; --shadow: 0 1px 2px rgba(0,0,0,.4);
+      --shadow-lg: 0 8px 26px rgba(0,0,0,.55);
       --body-text: #c3c9d5; --body-soft: #a6aebd; --thumb: #2a3346;
       /* A step lighter than the page, so a code block still reads as raised. */
       --code-bg: #161d2c;

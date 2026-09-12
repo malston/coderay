@@ -69,7 +69,7 @@ def build_mermaid(abstractions, relationships):
 
 
 SHARED_STYLE = """\
-  :root { --accent: #0d9488; --accent-soft: #ccfbf1; }
+  :root { --accent: #0d9488; --accent-soft: #ccfbf1; --accent-ink: #0e6262; }
   body { font-family: var(--font); font-size: 16px; line-height: 1.65;
     color: var(--text); background: var(--bg); margin: 0; -webkit-font-smoothing: antialiased; }
   main { max-width: 820px; margin: 0 auto; padding: 0 24px 64px; }
@@ -83,7 +83,7 @@ SHARED_STYLE = """\
   strong { color: var(--text); }
   em { color: var(--body-soft); }
   .muted { color: var(--muted); }
-  a { color: var(--accent); text-decoration: none; }
+  a { color: var(--accent-ink); text-decoration: none; }
   a:hover { text-decoration: underline; }
 
   .hero { background: radial-gradient(120% 140% at 50% 0%, #0f766e 0%, #042f2e 70%);
@@ -106,7 +106,7 @@ SHARED_STYLE = """\
   table { margin: 1.2em 0; font-size: .9rem; }
   th, td { padding: 8px 10px; }
   th { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
-  .lens { display: inline-block; padding: 2px 9px; background: var(--accent-soft); color: var(--accent);
+  .lens { display: inline-block; padding: 2px 9px; background: var(--accent-soft); color: var(--accent-ink);
     border-radius: 999px; font-size: .78rem; font-weight: 600; }
   nav.chapter-nav { margin: 3em 0 0; padding: 1.2em 0 0; border-top: 1px solid var(--rule);
     display: flex; justify-content: space-between; font-size: .92rem; }

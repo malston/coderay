@@ -131,7 +131,7 @@ def test_mermaid_runs_at_security_level_strict():
 
 
 def test_no_renderer_sets_its_own_mermaid_security_level():
-    """The renderers must not drift apart on this setting again.
+    """The renderers must not drift apart on this setting.
 
     They take it from the one shared initialisation, so the check is that none
     of them names the setting at all -- a renderer that starts mermaid itself

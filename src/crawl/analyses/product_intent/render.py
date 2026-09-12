@@ -46,7 +46,7 @@ HTML_TEMPLATE = """<!doctype html>
 <style>
 {tokens}
   :root {{
-    --accent: #3b82f6; --accent-soft: #eff6ff; --good: #22c55e;
+    --accent: #3b82f6; --accent-soft: #eff6ff; --accent-ink: #2a58a4; --good: #22c55e;
     --warn: #f59e0b; --danger: #ef4444;
     --warn-soft: #fffbeb; --warn-ink: #92400e; --warn-body: #422006;
     --good-soft: #f0fdf4; --good-ink: #166534;
@@ -216,8 +216,8 @@ HTML_TEMPLATE = """<!doctype html>
     display: block; color: var(--muted); font-size: .82rem; line-height: 1.5;
   }}
   table.matrix tr.you td {{ background: var(--accent-soft); }}
-  table.matrix tr.you td.row-head {{ color: var(--accent); }}
-  table.matrix tr.you td .verdict {{ color: var(--accent); }}
+  table.matrix tr.you td.row-head {{ color: var(--accent-ink); }}
+  table.matrix tr.you td .verdict {{ color: var(--accent-ink); }}
 
   /* Horizontal scrollable card rails for surprises and absences. */
   .scroll-hint {{

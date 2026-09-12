@@ -71,9 +71,9 @@ def test_every_renderer_loads_one_mermaid_build_from_the_shared_layer():
     """Two renderers pinning different mermaid builds means two sets of
     diagram-rendering behaviour to reason about, and only one gets audited.
 
-    They now share one definition, so the check is that each page really
-    carries it once rather than that two copies happen to agree -- a copy
-    reintroduced anywhere shows up here as a second pin.
+    Every page takes its mermaid tag from the one shared definition, so the
+    check is that each carries it exactly once rather than that two copies
+    happen to agree -- a copy reintroduced anywhere shows up as a second pin.
     """
     pin = re.compile(r'mermaid@([\d.]+)/dist/mermaid\.min\.js')
     shared = pin.findall(theme.HEAD_ASSETS)

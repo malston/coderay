@@ -53,7 +53,8 @@
   :root {
     --bg: #f7f8fa; --surface: #fff; --text: #101828; --muted: #667085;
     --faint: #98a2b3; --rule: #e4e7ec; --line: #eef0f3;
-    --accent: #2563eb; --accent-soft: #dbeafe; --good: #16a34a; --stone: #9aa4b2;
+    --accent: #2563eb; --accent-soft: #dbeafe; --accent-ink: #1d459d;
+    --good: #16a34a; --stone: #9aa4b2;
     --stone-bg: #f2f4f7; --shadow: 0 1px 2px rgba(16,24,40,.05); --radius: 12px;
     --body-text: #344054; --body-soft: #475467;
     --font: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
@@ -70,7 +71,19 @@
   th, td { border: 1px solid var(--rule); text-align: left; vertical-align: top; }
   th { background: var(--stone-bg); color: var(--muted); }
 
-  :root { --accent: #3b82f6; --accent-soft: #eff6ff;
+  /* --accent is the brand hue, picked to look right as a bar, a border or a
+     fill. Reading it as small text is a different question: every analysis
+     accent lands under WCAG AA against one scheme's surfaces or the other's
+     (schema is 2.63:1 on the dark surface, architecture 3.00:1 on the light
+     one). --accent-ink carries the same hue pulled toward whichever text
+     colour is in force, which clears AA in both. Use it wherever the accent
+     is the ink; the flat value above is the default accent's, and a renderer
+     that sets its own --accent sets its own flat ink beside it. */
+  @supports (color: color-mix(in srgb, red 50%, blue)) {
+    :root { --accent-ink: color-mix(in srgb, var(--accent) 60%, var(--text)); }
+  }
+
+  :root { --accent: #3b82f6; --accent-soft: #eff6ff; --accent-ink: #2a58a4;
     --shadow-lg: 0 8px 26px rgba(16,24,40,.10); }
   html { -webkit-text-size-adjust: 100%; }
   body { font-family: var(--font); font-size: 13.5px; line-height: 1.5;
@@ -83,7 +96,7 @@
   .hero-inner { max-width: 1120px; margin: 0 auto; }
   .hero-diagram { margin: 26px 0 4px; }
   .hero-diagram-cap { font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-    color: var(--accent); margin: 0 2px 9px; }
+    color: var(--accent-ink); margin: 0 2px 9px; }
   .timeline { display: flex; gap: 4px; align-items: stretch; }
   .tl-era { min-width: 0; padding: 15px 13px; border-radius: 8px; color: #fff; overflow: hidden; }
   .tl-name { font-weight: 800; font-size: .92rem; letter-spacing: -.01em; line-height: 1.2;
@@ -100,7 +113,7 @@
   /* Section header with a scroll hint */
   .sec-head { display: flex; align-items: baseline; gap: 10px; margin: 42px 2px 14px; }
   .sec-n { font-family: 'JetBrains Mono', monospace; font-size: .68rem; font-weight: 700;
-    color: var(--accent); }
+    color: var(--accent-ink); }
   .sec-label { display: flex; align-items: center; gap: 9px; font-size: .68rem; font-weight: 700;
     letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
   .sec-label::before { content: ''; width: 3px; height: 14px; background: var(--accent); border-radius: 2px; }
@@ -111,7 +124,7 @@
   .intro { background: var(--surface); border: 1px solid var(--rule); border-left: 4px solid var(--accent);
     border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px 24px; margin: 30px 0 4px; }
   .intro-label { font-size: .68rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
-    color: var(--accent); margin-bottom: 10px; }
+    color: var(--accent-ink); margin-bottom: 10px; }
   .intro p { margin: .5em 0; font-size: .96rem; color: var(--body-text); line-height: 1.7; }
   .intro p:first-child { margin-top: 0; }
   .intro strong { color: var(--text); }
@@ -141,7 +154,7 @@
   .card-top { flex-shrink: 0; padding: 15px 20px 13px; border-bottom: 1px solid var(--line);
     background: linear-gradient(180deg, #fbfcfe, var(--surface)); }
   .card-num { font-family: 'JetBrains Mono', monospace; font-size: .64rem; font-weight: 700;
-    letter-spacing: .12em; color: var(--accent); }
+    letter-spacing: .12em; color: var(--accent-ink); }
   .card-name { font-size: 1.12rem; font-weight: 800; letter-spacing: -.01em; margin: 3px 0 7px; }
   .card-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .chip { font-family: 'JetBrains Mono', monospace; font-size: .66rem; color: var(--muted);
@@ -155,9 +168,9 @@
   .era-desc p { margin: 0 0 .55em; }
   .turning { font-size: .8rem; color: var(--muted); background: var(--accent-soft);
     border-radius: 8px; padding: 10px 12px; margin: 10px 0 0; }
-  .turning b { color: var(--accent); }
+  .turning b { color: var(--accent-ink); }
   .turning .hash { font-family: 'JetBrains Mono', monospace; font-size: .72rem;
-    background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; color: var(--accent); }
+    background: var(--surface); padding: 1px 5px; border-radius: 4px; color: var(--accent-ink); }
 
   /* Section 2 — cast & mood (fixed frame, inner scroll) */
   .profile { flex: 0 0 440px; width: 440px; height: 66vh; min-height: 460px; max-height: 720px;
@@ -207,8 +220,11 @@
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0b0f19; --surface: #141a27; --text: #e6e9ef; --muted: #98a2b3;
-      --faint: #6c7689; --rule: #232b3a; --line: #1b2230;
+      /* #6c7689 reads as 3.80:1 on --surface, under AA for the small text
+         that carries it. */
+      --faint: #7d8798; --rule: #232b3a; --line: #1b2230;
       --stone-bg: #1b2230; --shadow: 0 1px 2px rgba(0,0,0,.4);
+      --shadow-lg: 0 8px 26px rgba(0,0,0,.55);
       --body-text: #c3c9d5; --body-soft: #a6aebd; --thumb: #2a3346;
       /* A step lighter than the page, so a code block still reads as raised. */
       --code-bg: #161d2c;

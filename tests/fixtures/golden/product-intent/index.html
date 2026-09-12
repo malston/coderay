@@ -53,7 +53,8 @@
   :root {
     --bg: #f7f8fa; --surface: #fff; --text: #101828; --muted: #667085;
     --faint: #98a2b3; --rule: #e4e7ec; --line: #eef0f3;
-    --accent: #2563eb; --accent-soft: #dbeafe; --good: #16a34a; --stone: #9aa4b2;
+    --accent: #2563eb; --accent-soft: #dbeafe; --accent-ink: #1d459d;
+    --good: #16a34a; --stone: #9aa4b2;
     --stone-bg: #f2f4f7; --shadow: 0 1px 2px rgba(16,24,40,.05); --radius: 12px;
     --body-text: #344054; --body-soft: #475467;
     --font: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
@@ -70,8 +71,20 @@
   th, td { border: 1px solid var(--rule); text-align: left; vertical-align: top; }
   th { background: var(--stone-bg); color: var(--muted); }
 
+  /* --accent is the brand hue, picked to look right as a bar, a border or a
+     fill. Reading it as small text is a different question: every analysis
+     accent lands under WCAG AA against one scheme's surfaces or the other's
+     (schema is 2.63:1 on the dark surface, architecture 3.00:1 on the light
+     one). --accent-ink carries the same hue pulled toward whichever text
+     colour is in force, which clears AA in both. Use it wherever the accent
+     is the ink; the flat value above is the default accent's, and a renderer
+     that sets its own --accent sets its own flat ink beside it. */
+  @supports (color: color-mix(in srgb, red 50%, blue)) {
+    :root { --accent-ink: color-mix(in srgb, var(--accent) 60%, var(--text)); }
+  }
+
   :root {
-    --accent: #3b82f6; --accent-soft: #eff6ff; --good: #22c55e;
+    --accent: #3b82f6; --accent-soft: #eff6ff; --accent-ink: #2a58a4; --good: #22c55e;
     --warn: #f59e0b; --danger: #ef4444;
     --warn-soft: #fffbeb; --warn-ink: #92400e; --warn-body: #422006;
     --good-soft: #f0fdf4; --good-ink: #166534;
@@ -241,8 +254,8 @@
     display: block; color: var(--muted); font-size: .82rem; line-height: 1.5;
   }
   table.matrix tr.you td { background: var(--accent-soft); }
-  table.matrix tr.you td.row-head { color: var(--accent); }
-  table.matrix tr.you td .verdict { color: var(--accent); }
+  table.matrix tr.you td.row-head { color: var(--accent-ink); }
+  table.matrix tr.you td .verdict { color: var(--accent-ink); }
 
   /* Horizontal scrollable card rails for surprises and absences. */
   .scroll-hint {
@@ -309,8 +322,11 @@
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0b0f19; --surface: #141a27; --text: #e6e9ef; --muted: #98a2b3;
-      --faint: #6c7689; --rule: #232b3a; --line: #1b2230;
+      /* #6c7689 reads as 3.80:1 on --surface, under AA for the small text
+         that carries it. */
+      --faint: #7d8798; --rule: #232b3a; --line: #1b2230;
       --stone-bg: #1b2230; --shadow: 0 1px 2px rgba(0,0,0,.4);
+      --shadow-lg: 0 8px 26px rgba(0,0,0,.55);
       --body-text: #c3c9d5; --body-soft: #a6aebd; --thumb: #2a3346;
       /* A step lighter than the page, so a code block still reads as raised. */
       --code-bg: #161d2c;

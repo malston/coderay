@@ -7,6 +7,8 @@ head tags are defined once in crawl.core.theme and included by all of them.
 """
 import re
 
+import pytest
+
 from crawl.analyses.git_history import render as git_history_render
 from crawl.analyses.product_intent import render as product_intent_render
 from crawl.analyses.tour import render as tour_render
@@ -26,14 +28,12 @@ TEMPLATES = {
     "product-intent": product_intent_render.HTML_TEMPLATE,
 }
 
-# The last slot each template fills in its own right. The dark block has to
-# come after it, or a rule written later outranks the dark surface.
-LAST_OWN_SLOT = {
-    "card": "{rail_widths}",
-    "tour/index": "{shared_style}",
-    "tour/chapter": "{shared_style}",
-    "git-history": "{tokens}",
-    "product-intent": "{tokens}",
+# CSS a template reaches through a slot rather than writing inline. Without
+# these the colour scan below reads nothing at all for the tour, whose whole
+# stylesheet arrives through {shared_style}.
+SLOT_CSS = {
+    "tour/index": tour_render.SHARED_STYLE,
+    "tour/chapter": tour_render.SHARED_STYLE,
 }
 
 
@@ -73,7 +73,7 @@ def test_tokens_define_the_palette_and_code_typography():
 
 
 def test_every_renderer_takes_the_head_and_the_tokens_from_one_place():
-    """One definition, four includes. A copy drifts, and only one gets audited."""
+    """One definition, five templates. A copy drifts, and only one gets audited."""
     for label, template in TEMPLATES.items():
         assert "{head_assets}" in template, f"{label} writes its own head"
         assert "{tokens}" in template, f"{label} writes its own palette"
@@ -92,14 +92,20 @@ def test_dark_tokens_leave_the_accent_to_each_renderer():
     assert "--accent:" not in theme.DARK_TOKENS
 
 
-def test_the_dark_block_comes_after_every_rule_it_has_to_outrank():
-    """It redefines :root at equal specificity, so order is what decides. A
-    renderer's accent or layout rule placed after it would win instead."""
+def test_the_dark_block_closes_every_style_sheet():
+    """It redefines :root at equal specificity, so order is what decides.
+
+    The invariant is that nothing at all follows it inside <style>: a rule
+    written after it, or a slot carrying one, would win instead. Asserting the
+    tail is empty checks that directly, rather than naming the slot the block
+    has to follow and trusting the name to stay accurate.
+    """
     for label, template in TEMPLATES.items():
         assert "{dark_tokens}" in template, f"{label} has no dark mode"
         assert template.index("{tokens}") < template.index("{dark_tokens}"), label
-        assert template.index("{dark_tokens}") > template.rindex(LAST_OWN_SLOT[label]), (
-            f"{label} writes rules after the dark block, which would outrank it")
+        tail = template.split("{dark_tokens}", 1)[1].split("</style>", 1)[0]
+        assert not tail.strip(), (
+            f"{label} writes {tail.strip()[:60]!r} after the dark block, which would outrank it")
 
 
 def test_diagrams_follow_the_colour_scheme():
@@ -108,9 +114,10 @@ def test_diagrams_follow_the_colour_scheme():
     assert "'dark' : 'neutral'" in theme.HEAD_ASSETS
 
 
-# Elements whose colour is fixed by design rather than by the scheme: the hero
-# bands, and the saturated chips and bars that carry white text in either one.
+# Elements whose colour is fixed by design rather than by the scheme.
 SCHEME_INDEPENDENT = (".hero", ".eyebrow", ".gc-bar", ".bar-fill", ".tl-era", ".num")
+# .gc-bar, .tl-era and .num carry white text; .bar-fill is a saturated bar
+# with no text of its own.
 
 
 def _repainted_in_the_dark():
@@ -130,14 +137,7 @@ def test_no_page_hardcodes_a_colour_that_dark_mode_cannot_reach():
     repainted = _repainted_in_the_dark()
     assert repainted, "the dark block repaints nothing; this allowance is stale"
     for label, template in TEMPLATES.items():
-        block = re.search(r"<style>(.*?)</style>", template, re.S)
-        if not block:
-            continue
-        # Drop each template's single-brace slots so a rule carrying one still
-        # parses as a rule; these templates write literal CSS braces doubled.
-        css = re.sub(r"\{([a-z_]+)\}", r"\1", block.group(1))
-        for selector, body in re.findall(r"([^{}]+)\{\{([^{}]*)\}\}", css):
-            sel = selector.strip()
+        for sel, body in _rules(label, template):
             # :root declares the tokens; the dark block redefines them there.
             if sel.endswith(":root") or sel in repainted:
                 continue
@@ -147,3 +147,95 @@ def test_no_page_hardcodes_a_colour_that_dark_mode_cannot_reach():
             assert not literal, (
                 f"{label}: {sel} hardcodes {literal.group(2)} for "
                 f"{literal.group(1)}: {' '.join(body.split())}")
+
+
+def _rules(label, template):
+    """Every CSS rule a template ships, inline or through a slot.
+
+    A template writes its literal braces doubled, because it is formatted; CSS
+    reached through a slot is substituted as a value and writes them single.
+    """
+    block = re.search(r"<style>(.*?)</style>", template, re.S)
+    inline = block.group(1) if block else ""
+    # Drop the template's own slot names so a rule carrying one still parses.
+    inline = re.sub(r"\{([a-z_]+)\}", r"\1", inline)
+    found = [(s.strip(), b) for s, b in re.findall(r"([^{}]+)\{\{([^{}]*)\}\}", inline)]
+    slotted = SLOT_CSS.get(label, "")
+    found += [(s.strip(), b) for s, b in re.findall(r"([^{}]+)\{([^{}]*)\}", slotted)]
+    assert len(found) > 10, (
+        f"{label}: only {len(found)} rules found, so this check is not reading "
+        "the stylesheet -- CSS has probably moved behind a slot")
+    return found
+
+
+def test_flat_ink_matches_the_mix_the_stylesheet_does():
+    """The flat value only renders where color-mix is unavailable, so it has to
+    land on the same colour the @supports rule would have produced."""
+    # 60% of #2563eb toward the light #101828, channel by channel.
+    assert theme.flat_ink("#2563eb") == "#1d459d"
+    assert theme.INK_MIX == 0.60
+
+
+def test_flat_ink_accepts_the_three_digit_shorthand():
+    """CSS allows #abc, and a Theme is free to use it."""
+    assert theme.flat_ink("#000") == theme.flat_ink("#000000")
+    assert theme.flat_ink("#fff") == theme.flat_ink("#ffffff")
+
+
+def _relative_luminance(colour):
+    def channel(c):
+        c /= 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    h = colour.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    r, g, b = (channel(int(h[i:i + 2], 16)) for i in (0, 2, 4))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _contrast(fg, bg):
+    a, b = _relative_luminance(fg), _relative_luminance(bg)
+    return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+
+
+def _mix(a, b, pct):
+    def rgb(c):
+        h = c.lstrip("#")
+        if len(h) == 3:
+            h = "".join(x * 2 for x in h)
+        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return "#%02x%02x%02x" % tuple(
+        round(x * pct + y * (1 - pct)) for x, y in zip(rgb(a), rgb(b)))
+
+
+# Every accent that ships, and the surfaces each has to read on.
+ACCENTS = {"architecture": "#d97706", "backend": "#4f46e5", "interfaces": "#0d9488",
+           "schema": "#6941c6", "history": "#3b82f6", "product": "#3b82f6",
+           "tour": "#0d9488", "default": "#2563eb"}
+SCHEMES = {"light": {"bg": "#f7f8fa", "surface": "#ffffff", "text": "#101828", "tint": 0.14},
+           "dark": {"bg": "#0b0f19", "surface": "#141a27", "text": "#e6e9ef", "tint": 0.22}}
+WCAG_AA = 4.5
+
+
+@pytest.mark.parametrize("name", sorted(ACCENTS))
+def test_every_accent_reads_as_text_in_both_schemes(name):
+    """--accent is picked to look right as a bar or a fill, and several land
+    under AA as small text: schema is 2.63:1 on the dark surface, architecture
+    3.00:1 on the light one. --accent-ink is what the renderers set on text,
+    so it is the value that has to clear AA."""
+    for scheme, s in SCHEMES.items():
+        ink = _mix(ACCENTS[name], s["text"], theme.INK_MIX)
+        soft = _mix(ACCENTS[name], s["surface"], s["tint"])
+        for surface_name, surface in (("bg", s["bg"]), ("surface", s["surface"]),
+                                      ("soft tint", soft)):
+            got = _contrast(ink, surface)
+            assert got >= WCAG_AA, (
+                f"{name} ink {ink} on the {scheme} {surface_name} is {got:.2f}:1")
+
+
+def test_faint_reads_on_the_dark_surfaces():
+    """It carries section notes and footers, which are small."""
+    faint = re.search(r"--faint:\s*(#[0-9a-fA-F]{3,6})", theme.DARK_TOKENS).group(1)
+    for surface in ("#0b0f19", "#141a27"):
+        got = _contrast(faint, surface)
+        assert got >= WCAG_AA, f"--faint {faint} on {surface} is {got:.2f}:1"
