@@ -29,7 +29,7 @@ A five-stage pipeline (BuildBundle, Pipeline, LayerCode, Trace, OverviewNode) th
 
 A five-stage pipeline (BuildBundle, Inventory, TechStack, TraceRequest, OverviewNode) that maps a multi-service system: the programs it runs, the services it rents, and the wires between them:
 
-- Overlays four sources that no single file holds together: process declarations (compose, Kubernetes manifests, `Procfile`, platform config), environment variable names from `.env` files, the union of dependencies declared across `package.json`, `go.mod`, `pyproject.toml`, and `requirements.txt`, and Terraform. `git grep` reports which files import which SDK, as proof a connection is live rather than merely configured -- the file and the SDK name only, never the source line, since a matched constructor can hold a hardcoded token. Credential values are stripped before the bundle leaves the machine, including Kubernetes `name`/`value` env pairs, and a bundle that hit its size cap says so rather than stopping mid-file.
+- Overlays four sources that no single file holds together: process declarations (compose, Kubernetes manifests, `Procfile`, platform config), environment variable names from `.env` files, the union of dependencies declared across `package.json`, `go.mod`, `pyproject.toml`, and `requirements.txt`, and Terraform. `git grep` reports which files import which SDK, as proof a connection is live rather than merely configured. It records the file and the SDK name only, never the source line, since a matched constructor can hold a hardcoded token. Credential values are stripped before the bundle leaves the machine, including Kubernetes `name`/`value` env pairs, and a bundle that hit its size cap says so rather than stopping mid-file.
 - Renders three views: every node sorted into four bands (run, rent, call, client), the real technology behind each box's label, and one request traced hop by hop with its variants.
 - Expects a multi-service application. The run stops before it spends an LLM call only when the whole bundle is empty; a repo with no config files but some dependencies or SDK imports still proceeds, which is how the CDK case below reports `0 config files` and carries on.
 - Known limitations, worth reading before you spend a run:
@@ -217,19 +217,19 @@ A tour analyses a small selection of a repository. It arrives at that selection 
 | 2. The preview manifest | 1,250 | The first 800 chars of each file, until a 1,000,000-char budget is spent                                       |
 | 3. The selection        | ~50   | The LLM picks from the manifest; those files are read whole. Needs a model, so the preview stops before it |
 
-**Step 1 counts what the crawler kept.** [`list_files`](src/crawl/core/files.py) drops unrecognised extensions, skipped directories (`node_modules`, `.git`, `dist`, vendored trees), and files over 500 KB before it returns. `Source files found` is the count that survives all three filters, so it runs well below the file count of the folder itself.
+Step 1 counts what the crawler kept. [`list_files`](src/crawl/core/files.py) drops unrecognised extensions, skipped directories (`node_modules`, `.git`, `dist`, vendored trees), and files over 500 KB before it returns. `Source files found` is the count that survives all three filters, so it runs well below the file count of the folder itself.
 
-**What the preview manifest is.** To ask the model which files matter, `SmartCrawl.prep` in [`src/crawl/analyses/tour/nodes.py`](src/crawl/analyses/tour/nodes.py) builds one block of text holding the first 800 characters of each file, enough to show the imports, the class names, and the opening docstring. That block fills the `{manifest}` slot in [`src/crawl/analyses/tour/prompts/select-files.md`](src/crawl/analyses/tour/prompts/select-files.md) and goes out as the selection prompt. It lives in memory for the length of that one call.
+To ask the model which files matter, `SmartCrawl.prep` in [`src/crawl/analyses/tour/nodes.py`](src/crawl/analyses/tour/nodes.py) builds one block of text holding the first 800 characters of each file, enough to show the imports, the class names, and the opening docstring. That block fills the `{manifest}` slot in [`src/crawl/analyses/tour/prompts/select-files.md`](src/crawl/analyses/tour/prompts/select-files.md) and goes out as the selection prompt. It lives in memory for the length of that one call.
 
 > Two different things share the word "manifest" here. The preview manifest above is the text the model chooses from. The `manifest.json` a successful run writes beside its report is a separate file, written afterwards, recording which repo files the prompts carried. The preview manifest never reaches disk.
 
-**Step 2 drops files by their position in the walk.** `list_files` walks depth-first with directory names and filenames sorted, and the manifest takes the first 1,250 in that order and stops. The files that fall out are the ones whose paths sort last. A repo with a large `vendor/` tree can spend its whole manifest before the walk reaches `src/`.
+Step 2 drops files by their position in the walk. `list_files` walks depth-first with directory names and filenames sorted, and the manifest takes the first 1,250 in that order and stops. The files that fall out are the ones whose paths sort last. A repo with a large `vendor/` tree can spend its whole manifest before the walk reaches `src/`.
 
 A large drop can still be fine. If those 2,039 files are fixtures and generated clients, the tour loses nothing by skipping them. The count is there so you can check that before the chapters are written.
 
-**Step 3 asks for a number of files and does not enforce it.** The prompt requests `min(50, max(20, manifest_files // 20))` files "or fewer", which is 5% of the manifest, floored at 20 and capped at 50. Nothing checks how many come back. `--codebase-budget` is what bounds this step: it reads the chosen files whole until its character budget is spent and drops the rest.
+Step 3 asks for a number of files and does not enforce it. The prompt requests `min(50, max(20, manifest_files // 20))` files "or fewer", which is 5% of the manifest, floored at 20 and capped at 50. Nothing checks how many come back. `--codebase-budget` is what bounds this step: it reads the chosen files whole until its character budget is spent and drops the rest.
 
-**`--codebase-budget` leaves the first two numbers alone.** It caps step 3. The manifest budget behind step 2 has no command-line flag, and neither does the selection target. `tour` takes no `--include`/`--exclude` either. On an oversized repo, point the command at a subdirectory.
+`--codebase-budget` leaves the first two numbers alone. It caps step 3. The manifest budget behind step 2 has no command-line flag, and neither does the selection target. `tour` takes no `--include`/`--exclude` either. On an oversized repo, point the command at a subdirectory.
 
 #### Each analysis reports what its own crawler counted
 
@@ -260,7 +260,7 @@ CODEBASE_BUDGET=2000000 crawl tour path/to/repo
 
 The budget caps how many whole files reach the model. It never trims a file part way, so a higher budget means more files in the prompt, and a larger prompt on every call that carries the codebase. Run `--dry-run` with the new value first to see the cost.
 
-This budget applies to step 3 above -- the files the model already chose. It does not widen the manifest the model chooses *from*; if `estimate-token-usage` reports a large `Dropped before the model saw them`, raising this will not recover those files.
+This budget applies to step 3 above, the files the model already chose. It does not widen the manifest the model chooses *from*; if `estimate-token-usage` reports a large `Dropped before the model saw them`, raising this will not recover those files.
 
 ### Pricing overrides
 
@@ -296,7 +296,7 @@ WriteChapters runs sequentially on purpose: running it in parallel would lose th
 
 ## Example output
 
-One real tour, generated end to end against [karpathy/micrograd](https://github.com/karpathy/micrograd) (`output/` is gitignored, so this isn't checked in -- run the quickstart above to generate your own):
+One real tour, generated end to end against [karpathy/micrograd](https://github.com/karpathy/micrograd) (`output/` is gitignored, so this isn't checked in; run the quickstart above to generate your own):
 
 | Tour             | Files selected | Chars selected | Abstractions | Relationships | Chapters |
 | ---------------- | -------------- | -------------- | ------------ | ------------- | -------- |
