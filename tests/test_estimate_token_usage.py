@@ -521,6 +521,9 @@ def test_preview_says_when_a_real_run_would_abort(tmp_path, name):
     result = ANALYSES[name].preview(_parser_for(name).parse_args([str(repo)]))
 
     assert any(note.startswith("A real run stops here:") for note in result["notes"]), result["notes"]
+    # This is the branch several previews return from separately; the key
+    # contract has to hold here too (coderay-878.4).
+    _assert_canonical_keys(name, result)
 
 
 @pytest.mark.parametrize("name", ANALYSIS_NAMES)
@@ -534,6 +537,9 @@ def test_preview_reports_zero_without_aborting_for_every_analysis(tmp_path, name
     result = ANALYSES[name].preview(_parser_for(name).parse_args([str(repo)]))
 
     assert all(v >= 0 for v in result["counts"].values())
+    # Several previews return from a separate statement when the crawl finds
+    # nothing, and that statement has to honour the same contract (coderay-878.4).
+    _assert_canonical_keys(name, result)
 
 
 # ------------------------------------------------------------ the CLI surface
@@ -722,6 +728,9 @@ def test_tour_says_when_a_real_run_would_abort(tmp_path):
     result = ANALYSES["tour"].preview(_parser_for("tour").parse_args([str(repo)]))
 
     assert any(note.startswith("A real run stops here:") for note in result["notes"])
+    # tour's abort path is a second return statement, so nothing else in the
+    # suite reaches the contract it has to honour (coderay-878.4).
+    _assert_canonical_keys("tour", result)
 
 
 def test_git_history_says_when_a_real_run_would_abort(tmp_path):
@@ -782,20 +791,20 @@ def test_require_directory_refuses_a_directory_it_cannot_walk(tmp_path):
 # length of the text the crawl built, which the cost estimate needs and every
 # preview used to throw away, coderay-05w.5).
 
-# Crawlers that drop whole files and can name them. architecture is absent by
-# design: it truncates its assembled text rather than dropping files, so it has
-# no dropped set to report. git-history reads commits, not files.
-NAMES_ITS_DROPS = ["backend", "interfaces", "product-intent", "schema", "tour"]
+# Crawlers that drop whole files and can name them. git-history is absent: it
+# reads commits, not files, so it carries none of the three.
+NAMES_ITS_DROPS = ["architecture", "backend", "interfaces", "product-intent", "schema", "tour"]
 ASSEMBLES_TEXT = ["architecture", "backend", "interfaces", "product-intent", "schema", "tour"]
 
 
-@pytest.mark.parametrize("name", ANALYSIS_NAMES)
-def test_preview_carries_only_the_canonical_keys_it_computes(tmp_path, name):
-    """An analysis that computes no kept/dropped set leaves the key out rather
-    than reporting a zero a crawler never counted (coderay-05w.6)."""
-    repo = _repo(tmp_path)
-    result = ANALYSES[name].preview(_parser_for(name).parse_args([str(repo)]))
+def _assert_canonical_keys(name, result):
+    """The key-set contract, checked wherever a preview returns: an analysis that
+    computes no kept/dropped set leaves the key out rather than reporting a zero
+    a crawler never counted (coderay-05w.6).
 
+    A helper rather than one test because several previews have a second return
+    statement for the abort path, and a contract checked on the healthy path
+    alone says nothing about the other one (coderay-878.4)."""
     assert set(result) <= {"counts", "files", "notes", "included", "dropped", "assembled_chars"}
     assert ("dropped" in result) == (name in NAMES_ITS_DROPS), \
         f"{name} dropped-set presence disagrees with what its crawler computes"
@@ -811,12 +820,38 @@ def test_preview_carries_only_the_canonical_keys_it_computes(tmp_path, name):
         assert isinstance(result["assembled_chars"], int)
 
 
-# tour is absent: its assembled text is the file-selection manifest, which
-# preview_budget sizes. --codebase-budget reaches only its later prompts. schema
-# is absent too: it truncates a single-file schema and appends a marker saying so,
-# which can leave the assembled text longer than the budget that cut it. Its
-# length is pinned exactly below instead.
-BUDGET_SIZES_THE_TEXT = ["architecture", "backend", "interfaces", "product-intent"]
+@pytest.mark.parametrize("name", ANALYSIS_NAMES)
+def test_preview_carries_only_the_canonical_keys_it_computes(tmp_path, name):
+    _assert_canonical_keys(name, ANALYSES[name].preview(
+        _parser_for(name).parse_args([str(_repo(tmp_path))])))
+
+
+def _multi_app_repo(tmp_path):
+    """Three apps of increasing size, so a budget between one file and all nine
+    trims the bundle instead of emptying it. The sample repo above has one file
+    per layer, where the only budgets that change anything drop everything."""
+    repo = tmp_path / "multi"
+    for app, n in (("a", 4), ("b", 8), ("c", 12)):
+        (repo / app).mkdir(parents=True)
+        (repo / app / "urls.py").write_text("urlpatterns = [path('x', v)]\n" * n, encoding="utf-8")
+        (repo / app / "views.py").write_text("def v(request): pass\n" * n, encoding="utf-8")
+        (repo / app / "models.py").write_text("class M(Model): pass\n" * n, encoding="utf-8")
+        (repo / app / "docker-compose.yml").write_text(
+            f"services:\n  w{app}:\n    image: python\n" + "    # pad\n" * n, encoding="utf-8")
+    return repo
+
+
+# One budget at which every analysis below keeps some files and drops others, so
+# a test over this fixture cannot pass by having nothing on one side.
+SPLITTING_BUDGET = "500"
+
+
+# A budget that trims this repo's bundle without emptying it. architecture and
+# schema are absent: both cut their text mid-way and append a marker saying so,
+# which can leave the assembled text LONGER than the budget that cut it. That is
+# pinned on its own below. tour is absent because --codebase-budget does not
+# reach its crawl step at all.
+TRIMMING_BUDGET = {"backend": 900, "interfaces": 500, "product-intent": 900}
 
 
 @pytest.mark.parametrize("name", ASSEMBLES_TEXT)
@@ -826,18 +861,84 @@ def test_preview_reports_the_length_of_the_text_it_assembled(tmp_path, name):
     assert result["assembled_chars"] > 0, f"{name} assembled nothing in a repo built for all seven"
 
 
-@pytest.mark.parametrize("name", BUDGET_SIZES_THE_TEXT)
-def test_a_smaller_budget_assembles_less_text(tmp_path, name):
+@pytest.mark.parametrize("name,budget", sorted(TRIMMING_BUDGET.items()))
+def test_a_smaller_budget_assembles_less_text(tmp_path, name, budget):
     """The estimate and the counts must describe one crawl, not two (05w.5): the
     length comes back from the same crawl that produced the counts, so the budget
-    the user passed is already in it."""
-    repo = _repo(tmp_path)
+    the user passed is already in it.
+
+    Both sides are non-empty on purpose. A tiny budget that empties the bundle
+    proves only that zero is less than something, which is the abort path, not
+    the trim (PR #110 review)."""
+    repo = _multi_app_repo(tmp_path)
     parser = _parser_for(name)
     generous = ANALYSES[name].preview(parser.parse_args([str(repo), "--codebase-budget", "200000"]))
-    tiny = ANALYSES[name].preview(parser.parse_args([str(repo), "--codebase-budget", "60"]))
+    tiny = ANALYSES[name].preview(parser.parse_args([str(repo), "--codebase-budget", str(budget)]))
 
+    assert tiny["assembled_chars"] > 0, f"{budget} emptied {name}'s bundle; this tests the trim"
     assert tiny["assembled_chars"] < generous["assembled_chars"], \
         f"{name}'s assembled length did not move with the budget"
+    assert tiny["dropped"] and not generous["dropped"]
+
+
+@pytest.mark.parametrize("name", ["architecture", "schema"])
+def test_a_marker_can_leave_the_cut_text_longer_than_the_budget(tmp_path, name):
+    """These two cut mid-text and append a marker saying the sources above are
+    incomplete. The marker is part of what the model reads, so it counts; that
+    is why neither belongs in the smaller-budget-is-less-text set above."""
+    repo = _repo(tmp_path)
+    parser = _parser_for(name)
+
+    cut = ANALYSES[name].preview(parser.parse_args([str(repo), "--codebase-budget", "20"]))
+
+    assert cut["assembled_chars"] > 20
+    assert any("truncated" in note for note in cut["notes"])
+
+
+def _scaled_repo(root, factor):
+    """The sample repo's shape with every file's text repeated `factor` times.
+    Same paths, same file counts, more characters -- the one difference a count
+    cannot see. Lines stay under tour's 800-char per-file preview cap at the
+    largest factor, so its manifest grows with the text rather than clipping."""
+    (root / "app").mkdir(parents=True)
+    write = lambda rel, line: (root / rel).write_text(line * factor, encoding="utf-8")
+    write("app/views.py", "def index(request): return render(request)\n")
+    write("app/models.py", "class User(Model): name = CharField()\n")
+    write("app/urls.py", "urlpatterns = [path('', index)]\n")
+    write("schema.sql", "CREATE TABLE users (id INT PRIMARY KEY);\n")
+    write("docker-compose.yml", "# a compose comment line of some length\n")
+    (root / "docker-compose.yml").write_text(
+        "services:\n  web:\n    image: python\n" + "    # padding\n" * factor, encoding="utf-8")
+    (root / "package.json").write_text('{"dependencies": {"express": "^4"}}\n', encoding="utf-8")
+    return root
+
+
+@pytest.mark.parametrize("name", ASSEMBLES_TEXT)
+def test_assembled_chars_is_a_character_length_not_a_file_count(tmp_path, name):
+    """coderay-05w.2 sizes input tokens from this number, so a file count would
+    make the cost estimate wrong by three orders of magnitude.
+
+    The two repos hold the same files under the same names; only the text inside
+    is ten times longer. Anything counting files cannot tell them apart, which is
+    what `> 0` and "a smaller budget assembles less text" both failed to catch --
+    a smaller budget yields fewer files as well as fewer characters
+    (coderay-878.3)."""
+    thin_repo = _scaled_repo(tmp_path / "thin", 1)
+    fat_repo = _scaled_repo(tmp_path / "fat", 10)
+    parser = _parser_for(name)
+    budget = ["--codebase-budget", "2000000"]
+
+    thin = ANALYSES[name].preview(parser.parse_args([str(thin_repo), *budget]))
+    fat = ANALYSES[name].preview(parser.parse_args([str(fat_repo), *budget]))
+
+    assert thin["counts"] == fat["counts"], \
+        f"{name}: the two fixtures must differ only in text length, not in counts"
+    # Strictly greater, with no ratio: any value derived from the file counts
+    # above is identical across the two repos, so `>` is the exact discriminator
+    # and a multiplier would only add a number to tune.
+    assert fat["assembled_chars"] > thin["assembled_chars"], \
+        f"{name} reported {fat['assembled_chars']} for ten times the text of " \
+        f"{thin['assembled_chars']}; that is not a character length"
 
 
 def test_schema_assembled_length_is_the_text_not_the_file_count(tmp_path):
@@ -854,10 +955,23 @@ def test_schema_assembled_length_is_the_text_not_the_file_count(tmp_path):
     assert result["assembled_chars"] == len(ddl)
 
 
-@pytest.mark.parametrize("name", NAMES_ITS_DROPS)
+# tour is absent: --codebase-budget does not reach its crawl step, so no budget
+# here splits it. Its own test pins the full partition, which is stronger than
+# disjointness.
+SPLITS_ON_BUDGET = [n for n in NAMES_ITS_DROPS if n != "tour"]
+
+
+@pytest.mark.parametrize("name", SPLITS_ON_BUDGET)
 def test_the_dropped_list_and_the_included_list_do_not_overlap(tmp_path, name):
-    repo = _repo(tmp_path)
-    result = ANALYSES[name].preview(_parser_for(name).parse_args([str(repo)]))
+    """On a repo where nothing is dropped this passes whatever the code does, so
+    the budget is chosen to split the files and both sides are checked non-empty
+    first (coderay-878.4)."""
+    repo = _multi_app_repo(tmp_path)
+    result = ANALYSES[name].preview(
+        _parser_for(name).parse_args([str(repo), "--codebase-budget", SPLITTING_BUDGET]))
+
+    assert result["included"] and result["dropped"], \
+        f"{name} put nothing on one side; this test cannot see an overlap that way"
     assert not set(result["dropped"]) & set(result["included"]), \
         f"{name} reported the same file as both included and dropped"
 
@@ -871,6 +985,11 @@ def test_product_intent_names_the_files_the_budget_dropped(tmp_path):
     assert tiny["counts"]["dropped by the budget"] == len(tiny["dropped"])
     assert tiny["dropped"], "the budget dropped files but named none of them"
     assert "app/models.py" in tiny["dropped"] or "app/views.py" in tiny["dropped"]
+    # `included` was unpinned here: setting it to [] left the suite green
+    # (coderay-878.4).
+    assert tiny["included"] == tiny["files"]["bundle"]
+    assert tiny["included"], "the budget kept nothing; this tests the split"
+    assert not set(tiny["included"]) & set(tiny["dropped"])
 
 
 def test_tour_names_the_files_the_preview_cap_kept_from_the_model(tmp_path, monkeypatch):
@@ -888,32 +1007,35 @@ def test_tour_names_the_files_the_preview_cap_kept_from_the_model(tmp_path, monk
 
 
 def test_interfaces_names_the_surface_files_that_did_not_reach_the_bundle(tmp_path):
-    repo = tmp_path / "api"
-    (repo / "app").mkdir(parents=True)
-    (repo / "app" / "urls.py").write_text("urlpatterns = [path('a', a)]\n" * 200, encoding="utf-8")
-    (repo / "app" / "views.py").write_text("def a(r): pass\n", encoding="utf-8")
+    repo = _multi_app_repo(tmp_path)
 
     result = ANALYSES["interfaces"].preview(
-        _parser_for("interfaces").parse_args([str(repo), "--codebase-budget", "600"]))
+        _parser_for("interfaces").parse_args([str(repo), "--codebase-budget", "500"]))
 
     assert result["counts"]["surface files found"] - result["counts"]["surface files read"] \
         == len(result["dropped"])
+    # Non-empty on both sides: an all-dropped bundle would satisfy the arithmetic
+    # above without ever exercising the split (PR #110 review).
+    assert result["included"] == ["a/urls.py"]
+    assert result["dropped"] == ["b/urls.py", "c/urls.py"]
     assert result["included"] == result["files"]["read"]
 
 
 def test_backend_names_the_layer_files_that_did_not_reach_the_bundle(tmp_path):
-    repo = tmp_path / "svc"
-    (repo / "app").mkdir(parents=True)
-    (repo / "app" / "urls.py").write_text("urlpatterns = []\n" * 400, encoding="utf-8")
-    (repo / "app" / "views.py").write_text("def index(r): pass\n" * 400, encoding="utf-8")
-    (repo / "app" / "models.py").write_text("class U: pass\n" * 400, encoding="utf-8")
+    """Both sides non-empty. The earlier fixture emptied the bundle outright, so
+    its count assertion read 0 == 0 (coderay-878.4)."""
+    repo = _multi_app_repo(tmp_path)
 
     result = ANALYSES["backend"].preview(
-        _parser_for("backend").parse_args([str(repo), "--codebase-budget", "3000"]))
+        _parser_for("backend").parse_args([str(repo), "--codebase-budget", SPLITTING_BUDGET]))
 
+    assert result["included"], "the budget emptied the bundle; this tests the split"
     assert result["dropped"], "the budget kept layer files out but named none of them"
     assert result["included"] == result["files"]["bundle"]
     assert result["counts"]["files in the bundle"] == len(result["included"])
+    # Every layer-matched file is on exactly one side.
+    assert sorted(result["included"] + result["dropped"]) == sorted(
+        f"{app}/{f}" for app in "abc" for f in ("models.py", "urls.py", "views.py"))
 
 
 def test_schema_names_the_model_files_the_budget_left_out(tmp_path):
@@ -930,16 +1052,46 @@ def test_schema_names_the_model_files_the_budget_left_out(tmp_path):
     assert len(result["included"]) + len(result["dropped"]) == 3
 
 
-def test_architecture_reports_no_dropped_set_because_it_truncates_text(tmp_path):
-    """It caps the assembled bundle rather than dropping whole files, so there is
-    no dropped set to name. The note says what the counts alone would misstate."""
-    repo = _repo(tmp_path)
-    result = ANALYSES["architecture"].preview(
-        _parser_for("architecture").parse_args([str(repo), "--codebase-budget", "40"]))
+def test_architecture_names_the_config_files_the_budget_kept_out(tmp_path):
+    """PR #110 review. It does both: it truncates the assembled text AND leaves
+    out whole sections, and a section starting past the cut contributes none of
+    its paths. Reporting no dropped set would have told a consumer nothing was
+    dropped while whole config files never reached the model."""
+    repo = tmp_path / "many"
+    for i in range(5):
+        (repo / f"s{i}").mkdir(parents=True)
+        (repo / f"s{i}" / "docker-compose.yml").write_text(
+            f"services:\n  web{i}:\n    image: python\n", encoding="utf-8")
+    parser = _parser_for("architecture")
 
-    assert "dropped" not in result
-    assert result["assembled_chars"] > 0
-    assert any("truncated" in note for note in result["notes"])
+    generous = ANALYSES["architecture"].preview(
+        parser.parse_args([str(repo), "--codebase-budget", "2000"]))
+    tiny = ANALYSES["architecture"].preview(
+        parser.parse_args([str(repo), "--codebase-budget", "450"]))
+
+    assert generous["dropped"] == []
+    assert len(generous["included"]) == 5
+    # The budget is the whole difference: everything it kept out comes back.
+    assert sorted(tiny["included"] + tiny["dropped"]) == sorted(generous["included"])
+    assert tiny["dropped"], "the budget kept config files out but named none of them"
+    assert any("truncated" in note for note in tiny["notes"])
+
+
+def test_architecture_does_not_call_an_empty_config_file_budget_dropped(tmp_path):
+    """An empty config file is skipped for its own reason and never becomes a
+    section, so it is in neither set. Subtracting the bundle list from the found
+    count would have filed it under the budget (PR #110 review)."""
+    repo = tmp_path / "mixed"
+    repo.mkdir()
+    (repo / "docker-compose.yml").write_text("", encoding="utf-8")
+    (repo / "package.json").write_text('{"dependencies": {"express": "^4"}}\n', encoding="utf-8")
+
+    result = ANALYSES["architecture"].preview(
+        _parser_for("architecture").parse_args([str(repo), "--codebase-budget", "200000"]))
+
+    assert result["counts"]["config files found"] == 1
+    assert result["dropped"] == []
+    assert "docker-compose.yml" not in result["included"]
 
 
 def test_git_history_carries_no_file_quantities_at_all(tmp_path):

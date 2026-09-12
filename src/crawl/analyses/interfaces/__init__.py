@@ -207,7 +207,8 @@ def preview(args) -> Preview:
     is left out when it is empty or would not fit the budget (coderay-q2r.24), and
     is named as well as counted (coderay-05w.4)."""
     routes, found, read = crawl_routes(args.repo_path, max_chars=args.codebase_budget)
-    dropped = [rel for rel in found if rel not in set(read)]
+    reached = set(read)
+    dropped = [rel for rel in found if rel not in reached]
     notes = []
     if dropped:
         notes.append(f"{len(dropped)} of {len(found)} surface files "
