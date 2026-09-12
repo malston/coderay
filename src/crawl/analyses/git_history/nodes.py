@@ -8,7 +8,9 @@ Four steps, each a slice of the same commit list:
 
 Reliability mirrors the rest of the repo: every LLM node uses
 Node(max_retries=3, wait=2), JSON parsing is strict so bad output retries, and
-gitlog's subprocess reads raise on any git failure rather than reporting no data.
+gitlog's subprocess reads raise on any git failure rather than reporting no
+data, the one exception being a checkout with no commits, which FetchHistory
+refuses outright instead.
 """
 import re
 from importlib import resources
@@ -75,6 +77,23 @@ def _excluding_pure_renames(candidates, repo_path, diff_filter):
 
 
 # Step 1. Crawl the log; pull the bulk-change rosters once.
+# How many files a single commit must touch to read as one deliberate act
+# rather than ordinary work. Additions run higher: a new feature lands in more
+# files than the one it replaces.
+BULK_ADD_FLOOR = 10
+BULK_DEL_FLOOR = 5
+
+# coderay-q2r.38. Shared with this analysis's preview(), so the pre-flight
+# report and the run warn in the same words.
+SHALLOW_WARNING = ("This is a shallow clone; the log is a fragment of the history "
+                   "and the eras will be wrong. Unshallow it first "
+                   "(git fetch --unshallow).")
+
+NO_COMMITS = ("This checkout has no commits, so there is no history to read. "
+              "Every pass here summarises the log; over an empty one they would "
+              "name eras that never happened.")
+
+
 class FetchHistory(Node):
     def prep(self, shared):
         return shared["repo_path"]
@@ -84,20 +103,25 @@ class FetchHistory(Node):
         return {
             "commits": commits,
             "commits_asc": gl.commits_ascending(commits),
-            "bulk_adds": gl.bulk_changes(repo_path, "A", min_files=10),
-            "bulk_dels": gl.bulk_changes(repo_path, "D", min_files=5),
+            "bulk_adds": gl.bulk_changes(repo_path, "A", min_files=BULK_ADD_FLOOR),
+            "bulk_dels": gl.bulk_changes(repo_path, "D", min_files=BULK_DEL_FLOOR),
             "shallow": gl.is_shallow(repo_path),
         }
 
     def post(self, shared, prep_res, exec_res):
-        shared.update(exec_res)
         c = exec_res["commits"]
+        if not c:
+            # SystemExit, not assert: python -O strips asserts, and four paid
+            # passes would run over nothing (coderay-q2r.50). Before this the
+            # empty log reached NameEras, which built a full prompt out of
+            # "(none)" and invented eras from it.
+            raise SystemExit(NO_COMMITS)
+        shared.update(exec_res)
         span = f"{exec_res['commits_asc'][0]['month']}..{exec_res['commits_asc'][-1]['month']}" if c else "empty"
         print(f"  Crawled {len(c):,} commits ({span}), "
               f"{len(exec_res['bulk_adds'])} bulk adds, {len(exec_res['bulk_dels'])} bulk deletions")
-        if exec_res["shallow"]:  # coderay-q2r.38
-            print("  WARNING: this is a shallow clone; the log is a fragment of the "
-                  "history and the eras will be wrong. Unshallow it first (git fetch --unshallow).")
+        if exec_res["shallow"]:
+            print(f"  WARNING: {SHALLOW_WARNING}")
 
 
 _YEAR_MONTH = re.compile(r"\d{4}-\d{2}")

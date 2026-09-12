@@ -49,6 +49,12 @@ _CREATE_TABLE = re.compile(r'\bCREATE\s+TABLE\b', re.I)
 _DDL_HINT = ("CREATE TABLE", "ALTER TABLE", "CREATE INDEX", "CREATE UNIQUE INDEX")
 MAX_SCHEMA_FILES = 40
 
+# Stamped into the text where _read cut a single-file schema at its limit.
+# Only that path truncates: _join_within_budget drops whole blocks instead, and
+# the embedded-SQL path reads with no limit at all, so a schema longer than the
+# budget is not on its own evidence that anything was cut (coderay-05w.1 review).
+TRUNCATION_MARKER = "# ===== TRUNCATED"
+
 
 def embedded_sql(go_text):
     """The string literals of a Go source file that begin with a DDL statement
@@ -91,7 +97,7 @@ def _read(path, repo=None, limit=None):
     except OSError:
         return ""
     if limit is not None and len(text) > limit:
-        return text[:limit] + f"\n\n# ===== TRUNCATED at {limit:,} chars =====\n"
+        return text[:limit] + f"\n\n{TRUNCATION_MARKER} at {limit:,} chars =====\n"
     return text
 
 

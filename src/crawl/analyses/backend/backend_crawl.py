@@ -101,7 +101,12 @@ def _priority(rel):
 DEFAULT_MAX_CHARS = 650_000
 
 
-def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS, per_layer_sample=18):
+# How many files of one layer reach the bundle. Beyond this the layer is
+# sampled: a repo with 200 handlers teaches the model no more than one with 18,
+# and the rest of the budget is better spent on the layers it has not seen.
+PER_LAYER_SAMPLE = 18
+
+def build_bundle(repo, max_chars=DEFAULT_MAX_CHARS, per_layer_sample=PER_LAYER_SAMPLE):
     files_by_layer = {k: [] for k in LAYERS}
     counts = Counter()
     # list_files carries the repo containment and credential-name checks every

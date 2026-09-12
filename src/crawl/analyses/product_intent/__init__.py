@@ -1,13 +1,14 @@
 """Reverse engineer the product story from the source."""
-import os
 import sys
 
 from pocketflow import Flow
 
-from crawl.core.runner import run_analysis
+from crawl.core.runner import require_directory, run_analysis
 from crawl.core.text import codebase_budget_argument
+from crawl.core.preview import Preview, aborts
 from .nodes import (DEFAULT_MAX_CHARS, FetchRepo, PainScene, VariantSentence,
-                    CompetitivePositioning, SurprisesAndAbsences)
+                    CompetitivePositioning, SurprisesAndAbsences, bundle,
+                    no_source_reason)
 # This analysis hand-builds its page from structured data, so it keeps its own
 # renderer; crawl.core.render defers to these.
 from .render import render_html, render_markdown  # noqa: F401
@@ -26,6 +27,23 @@ def add_arguments(parser):
                         help=".gitignore-style pattern: drop matching paths. "
                              "Repeatable.")
     parser.add_argument("--codebase-budget", **codebase_budget_argument(DEFAULT_MAX_CHARS))
+
+def preview(args) -> Preview:
+    """What the crawl step found, before any LLM call. This is the one crawler
+    that counts all three outright: what went in, what the budget dropped, and
+    what would not decode."""
+    include = list(getattr(args, "include", []) or [])
+    exclude = list(getattr(args, "exclude", []) or [])
+    codebase, stats = bundle(args.repo_path, include=include or None,
+                             exclude=exclude or None, max_chars=args.codebase_budget)
+    notes = []
+    if not codebase.strip():
+        notes.append(aborts(no_source_reason(args.repo_path, include, exclude)))
+    return {"counts": {"files in the bundle": stats["included"],
+                       "dropped by the budget": stats["dropped"],
+                       "unreadable": stats["unreadable"]},
+            "files": {"bundle": stats["files"]}, "notes": notes}
+
 
 def sent(shared):
     """What left the machine: every source file the bundle carried whole (coderay-3eu)."""
@@ -48,8 +66,5 @@ def build_flow():
 
 
 def run(args) -> None:
-    # Exit code 1, no usage line, matching tour's run(): run(args) has no
-    # parser in scope, and threading one through isn't worth it for one check.
-    if not os.path.isdir(args.repo_path):
-        raise SystemExit(f"{args.repo_path} is not a directory")
+    require_directory(args.repo_path)
     run_analysis(sys.modules[__name__], args)

@@ -27,7 +27,8 @@ from typing import TypedDict
 
 from pocketflow import Node, BatchNode
 
-from crawl.core import ResponseTruncated, call_llm, fill, list_files, read_prompt, safe_read, yaml_call
+from crawl.core import (DEFAULT_MAX_FILE_BYTES, ResponseTruncated, call_llm, fill,
+                        list_files, read_prompt, safe_read, yaml_call)
 from crawl.core.render import printable
 from crawl.analyses.tour.graph.languages import REGISTRY
 
@@ -35,6 +36,10 @@ PROMPTS_DIR = resources.files("crawl.analyses.tour") / "prompts"
 INSTRUCTIONS_DIR = resources.files("crawl.analyses.tour") / "instructions"
 
 PREVIEW_CHARS_PER_FILE = 800
+
+NO_SOURCE = ("No source files found. list_files keeps recognised source "
+             "extensions outside the skipped directories, under "
+             f"{DEFAULT_MAX_FILE_BYTES:,} bytes each; nothing here passed.")
 CODEBASE_BUDGET = 1_000_000
 CHAPTER_CONTEXT_WINDOW = 3
 
@@ -57,6 +62,11 @@ class PipelineState(TypedDict, total=False):
       preview_budget           int   SmartCrawl.prep: char budget for the file preview manifest
       target_files             int   SmartCrawl.prep: target selected-file count
       chapter_context_window   int   WriteChapters.prep: # of prior chapters kept as context
+
+    Written by SmartCrawl.prep; read by crawl.analyses.tour.sent, the manifest
+    writer, and this analysis's preview():
+      previewed_files          list[str]  files whose head went into the selection prompt
+      source_files_found       int        files list_files kept, before the preview cap
 
     Written by SmartCrawl.post; read by Analyze/Relate/WriteChapters.prep and
     crawl.analyses.tour.render's renderers:
@@ -87,6 +97,8 @@ class PipelineState(TypedDict, total=False):
     target_files: int
     codebase_budget: int
     chapter_context_window: int
+    previewed_files: list
+    source_files_found: int
     codebase: str
     selected_files: list
     selection_reasoning: str
@@ -117,13 +129,21 @@ class SmartCrawl(Node):
     def prep(self, shared: PipelineState):
         root = shared["repo_path"]
         all_files = list_files(root)
+        if not all_files:
+            # SystemExit, not assert: python -O strips asserts. Without it the
+            # empty manifest reaches the model, and every index it answers with
+            # is out of range, so yaml_call burns its retries at full price.
+            raise SystemExit(NO_SOURCE)
         budget = shared.get("preview_budget", 1_000_000)
         chars_per_file = PREVIEW_CHARS_PER_FILE
         max_files = max(1, budget // chars_per_file)
         files = all_files[:max_files]
         # The head of each of these goes to the model whether or not it is then
-        # selected, so the manifest lists them too (coderay-3eu).
+        # selected, so the manifest lists them too (coderay-3eu). The total is
+        # recorded beside them because the cap above is silent: without it the
+        # count of what was read cannot be told from the count list_files kept.
         shared["previewed_files"] = [os.path.relpath(p, root) for p in files]
+        shared["source_files_found"] = len(all_files)
         target = shared.get("target_files", min(50, max(20, len(files) // 20)))
 
         manifest_parts = []

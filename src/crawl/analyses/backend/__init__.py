@@ -1,16 +1,16 @@
 """Read a backend as the six layers every request flows through."""
 
-import os
 import sys
 
 from pocketflow import Flow
 
 from crawl.core import OverviewNode
 from crawl.core.render import Section, Theme, esc
-from crawl.core.runner import repo_name_of, run_analysis
+from crawl.core.runner import repo_name_of, require_directory, run_analysis
 from crawl.core.text import codebase_budget_argument
-from .backend_crawl import DEFAULT_MAX_CHARS
-from .nodes import BuildBundle, Pipeline, LayerCode, Trace
+from crawl.core.preview import Preview, aborts
+from .backend_crawl import DEFAULT_MAX_CHARS, LAYERS, PER_LAYER_SAMPLE, build_bundle
+from .nodes import BuildBundle, Pipeline, LayerCode, Trace, empty_bundle_reason
 
 NAME = "backend"
 # What the first node reads from the repo; left out of run_state.json on failure.
@@ -74,6 +74,22 @@ def sent(shared):
     return {"files": shared.get("bundle_files", [])}
 
 
+def preview(args) -> Preview:
+    """What the crawl step found, before any LLM call. A file can match a layer
+    and still not reach the bundle: it can be empty, unreadable, past the budget,
+    or past its layer's sample cap (PER_LAYER_SAMPLE, applied to handler, service
+    and database). So the matched counts sit beside the bundle
+    count, never instead of it."""
+    bundle, stats = build_bundle(args.repo_path, max_chars=args.codebase_budget)
+    counts = {"files in the bundle": stats["included"]}
+    counts.update({f"matched as {layer}": stats["counts"].get(layer, 0) for layer in LAYERS})
+    notes = []
+    if not bundle.strip():
+        notes.append(aborts(empty_bundle_reason(stats["counts"])))
+    return {"counts": counts, "files": {"bundle": stats["files"]}, "notes": notes}
+
+
+
 def init_shared(args):
     return {"repo_path": args.repo_path, "codebase_budget": args.codebase_budget}
 
@@ -105,8 +121,5 @@ def add_arguments(parser) -> None:
     parser.add_argument("--codebase-budget", **codebase_budget_argument(DEFAULT_MAX_CHARS))
 
 def run(args) -> None:
-    # Exit code 1, no usage line, matching tour's run(): run(args) has no
-    # parser in scope, and threading one through isn't worth it for one check.
-    if not os.path.isdir(args.repo_path):
-        raise SystemExit(f"{args.repo_path} is not a directory")
+    require_directory(args.repo_path)
     run_analysis(sys.modules[__name__], args)

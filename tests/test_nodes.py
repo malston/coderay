@@ -9,6 +9,10 @@ def test_pipeline_state_documents_every_key_the_nodes_use():
     expected = {
         "repo_path", "instructions",
         "preview_budget", "target_files", "codebase_budget", "chapter_context_window",
+        # Written by SmartCrawl.prep. previewed_files has been in sent() and the
+        # manifest since coderay-3eu without ever being declared here;
+        # source_files_found joins it for the pre-flight preview.
+        "previewed_files", "source_files_found",
         "codebase", "selected_files", "selection_reasoning",
         "symbol_graph",
         "summary", "abstractions", "order",

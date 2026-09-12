@@ -595,3 +595,41 @@ def test_is_secret_path_is_case_folded_like_the_crawler_rule(path):
 def test_is_secret_path_leaves_dotenv_templates_alone(path):
     """Templates carry variable names with placeholder values, so their diffs hold no secrets."""
     assert gl.is_secret_path(path) is False
+
+
+def test_git_log_commits_reports_no_commits_for_a_repo_without_any(tmp_path):
+    """`git log` exits 128 on a checkout with no commits ("does not have any
+    commits yet"), which reached the caller as an uncaught CalledProcessError.
+    The empty list is what the callers already expect: FetchHistory.post reads a
+    zero-commit log as the span "empty"."""
+    repo = _repo(tmp_path, [])
+
+    assert gl.git_log_commits(repo) == []
+
+
+def test_bulk_changes_reports_nothing_for_a_repo_without_any_commits(tmp_path):
+    """Same empty-checkout case as git_log_commits: `git log` exits 128 with no
+    HEAD, and both bulk queries run before anything checks the commit count."""
+    repo = _repo(tmp_path, [])
+
+    assert gl.bulk_changes(repo, "A") == []
+    assert gl.bulk_changes(repo, "D") == []
+
+
+def test_has_commits_is_false_only_for_a_checkout_with_no_commits(tmp_path):
+    """`git rev-parse --verify --quiet HEAD` exits 1 for an unborn HEAD and 128
+    for a repository git cannot read at all. Only the first is "no commits yet";
+    swallowing the second would turn a broken repo into an empty history."""
+    empty = tmp_path / "empty"
+    empty.mkdir()
+
+    assert gl.has_commits(_repo(tmp_path, [("first", {"a.py": "x = 1\n"}, [])])) is True
+    assert gl.has_commits(_repo(empty, [])) is False
+
+
+def test_git_log_commits_still_raises_when_git_cannot_read_the_repository(tmp_path):
+    broken = _repo(tmp_path, [])
+    pathlib.Path(broken, ".git", "HEAD").write_text("garbage\n", encoding="utf-8")
+
+    with pytest.raises(subprocess.CalledProcessError):
+        gl.git_log_commits(broken)

@@ -1,13 +1,14 @@
 """Read the product roadmap already written in the git log."""
 
-import os
 import sys
 
 from pocketflow import Flow
 
 from crawl.core import OverviewNode
-from crawl.core.runner import repo_name_of, run_analysis
-from .nodes import FetchHistory, NameEras, ProfileEras, Graveyard
+from crawl.core.runner import repo_name_of, require_directory, run_analysis
+from crawl.core.preview import Preview, aborts
+from .nodes import (BULK_ADD_FLOOR, BULK_DEL_FLOOR, NO_COMMITS, SHALLOW_WARNING,
+                    FetchHistory, NameEras, ProfileEras, Graveyard)
 from .gitlog import repo_root
 # This analysis builds its page from structured data rather than markdown
 # blobs, so it keeps its own renderer; crawl.core.render defers to these.
@@ -31,6 +32,30 @@ def add_arguments(parser):
     parser.add_argument("--profile-diff-chars", type=int, default=2500,
                         help="cap on characters per landmark diff in a "
                              "profile prompt (default 2500)")
+
+def preview(args) -> Preview:
+    """What the crawl step found, before any LLM call. There are no file counts
+    here: this analysis reads commits. The eras are the model's answer, so a
+    preview cannot report them.
+
+    repo_root first, as run() does: `git -C` walks up to the enclosing .git, so a
+    subdirectory would otherwise be previewed as its parent, under the wrong name
+    and with the parent's whole history (coderay-q2r.38).
+
+    The four flags size the prompts and filter the graveyard after the crawl;
+    FetchHistory carries its own thresholds, so none of them moves these counts.
+
+    exec() is the whole crawl -- post() only prints and updates shared."""
+    repo_root(args.repo_path)
+    log = FetchHistory().exec(args.repo_path)
+    counts = {"commits": len(log["commits"]),
+              f"bulk additions ({BULK_ADD_FLOOR}+ files)": len(log["bulk_adds"]),
+              f"bulk deletions ({BULK_DEL_FLOOR}+ files)": len(log["bulk_dels"])}
+    notes = [SHALLOW_WARNING] if log["shallow"] else []  # coderay-q2r.38
+    if not log["commits"]:
+        notes.append(aborts(NO_COMMITS))
+    return {"counts": counts, "files": {}, "notes": notes}
+
 
 def sent(shared):
     """What left the machine: no files here. The whole log is summarised for the
@@ -83,9 +108,6 @@ def overview_spec(shared):
 
 
 def run(args) -> None:
-    # Exit code 1, no usage line, matching tour's run(): run(args) has no
-    # parser in scope, and threading one through isn't worth it for one check.
-    if not os.path.isdir(args.repo_path):
-        raise SystemExit(f"{args.repo_path} is not a directory")
+    require_directory(args.repo_path)
     repo_root(args.repo_path)  # coderay-q2r.38
     run_analysis(sys.modules[__name__], args)

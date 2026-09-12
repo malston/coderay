@@ -9,6 +9,23 @@ from .env import env_defaults
 from .files import write_text_atomic
 from .render import render_html, render_markdown
 
+def require_directory(repo_path):
+    """SystemExit unless `repo_path` is a directory a crawl can walk.
+
+    Exit code 1, no usage line -- not argparse's ap.error() (code 2, usage
+    printed), a sanctioned exception (see Global Constraints): the callers have
+    no parser in scope, and threading one through isn't worth it for one check.
+    Without it os.walk's default onerror=None swallows the OSError and a typo'd
+    path reports the same clean zeros as a repo that really is empty."""
+    if not os.path.isdir(repo_path):
+        raise SystemExit(f"{repo_path} is not a directory")
+    # isdir() is True for a directory with no read or execute permission, and
+    # os.walk then swallows the PermissionError and yields nothing -- the same
+    # clean zeros this guard exists to prevent.
+    if not os.access(repo_path, os.R_OK | os.X_OK):
+        raise SystemExit(f"{repo_path} cannot be read")
+
+
 def run_flow(flow, shared, out_dir, dump_state):
     """Run `flow` against `shared`, keeping its partial progress on failure
     (see keeping_results)."""

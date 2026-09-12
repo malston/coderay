@@ -57,6 +57,14 @@ def bundle(repo, include=None, exclude=None, max_chars=DEFAULT_MAX_CHARS):
     return "\n".join(parts), {"included": len(files), "dropped": dropped, "unreadable": unreadable, "files": files}
 
 
+def no_source_reason(repo_path, include, exclude):
+    """Why a product-intent crawl came back with nothing to send. Shared with
+    this analysis's preview(), so the pre-flight report and the run agree."""
+    return (f"No source found under {repo_path} "
+            f"(include={include or 'all'}, exclude={exclude or 'none'}). "
+            "Nothing to read a product story from.")
+
+
 class FetchRepo(Node):
     def prep(self, shared):
         return {
@@ -75,10 +83,8 @@ class FetchRepo(Node):
         if not codebase.strip():
             # Before any paid call. SystemExit, not assert: python -O strips
             # asserts, and four LLM passes over nothing would invent a product.
-            raise SystemExit(
-                f"No source found under {prep_res['repo_path']} "
-                f"(include={prep_res['include'] or 'all'}, exclude={prep_res['exclude'] or 'none'}). "
-                "Nothing to read a product story from.")
+            raise SystemExit(no_source_reason(
+                prep_res["repo_path"], prep_res["include"], prep_res["exclude"]))
         shared["codebase"] = codebase
         shared["bundle_files"] = stats["files"]
         print(f"  Crawled {stats['included']} files ({len(codebase):,} chars) from {prep_res['repo_path']}")
