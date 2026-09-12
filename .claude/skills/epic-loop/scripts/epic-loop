@@ -1,0 +1,403 @@
+#!/usr/bin/env bash
+#
+# epic-loop -- work every open child of a beads issue unattended.
+#
+# Takes any bead that has children: an epic, a feature, or a task with subtasks.
+# What matters is that it has children to work, not what type it is.
+#
+# Arms the /goal completion condition in a fresh Claude Code session, then
+# resumes that session with /epic-loop. Two calls are required because the CLI
+# expands only the first slash command in a prompt; everything after it becomes
+# that command's arguments. A /goal on a later line is dead text, and
+# /epic-loop sets disable-model-invocation, so the model cannot reach either
+# one on its own.
+#
+# Run it from anywhere. The target repo comes from --repo, or from the git root
+# of the current directory.
+#
+#   epic-loop coderay-q2r
+#   epic-loop coderay-q2r --hold
+#   epic-loop other-abc --repo ~/code/otherproj
+#   epic-loop coderay-q2r --dry-run      # print the calls, spend nothing
+#
+# Exit status is the status of the /epic-loop call. A nonzero there usually
+# means the turn or budget cap stopped the run; the session id is printed so
+# you can pick it up with: claude --resume <session-id>
+#
+set -Eeuo pipefail
+
+PROG="$(basename "$0")"
+readonly PROG
+
+# Claude Code's own turn cap for the working call. The loop spends turns fast:
+# one bead runs a failing test, a mutation round, a PR, a fresh-context review
+# and a fix commit. This is a runaway stop, not a work budget -- the real limit
+# is --budget.
+readonly DEFAULT_MAX_TURNS=400
+
+# Passed into the goal text as the parent's own turn counter, which the skill
+# stores in the parent's bd notes so a resumed session does not reset it. This
+# is a different number from --max-turns above.
+readonly DEFAULT_TURN_BUDGET=20
+
+readonly DEFAULT_BUDGET=200.00
+readonly DEFAULT_MODEL=claude-opus-5
+readonly DEFAULT_LOG_DIR="${HOME}/.local/state/epic-loop"
+
+# Denied during the goal-arming call so it cannot start work. See arm_cmd.
+readonly ARM_DENIED_TOOLS="Bash,Edit,Write,NotebookEdit,Task,Agent"
+
+# Both calls run from inside the target repo, and a repo that exports an
+# Anthropic key for its own tooling (a direnv .envrc, a sourced .env) hands it
+# to claude too, where it outranks the claude.ai login. The run then bills a
+# pay-as-you-go account instead of the subscription and dies on "Credit balance
+# is too low" before it works a single bead. Set EPIC_LOOP_KEEP_API_KEY=1 to
+# keep the key when that account is the one you mean to spend.
+readonly AUTH_VARS=(ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN)
+
+# Prefix for both claude calls: drops the repo's key unless asked to keep it.
+claude_env() {
+    if [[ -n "${EPIC_LOOP_KEEP_API_KEY:-}" ]]; then
+        printf 'env'
+    else
+        printf 'env'
+        local var
+        for var in "${AUTH_VARS[@]}"; do printf ' -u %s' "$var"; done
+    fi
+}
+
+usage() {
+    cat <<EOF
+Usage: $PROG BEAD-ID [options]
+
+Work every open child of a beads issue unattended, via the /epic-loop skill
+driven by a /goal completion condition.
+
+Arguments:
+    BEAD-ID              Any bead with children -- epic, feature, or a task
+                         with subtasks (e.g. coderay-q2r)
+
+Options:
+    --hold               Stop each bead at ready-for-review; never merge
+    --repo DIR           Target repository (default: git root of \$PWD)
+    --dry-run            Print the exact claude calls and exit; spends nothing
+    --budget USD         Max API spend (default: $DEFAULT_BUDGET)
+    --max-turns N        Claude Code turn cap for the working call
+                         (default: $DEFAULT_MAX_TURNS)
+    --turn-budget N      Parent's turn counter the goal stops at
+                         (default: $DEFAULT_TURN_BUDGET)
+    --model NAME         Model (default: $DEFAULT_MODEL)
+    --log-dir DIR        Where to write run logs (default: $DEFAULT_LOG_DIR)
+    --session-id UUID    Reuse a session id instead of generating one
+    -h, --help           Show this help
+
+Examples:
+    $PROG coderay-q2r --dry-run
+    $PROG coderay-q2r --hold
+    $PROG coderay-abc.4 --hold            # a task with subtasks
+    $PROG other-abc --repo ~/code/otherproj --budget 50
+EOF
+}
+
+die() {
+    printf '%s: %s\n' "$PROG" "$*" >&2
+    exit 1
+}
+
+note() {
+    printf '%s\n' "$*" >&2
+}
+
+require_cmd() {
+    command -v "$1" >/dev/null 2>&1 \
+        || die "required command not found: $1"
+}
+
+# bd emits a bare object, a single-element array, or -- since bd 1.2, which
+# stamps "schema_version" -- a {"data": ..., "schema_version": N} envelope
+# around either. Unwrap the envelope first, then reduce a single-element array
+# to the object inside, so every read goes through one shape.
+#
+# A failure is reported as {"error": ..., "schema_version": N} with no data
+# key at all, so the unwrap has to require "data" as well. Keying on
+# schema_version alone turns that object into a null, the error becomes
+# unreadable, and an unknown bead is reported as an unreadable type instead.
+bd_json() {
+    jq -r 'if type == "object" and has("schema_version") and has("data")
+           then .data else . end
+           | if type == "array" then .[0] else . end'
+}
+
+# The same unwrap for list subcommands, which keep their array.
+bd_json_array() {
+    jq 'if type == "object" and has("schema_version") and has("data")
+        then .data else . end'
+}
+
+# The skill defines ROOT as the main checkout and forbids nesting a worktree
+# inside another. In a linked worktree these two paths differ.
+assert_main_checkout() {
+    local repo="$1" bead="$2" gitdir commondir main_checkout
+    gitdir="$(git -C "$repo" rev-parse --absolute-git-dir)"
+    commondir="$(cd "$repo" && cd "$(git rev-parse --git-common-dir)" && pwd)"
+    [[ "$gitdir" == "$commondir" ]] && return 0
+
+    # The main checkout is the directory holding the shared .git dir.
+    main_checkout="$(dirname "$commondir")"
+    die "$repo is a linked worktree. /epic-loop creates its own worktrees under
+  the main checkout and must not nest them. Run against the main checkout:
+      $PROG $bead --repo $main_checkout"
+}
+
+# Prints "<type> <pending-count>" for a bead the loop can work. Any type is
+# fine -- an epic, a feature, a task with subtasks -- since the loop works
+# children and does not care what the parent is called.
+inspect_parent() {
+    local bead="$1" raw err kind status children total pending
+
+    # bd show exits 1 and returns {"error": ...} for an unknown id, so read the
+    # body rather than trusting the exit status to say which went wrong.
+    raw="$(bd show "$bead" --json 2>/dev/null || true)"
+    [[ -n "$raw" ]] || die "bd show $bead produced no output; is bd healthy here?"
+
+    # bd 1.2 exits 0 for an unknown id and reports the failure in the body, at
+    # .data.error, so read the body rather than trusting the exit status.
+    err="$(printf '%s' "$raw" | bd_json | jq -r '.error // empty')"
+    [[ -z "$err" ]] || die "no such bead: $bead ($err)"
+
+    kind="$(printf '%s' "$raw" | bd_json | jq -r '.issue_type // empty')"
+    status="$(printf '%s' "$raw" | bd_json | jq -r '.status // empty')"
+
+    [[ -n "$kind" ]] || die "could not read the type of $bead from bd"
+    [[ "$status" != "closed" ]] || die "$bead is already closed"
+
+    # --status all matters: without it bd hides closed children, and a parent
+    # whose work is finished would look like a parent with no children at all.
+    children="$(bd list --parent "$bead" --status all --json 2>/dev/null | bd_json_array)" \
+        || die "bd list --parent $bead failed"
+
+    total="$(printf '%s' "$children" | jq 'length')"
+    [[ "$total" -gt 0 ]] || die \
+        "$bead is a '$kind' with no children. The loop works a parent's
+  children, so there is nothing to pick up. Give it a bead that has some,
+  or work this one directly."
+
+    # A child is settled when it is closed, blocked on a held PR, or tagged
+    # `human` for a decision that is not the loop's to make. Anything else is
+    # work this run would pick up.
+    pending="$(printf '%s' "$children" | jq '[.[]
+        | select(.status != "closed" and .status != "blocked")
+        | select((.labels // []) | index("human") | not)
+    ] | length')"
+
+    [[ "$pending" -gt 0 ]] || die \
+        "$bead has $total child(ren), none needing work (every one is closed,
+  blocked, or tagged \`human\`). Nothing for the loop to do."
+
+    printf '%s %s' "$kind" "$pending"
+}
+
+goal_condition() {
+    local bead="$1" kind="$2" turn_budget="$3"
+    # The backticks around human are escaped so they stay literal. Unescaped,
+    # bash runs `human` as a command, the substitution yields nothing, and the
+    # condition silently loses the word -- which is how a human-tagged bead
+    # stops counting as settled.
+    printf '%s' "Every open child of beads ${kind} ${bead} is closed, blocked on a held PR, or tagged \`human\`, worked per /epic-loop; or stop when the ${kind}'s turn counter reaches ${turn_budget}"
+}
+
+# Renders a command as a copy-pasteable line for --dry-run and the log. Args
+# that need no quoting stay bare so the prompts remain readable; the rest get
+# single quotes, with any embedded single quote spliced out and back in.
+quote_cmd() {
+    local out="" arg
+    for arg in "$@"; do
+        if [[ "$arg" =~ ^[A-Za-z0-9_./=:@-]+$ ]]; then
+            out+=" $arg"
+        else
+            out+=" '${arg//\'/\'\\\'\'}'"
+        fi
+    done
+    printf '%s' "${out# }"
+}
+
+main() {
+    local epic="" hold="" repo="" dry_run=false
+    local budget="$DEFAULT_BUDGET" max_turns="$DEFAULT_MAX_TURNS"
+    local turn_budget="$DEFAULT_TURN_BUDGET" model="$DEFAULT_MODEL"
+    local log_dir="$DEFAULT_LOG_DIR" session_id=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help)      usage; exit 0 ;;
+            --hold)         hold="--hold"; shift ;;
+            --dry-run)      dry_run=true; shift ;;
+            --repo)         repo="${2:?--repo needs a directory}"; shift 2 ;;
+            --budget)       budget="${2:?--budget needs a dollar amount}"; shift 2 ;;
+            --max-turns)    max_turns="${2:?--max-turns needs a number}"; shift 2 ;;
+            --turn-budget)  turn_budget="${2:?--turn-budget needs a number}"; shift 2 ;;
+            --model)        model="${2:?--model needs a name}"; shift 2 ;;
+            --log-dir)      log_dir="${2:?--log-dir needs a directory}"; shift 2 ;;
+            --session-id)   session_id="${2:?--session-id needs a uuid}"; shift 2 ;;
+            -*)             die "unknown option: $1 (try --help)" ;;
+            *)
+                [[ -z "$epic" ]] || die "unexpected argument: $1 (try --help)"
+                epic="$1"; shift ;;
+        esac
+    done
+
+    [[ -n "$epic" ]] || { usage >&2; die "EPIC-ID is required"; }
+
+    require_cmd claude
+    require_cmd bd
+    require_cmd gh
+    require_cmd jq
+    require_cmd git
+    require_cmd uuidgen
+
+    # Resolve the repo before anything else reads git or bd, since bd is
+    # workspace-scoped and the beads DB lives in the repo.
+    if [[ -n "$repo" ]]; then
+        [[ -d "$repo" ]] || die "no such directory: $repo"
+        repo="$(cd "$repo" && pwd)"
+        git -C "$repo" rev-parse --show-toplevel >/dev/null 2>&1 \
+            || die "$repo is not a git repository"
+        repo="$(git -C "$repo" rev-parse --show-toplevel)"
+    else
+        repo="$(git rev-parse --show-toplevel 2>/dev/null)" \
+            || die "not inside a git repository; pass --repo DIR"
+    fi
+
+    cd "$repo"
+    assert_main_checkout "$repo" "$epic"
+
+    # Assign first, then split. A die() inside a command substitution exits only
+    # the subshell, so the failure has to land on an assignment for set -e to
+    # see it -- feeding the substitution straight into read would swallow it.
+    local parent_info kind pending
+    parent_info="$(inspect_parent "$epic")"
+    read -r kind pending <<<"$parent_info"
+
+    local condition mode
+    condition="$(goal_condition "$epic" "$kind" "$turn_budget")"
+    if [[ -n "$hold" ]]; then
+        mode="hold (stop at ready-for-review, never merge)"
+    else
+        mode="merge"
+    fi
+
+    [[ -n "$session_id" ]] || session_id="$(uuidgen)"
+
+    # Call 1 arms the goal. Two guards keep it from doing anything: a single
+    # turn, and no tool that can change the repo. Without the deny list the
+    # model starts satisfying the goal in this very call -- it would begin
+    # working beads before /epic-loop's protocol is loaded. The goal is still
+    # recorded, and it survives both the turn cap and the denial.
+    local -a claude_prefix
+    read -r -a claude_prefix <<<"$(claude_env)"
+
+    local -a arm_cmd=(
+        "${claude_prefix[@]}"
+        claude -p "/goal ${condition}"
+        --session-id "$session_id"
+        --permission-mode bypassPermissions
+        --model "$model"
+        --max-budget-usd "$budget"
+        --max-turns 1
+        --disallowedTools "$ARM_DENIED_TOOLS"
+        --output-format text
+    )
+
+    # Call 2 resumes that session. A leading slash command still expands on a
+    # resumed session, and the goal survives the resume, so /epic-loop runs
+    # with the completion condition already driving it.
+    #
+    # --worker tells the skill this session is the run. Without it the skill
+    # starts a run instead of working beads, which is what a user gets when
+    # they type /epic-loop in their own session -- and what this call would
+    # get too, spawning a driver that spawns a driver.
+    local -a work_cmd=(
+        "${claude_prefix[@]}"
+        claude -p "/epic-loop ${epic}${hold:+ $hold} --worker"
+        --resume "$session_id"
+        --permission-mode bypassPermissions
+        --model "$model"
+        --max-budget-usd "$budget"
+        --max-turns "$max_turns"
+        --output-format text
+    )
+
+    if [[ "$dry_run" == true ]]; then
+        cat <<EOF
+repo:         $repo
+bead:         $epic ($kind, $pending child(ren) needing work)
+mode:         $mode
+session id:   $session_id
+budget:       \$$budget
+max turns:    $max_turns (claude) / $turn_budget ($kind counter)
+log dir:      $log_dir
+
+goal condition:
+  $condition
+
+call 1 -- arm the goal:
+  $(quote_cmd "${arm_cmd[@]}")
+
+call 2 -- work the epic:
+  $(quote_cmd "${work_cmd[@]}")
+EOF
+        return 0
+    fi
+
+    mkdir -p "$log_dir"
+    local log_file
+    log_file="${log_dir}/$(date -u +%Y%m%dT%H%M%SZ)-${epic}.log"
+
+    note "repo:       $repo"
+    note "bead:       $epic ($kind, $pending child(ren) needing work)"
+    note "mode:       $mode"
+    note "session:    $session_id"
+    note "budget:     \$$budget"
+    note "log:        $log_file"
+    note "resume:     claude --resume $session_id"
+    note ""
+
+    {
+        printf 'repo:    %s\n' "$repo"
+        printf 'epic:    %s\n' "$epic"
+        printf 'session: %s\n' "$session_id"
+        printf 'goal:    %s\n' "$condition"
+        printf 'started: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        printf -- '---\n'
+    } >>"$log_file"
+
+    local started=$SECONDS
+    note "arming goal: $(date -u +%H:%M:%S)Z"
+    # The one-turn cap makes exit 1 the normal outcome here, so the failure we
+    # actually care about is the goal not being recorded -- which shows up as
+    # call 2 running without it.
+    "${arm_cmd[@]}" >>"$log_file" 2>&1 || true
+
+    note "working epic: $(date -u +%H:%M:%S)Z"
+    local rc=0
+    "${work_cmd[@]}" 2>&1 | tee -a "$log_file" || rc=${PIPESTATUS[0]}
+
+    local elapsed=$((SECONDS - started))
+    note ""
+    note "finished: $(date -u +%H:%M:%S)Z  (${elapsed}s, exit $rc)"
+    note "log:      $log_file"
+    if [[ "$rc" -ne 0 ]]; then
+        note "the run stopped early -- most often the turn or budget cap."
+        note "pick it up with: claude --resume $session_id"
+    fi
+
+    {
+        printf -- '---\n'
+        printf 'finished: %s (%ss, exit %s)\n' \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$elapsed" "$rc"
+    } >>"$log_file"
+
+    return "$rc"
+}
+
+main "$@"

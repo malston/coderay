@@ -1,0 +1,236 @@
+#!/usr/bin/env bash
+#
+# epic-loop-test -- prove the epic-loop driver still assembles its two claude
+# calls correctly.
+#
+# Run it after editing epic-loop, or when you want to see the driver's shape
+# without spending anything. It substitutes a stub for claude, so no API call
+# is made and no repository is touched. It creates its own throwaway beads in
+# the target repo's tracker and deletes them on the way out, even on failure.
+#
+#   epic-loop-test                          # against the current repo
+#   epic-loop-test --repo ~/code/otherproj  # against another beads workspace
+#   epic-loop-test --keep                   # leave the fixtures for inspection
+#
+# Exit status is 0 when every assertion passes.
+#
+set -uo pipefail
+
+PROG="$(basename "$0")"
+readonly PROG
+
+DRIVER="${EPIC_LOOP_BIN:-$(command -v epic-loop || true)}"
+# The beads workspace to build fixtures in: the current repo unless --repo
+# says otherwise. Resolved lazily so --repo does not pay for a git call.
+REPO="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+KEEP=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --repo)   REPO="${2:?--repo needs a directory}"; shift 2 ;;
+        --keep)   KEEP=true; shift ;;
+        --driver) DRIVER="${2:?--driver needs a path}"; shift 2 ;;
+        -h|--help)
+            printf 'Usage: %s [--repo DIR] [--driver PATH] [--keep]\n' "$PROG"
+            exit 0 ;;
+        *) printf '%s: unknown option: %s\n' "$PROG" "$1" >&2; exit 2 ;;
+    esac
+done
+
+[[ -n "$DRIVER" && -x "$DRIVER" ]] \
+    || { printf '%s: cannot find an executable epic-loop (try --driver PATH)\n' "$PROG" >&2; exit 2; }
+[[ -n "$REPO" ]] \
+    || { printf '%s: not inside a git repository; pass --repo DIR\n' "$PROG" >&2; exit 2; }
+[[ -d "$REPO" ]] \
+    || { printf '%s: no such repo: %s\n' "$PROG" "$REPO" >&2; exit 2; }
+
+WORK="$(mktemp -d)"
+STUB_DIR="$WORK/stub"
+mkdir -p "$STUB_DIR"
+export STUB_RECORD="$WORK/record.txt"
+
+# The stub stands in for claude. It records its arguments and exits with the
+# code the test asks for, so the driver's orchestration can be checked without
+# an API call.
+cat >"$STUB_DIR/claude" <<'STUB'
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "--- stub call ---" >>"$STUB_RECORD"
+for a in "$@"; do printf '%s\n' "  arg: $a" >>"$STUB_RECORD"; done
+if printf '%s\n' "$@" | grep -q -- '--resume'; then
+    printf 'STUB: resume call ran\n'
+    exit "${STUB_EXIT_2:-0}"
+fi
+printf 'STUB: arming call ran\n'
+exit "${STUB_EXIT_1:-1}"
+STUB
+chmod +x "$STUB_DIR/claude"
+export PATH="$STUB_DIR:$PATH"
+
+# A non-executable or shadowed stub means the REAL claude runs instead, against
+# a real repo with bypassPermissions. Refuse to start unless the stub is in
+# control.
+resolved="$(command -v claude || true)"
+[[ "$resolved" == "$STUB_DIR/claude" ]] \
+    || { printf '%s: ABORT -- claude resolves to %s, not the stub.\n' "$PROG" "$resolved" >&2; exit 2; }
+
+# Fixture ids are recorded in a file, not a shell array. make_bead is called
+# inside a command substitution to capture the id, and an array appended in that
+# subshell never reaches this shell -- which silently orphans every fixture
+# whose id was captured that way.
+readonly FIXTURE_LIST="$WORK/fixtures.txt"
+: >"$FIXTURE_LIST"
+
+# shellcheck disable=SC2329  # invoked by the EXIT trap below
+cleanup() {
+    local ids=()
+    [[ -s "$FIXTURE_LIST" ]] && mapfile -t ids <"$FIXTURE_LIST"
+
+    if [[ "$KEEP" == true ]]; then
+        printf '\nfixtures kept: %s\n' "${ids[*]:-none}"
+        printf 'work dir kept: %s\n' "$WORK"
+        return
+    fi
+    if [[ "${#ids[@]}" -gt 0 ]]; then
+        if ! (cd "$REPO" && bd delete "${ids[@]}" --force >"$WORK/cleanup.log" 2>&1); then
+            printf '\n%s: WARNING -- could not delete fixtures: %s\n' "$PROG" "${ids[*]}" >&2
+            printf '%s: delete them by hand; bd output:\n' "$PROG" >&2
+            sed 's/^/  /' "$WORK/cleanup.log" >&2
+            return
+        fi
+    fi
+    rm -rf "$WORK"
+}
+trap cleanup EXIT
+
+# Creates a bead, records its id for cleanup, and echoes it.
+make_bead() {
+    local title="$1" kind="$2" parent="${3:-}" out id
+    if [[ -n "$parent" ]]; then
+        out="$(cd "$REPO" && bd create --title="$title" \
+            --description='Throwaway fixture created by epic-loop-test.' \
+            --type="$kind" --priority=4 --parent="$parent" 2>&1)"
+    else
+        out="$(cd "$REPO" && bd create --title="$title" \
+            --description='Throwaway fixture created by epic-loop-test.' \
+            --type="$kind" --priority=4 2>&1)"
+    fi
+    id="$(printf '%s' "$out" | sed -n 's/.*Created issue: \([^ ]*\).*/\1/p')"
+    [[ -n "$id" ]] || { printf '%s: could not create fixture %q:\n%s\n' "$PROG" "$title" "$out" >&2; exit 2; }
+    printf '%s\n' "$id" >>"$FIXTURE_LIST"
+    printf '%s' "$id"
+}
+
+printf 'driver: %s\nrepo:   %s\n\nbuilding fixtures...\n' "$DRIVER" "$REPO"
+
+EPIC="$(make_bead 'epic-loop-test epic' epic)"
+make_bead 'epic-loop-test epic child A' task "$EPIC" >/dev/null
+make_bead 'epic-loop-test epic child B' task "$EPIC" >/dev/null
+
+FEATURE="$(make_bead 'epic-loop-test feature' feature)"
+make_bead 'epic-loop-test feature child' task "$FEATURE" >/dev/null
+FEATURE_KIND=feature
+
+SETTLED="$(make_bead 'epic-loop-test settled parent' feature)"
+SETTLED_CHILD="$(make_bead 'epic-loop-test settled child' task "$SETTLED")"
+(cd "$REPO" && bd close "$SETTLED_CHILD" --reason='fixture' >/dev/null 2>&1) \
+    || { printf '%s: could not close the settled fixture\n' "$PROG" >&2; exit 2; }
+
+CHILDLESS="$(make_bead 'epic-loop-test childless' task)"
+
+fail=0
+check() {
+    local label="$1" expected="$2" actual="$3"
+    if [[ "$expected" == "$actual" ]]; then
+        printf 'PASS  %s\n' "$label"
+    else
+        printf 'FAIL  %s (expected %q, got %q)\n' "$label" "$expected" "$actual"
+        fail=1
+    fi
+}
+
+run_driver() {
+    rm -f "$STUB_RECORD"; rm -rf "$WORK/logs"
+    "$DRIVER" "$@" --repo "$REPO" --log-dir "$WORK/logs"
+}
+
+printf '\n=== both calls run, resume succeeds, driver exits 0 ===\n'
+STUB_EXIT_1=1 STUB_EXIT_2=0 run_driver "$EPIC" >"$WORK/t1.out" 2>&1
+check "exit code when resume succeeds" "0" "$?"
+check "stub called twice" "2" "$(grep -c -- '--- stub call ---' "$STUB_RECORD")"
+check "arming call capped at one turn" "1" "$(grep -c '^  arg: 1$' "$STUB_RECORD")"
+check "arming call denies write tools" "1" \
+    "$(grep -c 'Bash,Edit,Write,NotebookEdit,Task,Agent' "$STUB_RECORD")"
+check "second call resumes the first" "1" "$(grep -c -- '^  arg: --resume$' "$STUB_RECORD")"
+check "a log file was written" "1" "$(find "$WORK/logs" -name '*.log' | wc -l | tr -d ' ')"
+# shellcheck disable=SC2016  # the backticks must stay literal; that is the assertion
+check "goal keeps the literal word human" "1" "$(grep -c 'tagged `human`' "$STUB_RECORD")"
+
+printf '\n=== the resume exit code is propagated, not swallowed ===\n'
+STUB_EXIT_1=1 STUB_EXIT_2=7 run_driver "$EPIC" >"$WORK/t2.out" 2>&1
+check "exit code propagated" "7" "$?"
+check "finish line still printed" "1" "$(grep -c 'finished:' "$WORK/t2.out")"
+check "resume hint printed" "1" "$(grep -c 'pick it up with: claude --resume' "$WORK/t2.out")"
+check "early-stop reason explained" "1" "$(grep -c 'turn or budget cap' "$WORK/t2.out")"
+
+printf '\n=== one session id spans both calls ===\n'
+STUB_EXIT_1=1 STUB_EXIT_2=0 run_driver "$EPIC" \
+    --session-id 'deadbeef-0000-0000-0000-000000000000' >/dev/null 2>&1
+check "session id in both calls" "2" \
+    "$(grep -c 'deadbeef-0000-0000-0000-000000000000' "$STUB_RECORD")"
+
+printf '\n=== --hold reaches the skill, not the goal ===\n'
+STUB_EXIT_1=1 STUB_EXIT_2=0 run_driver "$EPIC" --hold >/dev/null 2>&1
+check "skill prompt carries --hold" "1" "$(grep -c "^  arg: /epic-loop $EPIC --hold" "$STUB_RECORD")"
+check "goal prompt does not" "0" "$(grep -c '^  arg: /goal .*--hold' "$STUB_RECORD")"
+
+printf '\n=== the working call is marked as the run itself ===\n'
+# The skill dispatches on this marker: with it the session works beads, without
+# it the session starts a run. A launcher that received it would loop on itself.
+STUB_EXIT_1=1 STUB_EXIT_2=0 run_driver "$EPIC" >/dev/null 2>&1
+check "working prompt carries the run marker" "1" \
+    "$(grep -c "^  arg: /epic-loop $EPIC --worker\$" "$STUB_RECORD")"
+check "goal prompt does not" "0" "$(grep -c '^  arg: /goal .*--worker' "$STUB_RECORD")"
+
+STUB_EXIT_1=1 STUB_EXIT_2=0 run_driver "$EPIC" --hold >/dev/null 2>&1
+check "hold and the run marker both reach the skill" "1" \
+    "$(grep -c "^  arg: /epic-loop $EPIC --hold --worker\$" "$STUB_RECORD")"
+
+printf '\n=== budget and model reach both calls ===\n'
+STUB_EXIT_1=1 STUB_EXIT_2=0 run_driver "$EPIC" \
+    --budget 12.50 --model claude-sonnet-5 >/dev/null 2>&1
+check "budget in both calls" "2" "$(grep -c '^  arg: 12.50$' "$STUB_RECORD")"
+check "model in both calls" "2" "$(grep -c '^  arg: claude-sonnet-5$' "$STUB_RECORD")"
+
+printf '\n=== any parent type is accepted, not just epics ===\n'
+STUB_EXIT_1=1 STUB_EXIT_2=0 run_driver "$FEATURE" >"$WORK/t6.out" 2>&1
+check "a feature parent is accepted" "0" "$?"
+check "summary names the real type" "1" "$(grep -c "($FEATURE_KIND, " "$WORK/t6.out")"
+check "goal text names the real type" "1" "$(grep -c "beads $FEATURE_KIND $FEATURE " "$STUB_RECORD")"
+check "turn counter names the real type" "1" "$(grep -c "the $FEATURE_KIND's turn counter" "$STUB_RECORD")"
+
+printf '\n=== a childless bead is refused ===\n'
+"$DRIVER" "$CHILDLESS" --repo "$REPO" --dry-run >"$WORK/t7.out" 2>&1
+check "childless bead refused" "1" "$?"
+check "message says no children" "1" "$(grep -c 'with no children' "$WORK/t7.out")"
+
+printf '\n=== a parent whose children are all settled is refused ===\n'
+"$DRIVER" "$SETTLED" --repo "$REPO" --dry-run >"$WORK/t8.out" 2>&1
+check "settled parent refused" "1" "$?"
+check "message counts the children found" "1" "$(grep -c 'child(ren), none needing work' "$WORK/t8.out")"
+check "settled parent not called childless" "0" "$(grep -c 'with no children' "$WORK/t8.out")"
+
+printf '\n=== a nonexistent bead is refused before any call ===\n'
+rm -f "$STUB_RECORD"
+"$DRIVER" 'no-such-bead-zzz' --repo "$REPO" --dry-run >"$WORK/t9.out" 2>&1
+check "unknown bead refused" "1" "$?"
+check "message names it as unknown" "1" "$(grep -c 'no such bead' "$WORK/t9.out")"
+check "no claude call was made" "0" "$([[ -f "$STUB_RECORD" ]] && grep -c -- '--- stub call ---' "$STUB_RECORD" || printf '0')"
+
+printf '\n'
+if [[ "$fail" -eq 0 ]]; then
+    printf 'ALL TESTS PASSED\n'
+else
+    printf 'SOME TESTS FAILED\n'
+fi
+exit "$fail"

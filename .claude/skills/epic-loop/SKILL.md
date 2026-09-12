@@ -1,6 +1,11 @@
 ---
 name: epic-loop
 description: Work every open child of a beads epic unattended in Claude Code. One worktree, branch and PR per bead, a failing test first with the guard mutated to prove it bites, a fresh-context review pass, serious findings fixed and the rest filed to a sibling findings epic, then the PR merged (or held for human approval with --hold) and the bead closed before the next one starts. Design and keep-or-delete questions get a recommendation and a `human` tag instead of a decision. Pairs with /goal for the completion condition and a turn budget stored in the epic. Invoke as /epic-loop EPIC-ID, with --hold to stop at ready-for-review instead of merging. Not for a single bead, an epic with no children, or work that needs a human decision at every step.
+argument-hint: <epic-id> [--hold]
+compatibility: >-
+  Needs the beads issue tracker (bd) and a repository whose work is tracked as
+  beads with parent/child links, plus git and gh. The bundled driver script
+  also needs claude, jq and uuidgen.
 disable-model-invocation: true
 ---
 
@@ -16,6 +21,71 @@ Work the open children of a beads epic, one at a time, until every one is closed
 * `HOLD` is true if `--hold` appears anywhere. In hold mode you never merge. You stop at ready-for-review and move on.
 
 Run `bd show $EPIC` first. Its DESIGN field may carry epic-specific instructions, most often the order to work the children in and which beads pair into one PR. Follow those. If DESIGN carries a full loop protocol, that protocol wins over anything below.
+
+## Starting a run
+
+Two calls, in this order. The first arms a `/goal`; the second invokes this
+skill in the same session.
+
+```bash
+claude -p "/goal <condition>" --session-id "$SID" --max-turns 1 \
+    --disallowedTools "Bash,Edit,Write,NotebookEdit,Task,Agent"
+claude -p "/epic-loop <epic-id> [--hold]" --resume "$SID" \
+    --permission-mode bypassPermissions --max-turns 400
+```
+
+Both calls are required, and the order matters, for three reasons.
+
+The CLI expands only the **first** slash command in a prompt; everything after
+it becomes that command's arguments. A `/goal` on a later line is dead text, so
+the two cannot share one call.
+
+This skill sets `disable-model-invocation: true`, so the model will not reach
+either command on its own. They have to be typed.
+
+The arming call is denied every tool that can change the repository and capped
+at one turn. Without that it starts satisfying the goal in the arming call
+itself, working beads before this protocol is loaded. The goal is still
+recorded, and it survives both the cap and the denial.
+
+The condition to arm:
+
+```text
+/goal Every open child of beads epic <epic-id> is closed, blocked on a held PR, or tagged `human`, worked per /epic-loop; or stop when the epic's turn counter reaches 20
+```
+
+Interactively it is the same two steps: `/goal <condition>`, then
+`/epic-loop <epic-id>`.
+
+### The driver script
+
+`scripts/epic-loop` assembles both calls. It is a convenience, not a
+requirement -- the two calls above are the whole mechanism.
+
+```bash
+epic-loop <epic-id> --dry-run     # print the calls, spend nothing
+epic-loop <epic-id> --hold        # stop each bead at ready-for-review
+epic-loop <epic-id> --repo DIR --budget 50
+```
+
+What it adds beyond typing the calls: it refuses a bead that does not exist, is
+closed, has no children, or whose children are all settled, before spending
+anything. It refuses to run from a linked worktree, since this skill creates
+worktrees under the main checkout and must not nest them. It logs the run and
+prints the resume command when a cap stops it.
+
+It also strips `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` from both calls.
+A repository that exports a key for its own tooling hands it to `claude` too,
+where it outranks the claude.ai login; the run then bills a pay-as-you-go
+account and can die on "Credit balance is too low" before working a single
+bead. Set `EPIC_LOOP_KEEP_API_KEY=1` when that account is the one you mean to
+spend. **Typing the calls by hand carries the same risk**, so prefix them with
+`env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN`.
+
+`scripts/epic-loop-test` proves the driver still assembles both calls
+correctly. It stubs `claude`, so it spends nothing and touches no repository,
+and it cleans up the throwaway beads it creates. Run it after editing the
+driver.
 
 ## How the loop runs
 
