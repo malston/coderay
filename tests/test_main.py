@@ -514,9 +514,14 @@ def test_an_empty_repo_estimates_nothing(tmp_path):
 
 
 def test_the_estimate_tracks_the_real_bundle_on_a_recorded_run(tmp_path):
-    """A repo shaped like intapp-ai-pdlc, the closest of the measured runs:
-    270 files, 20 picked, a real bundle of 384,428 chars. The estimate should
-    land within a factor of two of that rather than the 2.6x it did."""
+    """Shaped like the closest of the measured runs: 270 files, 20 picked, a
+    real bundle of 384,428 chars.
+
+    A uniform repository cannot reproduce that run's selection skew, so this
+    pins the arithmetic rather than the run. The band is wide enough to admit
+    a range of skew values; test_the_skew_is_the_value_that_was_measured is
+    what holds the constant.
+    """
     repo = _repo(tmp_path, [9_500] * 270)
     chars = estimated_codebase_chars(*repo, budget=1_000_000).likely
     real = 384_428
