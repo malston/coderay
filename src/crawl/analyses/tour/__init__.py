@@ -19,8 +19,6 @@ from crawl.analyses.tour.render import (
     available_lenses,
     build_mermaid,
     default_output_dir,
-    estimate_dry_run_cost,
-    format_dry_run_summary,
     format_session_summary,
     write_chapter_files,
     write_index_html,
@@ -34,7 +32,6 @@ def build_flow():
 
 def add_arguments(parser) -> None:
     parser.add_argument("--instructions", default="beginner-tutorial", choices=available_lenses())
-    parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--codebase-budget", **codebase_budget_argument(CODEBASE_BUDGET))
 
 # A chapter can run past the 16384-token default on a large abstraction
@@ -138,19 +135,6 @@ def prompt_plan(args, preview):
 
 def run(args) -> None:
     require_directory(args.repo_path)
-
-    if args.dry_run:
-        try:
-            provider, model = resolve_provider_and_model()
-        except RuntimeError:
-            provider, model = "anthropic", "claude-sonnet-5"
-        # The real run below applies ENV_DEFAULTS for the whole flow, so the
-        # estimate must see the same LLM_MAX_OUTPUT_TOKENS or its worst-case
-        # bound is half of what a real run could actually hit (coderay-5wu.26).
-        with env_defaults(ENV_DEFAULTS):
-            print(format_dry_run_summary(estimate_dry_run_cost(
-                args.repo_path, args.instructions, provider, model, codebase_budget=args.codebase_budget)))
-        return
 
     provider, model = resolve_provider_and_model()
     ensure_priced(provider, model)

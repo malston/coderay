@@ -544,17 +544,18 @@ def test_preview_reports_zero_without_aborting_for_every_analysis(tmp_path, name
 
 # ------------------------------------------------------------ the CLI surface
 
-def test_estimate_token_usage_rejects_a_dry_run_flag(tmp_path):
-    """--out is refused because nothing is written. --dry-run promises the very
-    token estimate this command does not yet produce, so it cannot be accepted
-    and ignored two lines away from that refusal."""
+def test_estimate_token_usage_rejects_an_out_flag(tmp_path):
+    """--out is refused because nothing is written, so accepting it would promise
+    an output that never appears. (--dry-run used to be refused here too; it is
+    gone from every command now, and this command is what replaced it.)"""
     repo = _repo(tmp_path)
     result = subprocess.run(
-        [sys.executable, "-m", "crawl.cli", "estimate-token-usage", "tour", str(repo), "--dry-run"],
+        [sys.executable, "-m", "crawl.cli", "estimate-token-usage", "tour", str(repo),
+         "--out", str(tmp_path / "o")],
         capture_output=True, text=True, env=_env(tmp_path),
     )
     assert result.returncode == 2
-    assert "--dry-run" in result.stderr
+    assert "--out" in result.stderr
 
 
 def test_estimate_token_usage_keeps_crawler_progress_off_stdout(tmp_path):
@@ -568,15 +569,15 @@ def test_estimate_token_usage_keeps_crawler_progress_off_stdout(tmp_path):
     assert result.stdout.startswith("architecture: ")
 
 
-def test_estimate_token_usage_says_it_does_not_price_the_run(tmp_path):
-    """The command is named for tokens and reports none of them. Saying so beats
-    leaving the reader to conclude it is broken."""
+def test_estimate_token_usage_prices_the_run(tmp_path):
+    """The command is named for tokens, and reports them alongside the counts."""
     repo = _repo(tmp_path)
     result = subprocess.run(
         [sys.executable, "-m", "crawl.cli", "estimate-token-usage", "backend", str(repo)],
         capture_output=True, text=True, env=_env(tmp_path), check=True,
     )
-    assert "tokens" in result.stdout.lower()
+    assert "input tokens" in result.stdout.lower()
+    assert "output tokens" in result.stdout.lower()
 
 
 def test_analysis_flags_reach_the_crawl_step_through_the_cli(tmp_path):

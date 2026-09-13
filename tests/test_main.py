@@ -374,33 +374,6 @@ def _one_file_repo(tmp_path):
     return repo
 
 
-def test_dry_run_flag_estimates_without_creating_the_output_directory(tmp_path, monkeypatch):
-    repo = _one_file_repo(tmp_path)
-    out_dir = tmp_path / "out"
-    env = _dry_run_env(tmp_path, ANTHROPIC_API_KEY="test-key")
-
-    result = subprocess.run(
-        [sys.executable, "-m", "crawl.cli", "tour", str(repo), "--dry-run", "--out", str(out_dir)],
-        capture_output=True, text=True, env=env, check=True,
-    )
-
-    assert "Estimated cost (dry run)" in result.stdout
-    assert not out_dir.exists()
-
-
-def test_dry_run_flag_works_with_no_llm_key_configured(tmp_path):
-    # The spec requires --dry-run to need no API key at all -- it falls back
-    # to the anthropic default when resolve_provider_and_model() can't find one.
-    repo = _one_file_repo(tmp_path)
-    env = _dry_run_env(tmp_path)
-
-    result = subprocess.run(
-        [sys.executable, "-m", "crawl.cli", "tour", str(repo), "--dry-run"],
-        capture_output=True, text=True, env=env,
-    )
-
-    assert result.returncode == 0
-    assert "Estimated cost (dry run)" in result.stdout
 
 
 # coderay-5wu.15: the dry run sizes the codebase with the budget it is handed
@@ -424,12 +397,3 @@ def test_format_dry_run_summary_reports_the_codebase_budget():
     assert "Codebase budget: 2,000,000 chars" in format_dry_run_summary(estimate)
 
 
-def test_dry_run_flag_reports_the_codebase_budget_it_would_use(tmp_path):
-    repo = _one_file_repo(tmp_path)
-    env = _dry_run_env(tmp_path)
-    result = subprocess.run(
-        [sys.executable, "-m", "crawl.cli", "tour", str(repo), "--dry-run", "--codebase-budget", "2000000"],
-        capture_output=True, text=True, env=env,
-    )
-    assert result.returncode == 0, result.stderr
-    assert "Codebase budget: 2,000,000 chars" in result.stdout

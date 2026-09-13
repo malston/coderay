@@ -6,7 +6,8 @@ pricing happen once, here. See docs/prompt-anatomy.md for what a prompt is made
 of, and docs/superpowers/specs/2026-09-12-token-estimate-design.md for why the
 contract has this shape.
 """
-from dataclasses import dataclass, field
+import textwrap
+from dataclasses import dataclass
 
 from .call_llm import CHARS_PER_TOKEN
 from .pricing import cost_for, input_ceiling
@@ -71,7 +72,22 @@ def overview_prompt():
                   0, (1, 1))
 
 
-def estimate(prompts, provider, model, max_output_tokens):
+# What to price against when no key is set. A user sizing a run before paying
+# for it has not necessarily paid yet, so the command answers anyway and says
+# which model it assumed rather than quietly picking one.
+ASSUMED = ("anthropic", "claude-sonnet-5")
+
+
+def resolve_for_estimate():
+    """(provider, model, assumed). Falls back rather than refusing to answer."""
+    from .call_llm import resolve_provider_and_model
+    try:
+        return (*resolve_provider_and_model(), False)
+    except RuntimeError:
+        return (*ASSUMED, True)
+
+
+def estimate(prompts, provider, model, max_output_tokens, assumed=False):
     """What a run of these prompts would send, cost, and whether it would be
     refused before its first call.
 
@@ -90,6 +106,7 @@ def estimate(prompts, provider, model, max_output_tokens):
     return {
         "provider": provider,
         "model": model,
+        "assumed": assumed,
         "input_tokens": (low, high),
         "output_tokens_worst_case": worst_case_output,
         "cost": (_cost(provider, model, low, 0),
@@ -109,3 +126,61 @@ def _cost(provider, model, input_tokens, output_tokens):
         "input_tokens": input_tokens, "output_tokens": output_tokens,
         "cache_read_tokens": 0, "cache_write_tokens": 0,
     })
+
+
+def format_estimate(e, codebase_budget=None):
+    """The estimate a reader sees, under the crawl counts.
+
+    Ranges print as a range. A figure the estimate cannot know is named in a
+    note rather than folded into a number, the rule the Preview contract set:
+    absent and said, never silently zero.
+    """
+    low, high = e["input_tokens"]
+    assumed = " (assumed: no LLM key is set)" if e.get("assumed") else ""
+    lines = ["", f"  Model:           {e['provider']}/{e['model']}{assumed}"]
+    if codebase_budget is not None:
+        # coderay-5wu.15: a user comparing budgets needs to see which one
+        # produced the number in front of them.
+        lines.append(f"  Codebase budget: {codebase_budget:,} chars")
+    lines += [f"  Input tokens:    {_range(low, high)}",
+              f"  Output tokens:   up to {e['output_tokens_worst_case']:,} (worst case: "
+              "every call hits the cap)"]
+
+    cost_low, cost_high = e["cost"]
+    if cost_low is None or cost_high is None:
+        lines.append(f"  Cost:            unknown (no pricing recorded for {e['model']})")
+    else:
+        lines.append(f"  Cost:            ${cost_low:,.4f} to ${cost_high:,.4f}")
+
+    lines.append("")
+    lines.append("  Prompt                          calls     tokens each")
+    for p in e["prompts"]:
+        tokens = p.chars_per_call // PRICING_CHARS_PER_TOKEN
+        lines.append(f"    {p.template:<28}{_range(*p.calls):>9}{tokens:>14,}")
+
+    for note in (*e["notes"], *_verdict(e)):
+        lines += ["", *textwrap.wrap(note, width=76, initial_indent="  NOTE: ",
+                                     subsequent_indent="        ")]
+    lines += ["", *textwrap.wrap(
+        "This estimate does not account for prompt caching: a run reuses the same "
+        "text across calls, so the real cost is often under the low end.",
+        width=76, initial_indent="  ", subsequent_indent="  ")]
+    return "\n".join(lines)
+
+
+def _range(low, high):
+    return f"{low:,}" if low == high else f"{low:,} to {high:,}"
+
+
+def _verdict(e):
+    """Whether a real run would be refused before it spent anything (coderay-8vk)."""
+    ceiling, largest = e["input_ceiling"], e["largest_prompt_tokens"]
+    if ceiling is None:
+        return ["No input ceiling is recorded for this model, so a prompt too large "
+                "for it would be refused by the provider rather than caught before "
+                "the call."]
+    if e["over_ceiling"]:
+        return [f"This run would be refused before its first call: its largest prompt "
+                f"is about {largest:,} tokens, over {e['model']}'s {ceiling:,}-token "
+                f"input ceiling. Lower --codebase-budget."]
+    return []

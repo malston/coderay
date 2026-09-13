@@ -85,6 +85,4 @@ def format_preview(name: str, repo_path: str, result: Preview) -> str:
     for note in result["notes"]:
         lines += ["", *textwrap.wrap(note, width=76, initial_indent="  NOTE: ",
                                      subsequent_indent="        ")]
-    lines += ["", "  This reports the file crawl only; it does not yet estimate "
-                  "tokens or cost."]
     return "\n".join(lines)

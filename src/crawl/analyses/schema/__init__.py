@@ -174,7 +174,8 @@ def prompt_plan(args, preview):
     batches the tables SchemaTour names, and the migration pass does not run at
     all below MIGRATION_FLOOR. The preview already carries the migration count,
     so that second one is known exactly."""
-    from .nodes import BATCH_ESTIMATE, MIGRATION_FLOOR, PROMPTS_DIR, TABLE_ESTIMATE, TableDeepDive
+    from .nodes import (BATCH_ESTIMATE, MIGRATION_FLOOR, PROMPTS_DIR,
+                        TABLE_ESTIMATE, TableDeepDive)
     body = preview.get("assembled_chars") or 0
     migrations = preview["files"].get("migrations", [])
     acts = 1 if len(migrations) >= MIGRATION_FLOOR else 0
@@ -192,10 +193,7 @@ def prompt_plan(args, preview):
                     f"{TableDeepDive.BATCH} per call; the real count is that pass's answer"),
         Prompt("migration-acts.md",
                shell_chars(PROMPTS_DIR, "migration-acts.md", ("migration_names",)),
-               sum(len(m) + 1 for m in migrations), (acts, acts),
-               note="" if acts else
-                    f"{len(migrations)} migrations is below the floor of {MIGRATION_FLOOR}, "
-                    "so this prompt is never built"),
+               sum(len(m) + 1 for m in migrations), (acts, acts)),
     ] + [overview_prompt()]
 
 
