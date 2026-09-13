@@ -475,7 +475,7 @@ def _repo(tmp_path, sizes):
 def test_the_estimate_sizes_the_files_a_run_sends_not_every_file(tmp_path):
     """100 files, of which SmartCrawl targets 20. Sizing all 100 is the bug."""
     repo = _repo(tmp_path, [1000] * 100)
-    chars, _most = estimated_codebase_chars(*repo, budget=10_000_000)
+    chars = estimated_codebase_chars(*repo, budget=10_000_000).likely
     every_file = 100 * 1000
     assert chars < every_file / 2, (
         f"{chars:,} is closer to all 100 files ({every_file:,}) than to the 20 sent")
@@ -485,15 +485,15 @@ def test_the_estimate_counts_the_header_each_file_is_wrapped_in(tmp_path):
     """SmartCrawl.post wraps every file in a rule, its path and another rule.
     On twenty small files that chrome is most of the bundle."""
     repo = _repo(tmp_path, [10] * 100)
-    chars, _most = estimated_codebase_chars(*repo, budget=10_000_000)
+    chars = estimated_codebase_chars(*repo, budget=10_000_000).likely
     assert chars > 20 * 100, f"{chars:,} looks like bare text with no block chrome"
 
 
 def test_the_estimate_stops_at_the_budget(tmp_path):
     """The real bundle stops there, so an estimate above it is unreachable."""
     repo = _repo(tmp_path, [50_000] * 100)
-    likely, _most = estimated_codebase_chars(*repo, budget=200_000)
-    assert likely <= 200_000
+    sized = estimated_codebase_chars(*repo, budget=200_000)
+    assert sized.likely <= 200_000
 
 
 def test_the_estimate_carries_the_measured_skew(tmp_path):
@@ -501,7 +501,7 @@ def test_the_estimate_carries_the_measured_skew(tmp_path):
     a size-blind pick over the four uncapped runs measured. Without the
     correction the estimate understated three of those four."""
     repo = _repo(tmp_path, [1000] * 100)
-    chars, _most = estimated_codebase_chars(*repo, budget=10_000_000)
+    chars = estimated_codebase_chars(*repo, budget=10_000_000).likely
     # The block chrome alone puts the figure above the bare text, so compare
     # against twenty whole blocks: only the skew can carry it past that.
     one_block = 1000 + len("mod_000.py") + render_theme._BLOCK_CHROME
@@ -510,7 +510,7 @@ def test_the_estimate_carries_the_measured_skew(tmp_path):
 
 
 def test_an_empty_repo_estimates_nothing(tmp_path):
-    assert estimated_codebase_chars([], str(tmp_path), budget=1000) == (0, 0)
+    assert estimated_codebase_chars([], str(tmp_path), budget=1000).likely == 0
 
 
 def test_the_estimate_tracks_the_real_bundle_on_a_recorded_run(tmp_path):
@@ -518,7 +518,7 @@ def test_the_estimate_tracks_the_real_bundle_on_a_recorded_run(tmp_path):
     270 files, 20 picked, a real bundle of 384,428 chars. The estimate should
     land within a factor of two of that rather than the 2.6x it did."""
     repo = _repo(tmp_path, [9_500] * 270)
-    chars, _most = estimated_codebase_chars(*repo, budget=1_000_000)
+    chars = estimated_codebase_chars(*repo, budget=1_000_000).likely
     real = 384_428
     assert real / 2 < chars < real * 2, f"{chars:,} is not within 2x of {real:,}"
 
@@ -528,7 +528,7 @@ def test_a_repo_smaller_than_the_target_is_not_sized_as_if_it_were_bigger(tmp_pa
     asks for more files than exist. Sizing 20 of them put a measured run from
     1.2x to 7.5x before the count was capped at what the model was shown."""
     repo = _repo(tmp_path, [1000] * 7)
-    chars, _most = estimated_codebase_chars(*repo, budget=10_000_000)
+    chars = estimated_codebase_chars(*repo, budget=10_000_000).likely
     every_file = 7 * (1000 + 130)
     assert chars < every_file * 1.5, (
         f"{chars:,} sizes more than the {7} files that exist ({every_file:,})")
@@ -537,7 +537,8 @@ def test_a_repo_smaller_than_the_target_is_not_sized_as_if_it_were_bigger(tmp_pa
 def test_a_repo_the_model_cannot_select_within_carries_no_skew(tmp_path):
     """Skew is what choosing costs. Where the target covers every file there is
     no choice, and applying it inflates the one case this can get exact."""
-    small, _most = estimated_codebase_chars(*_repo(tmp_path / "s", [1000] * 5), budget=10_000_000)
+    small = estimated_codebase_chars(*_repo(tmp_path / "s", [1000] * 5),
+                                     budget=10_000_000).likely
     assert small < 5 * (1000 + 130) * 1.5, f"{small:,} applies skew with nothing to choose"
 
 
@@ -548,11 +549,11 @@ def test_the_ceiling_is_never_below_what_a_run_could_send(tmp_path):
     catch (coderay-8vk). A few large files among many small ones is the shape
     that separates the two."""
     files, root = _repo(tmp_path, [2_000] * 200 + [150_000] * 20)
-    likely, most = estimated_codebase_chars(files, root, budget=10_000_000)
+    sized = estimated_codebase_chars(files, root, budget=10_000_000)
     whole_repo = sum(len(p.read_text(encoding="utf-8")) for p in tmp_path.glob("*.py"))
-    assert most >= likely, f"the ceiling {most:,} is under the expectation {likely:,}"
-    assert most >= whole_repo, (
-        f"the ceiling {most:,} is under the whole repository {whole_repo:,}, "
+    assert sized.most >= sized.likely, f"the ceiling {sized.most:,} is under the expectation {likely:,}"
+    assert sized.most >= whole_repo, (
+        f"the ceiling {sized.most:,} is under the whole repository {whole_repo:,}, "
         "which a run could send in full")
 
 
@@ -561,8 +562,8 @@ def test_the_ceiling_allows_for_the_block_that_crosses_the_budget(tmp_path):
     in after the total has already reached it. A ceiling clamped exactly at the
     budget would be under the real bundle by up to one block."""
     files, root = _repo(tmp_path, [40_000] * 60)
-    _likely, most = estimated_codebase_chars(files, root, budget=100_000)
-    assert most > 100_000, f"the ceiling {most:,} cannot be reached past the budget"
+    sized = estimated_codebase_chars(files, root, budget=100_000)
+    assert sized.most > 100_000, f"the ceiling {sized.most:,} cannot be reached past the budget"
 
 
 def test_the_dry_run_prices_the_files_a_run_sends_not_the_repository(tmp_path):
@@ -597,22 +598,22 @@ def test_the_estimate_matches_the_bundle_smart_crawl_actually_builds(tmp_path):
     SmartCrawl().post(shared, None, ([str(p) for p in files], ""))
     real = len(shared["codebase"])
 
-    likely, most = estimated_codebase_chars(files, root, budget=10_000_000)
+    sized = estimated_codebase_chars(files, root, budget=10_000_000)
     # The estimator charges one joiner to every block; the bundle has one
     # between each pair, so it sits a couple of characters per file above.
-    assert abs(likely - real) <= 2 * len(sizes), (
-        f"estimate {likely:,} against a real bundle of {real:,}")
-    assert most >= real, f"the ceiling {most:,} is under the real bundle {real:,}"
+    assert abs(sized.likely - real) <= 2 * len(sizes), (
+        f"estimate {sized.likely:,} against a real bundle of {real:,}")
+    assert sized.most >= real, f"the ceiling {sized.most:,} is under the real bundle {real:,}"
 
 
 def test_choosing_files_is_what_the_skew_prices(tmp_path):
     """Same mean file, same path length, same target of twenty. The only
     difference is whether the model had a hundred files to choose among or
     exactly twenty, which is what the skew is for."""
-    chooses, _ = estimated_codebase_chars(*_repo(tmp_path / "many", [1000] * 100),
-                                          budget=10_000_000)
-    cannot, _ = estimated_codebase_chars(*_repo(tmp_path / "few", [1000] * 20),
-                                         budget=10_000_000)
+    chooses = estimated_codebase_chars(*_repo(tmp_path / "many", [1000] * 100),
+                                       budget=10_000_000).likely
+    cannot = estimated_codebase_chars(*_repo(tmp_path / "few", [1000] * 20),
+                                      budget=10_000_000).likely
     assert chooses == pytest.approx(cannot * render_theme.SELECTION_SKEW, rel=0.01)
 
 
@@ -645,10 +646,10 @@ def test_the_population_term_is_a_mean_and_not_the_largest_file(tmp_path):
     so the population term is what decides it. One huge file among small ones
     separates a mean from a maximum; a uniform repository cannot."""
     files, root = _repo(tmp_path, [1_000] * 99 + [400_000])
-    likely, _most = estimated_codebase_chars(files, root, budget=100_000_000)
+    sized = estimated_codebase_chars(files, root, budget=100_000_000)
     from_the_mean = 20 * ((99 * 1_000 + 400_000) / 100) * render_theme.SELECTION_SKEW
-    assert likely == pytest.approx(from_the_mean, rel=0.05), (
-        f"{likely:,} is not twenty mean files; the largest would give "
+    assert sized.likely == pytest.approx(from_the_mean, rel=0.05), (
+        f"{sized.likely:,} is not twenty mean files; the largest would give "
         f"{20 * 400_000 * render_theme.SELECTION_SKEW:,.0f}")
 
 
@@ -657,3 +658,64 @@ def test_the_skew_is_the_value_that_was_measured():
     shows in a diff, and the band the dry run quotes has to be re-measured
     with it."""
     assert render_theme.SELECTION_SKEW == 2.0
+
+
+def test_the_dry_run_says_when_the_codebase_could_not_be_read(tmp_path):
+    """A run is not refused for this. prep's manifest falls back to an empty
+    preview, post skips every file, and each call goes out against an empty
+    codebase -- so the user pays the quoted figure for a tour built from
+    nothing, and no other line says so."""
+    for i in range(2):
+        (tmp_path / f"bad_{i}.py").write_bytes(b"\xff\xfe\x00\x80 \xc3\x28")
+    out = format_dry_run_summary(
+        estimate_dry_run_cost(str(tmp_path), "beginner-tutorial",
+                              "anthropic", "claude-sonnet-5"))
+    assert "None of the 2 source files" in out
+    assert "empty codebase" in out
+
+
+def test_the_estimate_follows_a_target_files_override(tmp_path):
+    """prep honours the key, so an estimate that recomputed the default would
+    model a different run than the one that would happen."""
+    files, root = _repo(tmp_path, [1000] * 100)
+    default = estimated_codebase_chars(files, root, budget=10_000_000).likely
+    fewer = estimated_codebase_chars(files, root, budget=10_000_000, target=3).likely
+    assert fewer < default / 4, f"{fewer:,} did not follow the override from {default:,}"
+
+
+def test_the_dry_run_keeps_internal_bookkeeping_out_of_the_terminal(tmp_path):
+    """A bead id resolves to nothing for the person reading the output."""
+    for i in range(30):
+        (tmp_path / f"m_{i:02d}.py").write_text("x" * 500, encoding="utf-8")
+    out = format_dry_run_summary(
+        estimate_dry_run_cost(str(tmp_path), "beginner-tutorial",
+                              "anthropic", "claude-sonnet-5"))
+    assert "coderay-" not in out
+
+
+def test_the_dry_run_says_when_only_part_of_the_codebase_could_be_read(tmp_path):
+    """A figure drawn from two files out of forty reads exactly as confident as
+    one drawn from all of them, so the sample it rests on is worth saying."""
+    for i in range(38):
+        (tmp_path / f"bad_{i:02d}.py").write_bytes(b"\xff\xfe\x00\x80 \xc3\x28")
+    for i in range(2):
+        (tmp_path / f"ok_{i}.py").write_text("x" * 1000, encoding="utf-8")
+    out = format_dry_run_summary(
+        estimate_dry_run_cost(str(tmp_path), "beginner-tutorial",
+                              "anthropic", "claude-sonnet-5"))
+    assert "Only 2 of 40 source files" in out
+
+
+def test_prep_records_the_target_it_settled_on(tmp_path):
+    """The estimate reads it back rather than recomputing the default, so an
+    override reaches both sides or neither."""
+    from crawl.analyses.tour.nodes import SmartCrawl
+    for i in range(100):
+        (tmp_path / f"m_{i:03d}.py").write_text("x" * 100, encoding="utf-8")
+    state = {"repo_path": str(tmp_path)}
+    SmartCrawl().prep(state)
+    assert state["target_files_used"] == 20
+
+    overridden = {"repo_path": str(tmp_path), "target_files": 3}
+    SmartCrawl().prep(overridden)
+    assert overridden["target_files_used"] == 3

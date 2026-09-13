@@ -167,6 +167,9 @@ class SmartCrawl(Node):
         # the model cannot pick a file it never saw (coderay-05w.4).
         shared["preview_dropped_files"] = [os.path.relpath(p, root) for p in all_files[max_files:]]
         target = shared.get("target_files", target_count(len(files)))
+        # Recorded so a dry run models the count this prep settled on
+        # rather than recomputing the default and ignoring an override.
+        shared["target_files_used"] = target
 
         manifest_parts = []
         for i, path in enumerate(files):
