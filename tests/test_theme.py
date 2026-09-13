@@ -24,19 +24,45 @@ def _tags(html):
     return re.findall(r'<(?:script|link)\b[^>]*cdn\.jsdelivr\.net[^>]*>', html, re.S)
 
 
-def _external_refs(html):
-    """A script or link pointing off this page, whatever the host.
+#: A host, with or without a scheme. `//host/x.js` fetches exactly as
+#: `https://host/x.js` does, so both count.
+_OFF_PAGE = r"(?:https?:)?//"
 
-    Broader than _tags, which sees one CDN. The scheme is optional and the
-    quote may be either kind, because `src='//host/x.js'` reaches the network
-    exactly as `src="https://host/x.js"` does and is what an unhashed tag
-    would most plausibly look like. Narrower than every way a page can reach
-    the network: an @import or a url() inside a <style> block is not a tag and
-    is not covered here.
+#: An attribute value, quoted either way or not at all.
+_ATTR_VALUE = rf"""(?:"{_OFF_PAGE}[^"]*"|'{_OFF_PAGE}[^']*'|{_OFF_PAGE}[^\s>]*)"""
+
+
+def _external_refs(html):
+    """Script and link tags pointing off this page, whatever the host.
+
+    Broader than _tags, which sees one CDN. Returns the whole tag, because the
+    integrity check reads its attributes.
     """
-    return re.findall(
-        r"""<(?:script|link)\b[^>]*(?:src|href)=["'](?:https?:)?//[^"']*["'][^>]*>""",
-        html, re.S)
+    return re.findall(rf"<(?:script|link)\b[^>]*(?:src|href)={_ATTR_VALUE}[^>]*>",
+                      html, re.S)
+
+
+def network_refs(markup):
+    """Every way this markup reaches a host, tag or stylesheet.
+
+    A page fetches from more than script and link. An `<img>` fires on open,
+    which is the beacon coderay-q2r.53 is about. And CSS reaches the network
+    without a tag at all: every template here ships a <style> block, so an
+    @import is the most natural place for a font stylesheet to reappear, and
+    it is not a tag so no tag pattern will ever see it (coderay-5cp).
+
+    Page-local references are left alone: a relative path, a data URI and a
+    fragment all resolve without a host.
+    """
+    tags = re.findall(
+        rf"<(?:script|link|img|iframe|source|embed|video|audio)\b[^>]*"
+        rf"(?:src|href|srcset|poster)={_ATTR_VALUE}[^>]*>",
+        markup, re.S)
+    # @import takes a bare string as well as url(), and both appear in CSS
+    # that no tag pattern reaches.
+    css = re.findall(rf"""@import\s+(?:url\(\s*)?["']?{_OFF_PAGE}[^"')\s;]*""", markup, re.S)
+    css += re.findall(rf"""url\(\s*["']?{_OFF_PAGE}[^"')\s]*""", markup, re.S)
+    return tags + css
 
 
 def _uncommented(css):
@@ -129,13 +155,15 @@ def test_tokens_define_the_palette_and_code_typography():
 
 
 def test_every_renderer_takes_the_head_and_the_tokens_from_one_place():
-    """One definition, five templates. A copy drifts, and only one gets audited."""
+    """One definition, five templates. A copy drifts, and only one gets audited.
+
+    The network check is separate, in
+    test_no_renderer_reaches_the_network_on_its_own_terms, because it reaches
+    past tags into the stylesheet each template ships.
+    """
     for label, template in TEMPLATES.items():
         assert "{head_assets}" in template, f"{label} writes its own head"
         assert "{tokens}" in template, f"{label} writes its own palette"
-        assert not _external_refs(template), (
-            f"{label} pulls a resource off the network itself instead of sharing one: "
-            f"{_external_refs(template)[0][:90]}")
 
 
 def test_the_shared_tokens_open_every_style_sheet():
@@ -606,3 +634,46 @@ def test_the_dark_block_declares_only_custom_properties():
                 f"the dark block sets {prop!r}, which is a rule rather than a token")
     assert checked > 10, (
         f"only {checked} declarations read; this check is not seeing the dark block")
+
+
+# coderay-5cp. The check that no renderer declares its own network reference
+# matched one shape of one kind of tag. A page reaches the network several
+# ways, and CSS is the one that matters most: every template ships a <style>
+# block, so @import is the natural place to put a font stylesheet back.
+NETWORK_SPELLINGS = [
+    ('<script src="https://host/x.js"></script>', "a double-quoted script"),
+    ("<script src='https://host/x.js'></script>", "a single-quoted script"),
+    ("<script src=https://host/x.js></script>", "an unquoted script"),
+    ('<link rel="stylesheet" href="//host/x.css">', "a protocol-relative link"),
+    ('<img src="https://host/beacon.png">', "an image, which fires on page open"),
+    ('<iframe src="https://host/f"></iframe>', "a frame"),
+    ('<style>@import url("https://host/f.css");</style>', "an @import inside CSS"),
+    ("<style>.x { background: url(https://host/b.png); }</style>", "a url() inside CSS"),
+]
+
+
+@pytest.mark.parametrize("markup,description", NETWORK_SPELLINGS,
+                         ids=[d for _, d in NETWORK_SPELLINGS])
+def test_every_way_a_page_reaches_the_network_is_recognised(markup, description):
+    """Each of these fetches from a host. A checker that sees only some of them
+    reports a page as self-contained when it is not."""
+    assert network_refs(markup), f"{description} is not recognised as reaching the network"
+
+
+def test_a_self_contained_page_is_not_flagged():
+    """Relative paths, data URIs and the page's own anchors stay put."""
+    for markup in ('<link rel="stylesheet" href="style.css">',
+                   '<img src="data:image/png;base64,AAAA">',
+                   '<a href="index.html">home</a>',
+                   "<style>.x { background: url(#gradient); }</style>",
+                   '<script>var u = "https://example.com";</script>'):
+        assert not network_refs(markup), f"flagged a page-local reference: {markup}"
+
+
+def test_no_renderer_reaches_the_network_on_its_own_terms():
+    """The shared head is the one place a third-party reference is declared,
+    audited and hash-checked. A renderer adding its own puts unhashed code on
+    a page that renders the target repository's own text."""
+    for label, template in TEMPLATES.items():
+        found = network_refs(template)
+        assert not found, f"{label} reaches the network itself: {found[0][:90]}"
