@@ -12,10 +12,10 @@ from dataclasses import dataclass
 from .call_llm import CHARS_PER_TOKEN
 from .pricing import cost_for, input_ceiling
 
-# Input tokens for pricing use a plain chars/4 heuristic, the figure tour's
-# dry-run has always reported. The ceiling check below uses call_llm's own
-# CHARS_PER_TOKEN instead: the point there is to predict that guard's verdict,
-# not to price the run, and the guard is deliberately more conservative.
+# Input tokens for pricing use a plain chars/4 heuristic. The ceiling check
+# below uses call_llm's own CHARS_PER_TOKEN instead: the point there is to
+# predict that guard's verdict rather than to price the run, and the guard is
+# deliberately more conservative.
 PRICING_CHARS_PER_TOKEN = 4
 
 

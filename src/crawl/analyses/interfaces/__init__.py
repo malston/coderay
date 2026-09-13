@@ -235,7 +235,9 @@ def prompt_plan(args, preview):
                shell_chars(PROMPTS_DIR, "trace-action.md", ("routes", "groups")),
                body, (1, 1)),
         Prompt("_PICK_PROMPT (inline)",
-               len(_PICK_PROMPT) - len("{menu}") - len("{routes}"), body, (1, 1)),
+               len(_PICK_PROMPT) - len("{menu}") - len("{routes}"), body, (1, 1),
+               note="the pick prompt also carries ApiMenu's feature menu, which is "
+                    "that pass's own output and is not counted here"),
         Prompt("endpoint-sequence.md",
                shell_chars(PROMPTS_DIR, "endpoint-sequence.md",
                            ("routes", "flow", "handler_source")),

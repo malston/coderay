@@ -89,6 +89,7 @@ BULK_DEL_FLOOR = 5
 # tests/test_call_bounds.py pins both to what the code and prompt still say.
 ERA_RANGE = (3, 5)
 MAX_GRAVES = 6
+GRAVE_MIN_FILES = 8
 
 # How much text one era's prompt and one grave's prompt carry. Named so a
 # pre-flight plan reads the same numbers the nodes send.
@@ -297,7 +298,7 @@ class Graveyard(Node):
         super().__init__(max_retries=3, wait=2)
 
     def prep(self, shared):
-        min_files = shared.get("grave_min_files", 8)
+        min_files = shared.get("grave_min_files", GRAVE_MIN_FILES)
         max_graves = shared.get("max_graves", MAX_GRAVES)
         repo_path = shared["repo_path"]
         candidates = sorted(

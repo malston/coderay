@@ -198,10 +198,11 @@ def _git_history_chars(name, preview):
     record and the prompt text is built downstream, with diffs fetched later
     still. Size it the way the nodes do, from the same functions they call."""
     from crawl.analyses.git_history import gitlog as gl
+    # Imported, not restated: a copy here would let docs/prompt-anatomy.md
+    # report a cap the nodes no longer send.
+    from crawl.analyses.git_history.nodes import (GRAVE_DIFF_CHARS, PROFILE_DIFF_CHARS,
+                                                  PROFILE_MAX_COMMITS)
     log, repo = preview["_log"], preview["_repo_path"]
-    # The defaults ProfileEras.prep reads off `shared`, and the literal
-    # Graveyard.exec passes to show_diff. Kept beside the nodes' own values.
-    PROFILE_MAX_COMMITS, PROFILE_DIFF_CHARS, GRAVE_DIFF_CHARS = 400, 2500, 12000
     if name == "name-eras.md":
         # Reuse the node's own prep rather than rebuilding its summary logic,
         # which drops pure renames before summarising. Subtract the shell to

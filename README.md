@@ -253,7 +253,7 @@ A `NOTE:` line appears whenever the counts alone would mislead. There are four c
 
 ### Send the model more of the code
 
-The tour sends the model the files it selected, whole, until 1,000,000 characters are spent, and drops the rest. On a large repo the dry run shows that cap in the `Codebase budget` line. Raise it with a flag or an environment variable; the flag wins when both are set:
+The tour sends the model the files it selected, whole, until 1,000,000 characters are spent, and drops the rest. `estimate-token-usage` shows that cap in its `Codebase budget` line. Raise it with a flag or an environment variable; the flag wins when both are set:
 
 ```bash
 crawl tour path/to/repo --codebase-budget 2000000

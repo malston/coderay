@@ -130,3 +130,67 @@ def test_a_crawl_that_found_something_is_not_reported_as_aborted(repo):
     from crawl.core.preview import aborted
     analysis = ANALYSES["schema"]
     assert aborted(analysis.preview(_args(repo))) is False
+
+
+def test_git_history_sizes_from_the_flags_it_was_given(repo):
+    """The estimate subcommand accepts --profile-diff-chars, --max-graves and
+    the rest, so a plan that reads the module defaults instead prices a run
+    nobody asked for. Measured: at 50,000 chars a diff and 50 graves, a real
+    run sends far more than the defaults would suggest."""
+    analysis = ANALYSES["git-history"]
+    default = _args(repo, profile_max_commits=400, profile_diff_chars=2500,
+                    max_graves=6, grave_min_files=8)
+    configured = _args(repo, profile_max_commits=4000, profile_diff_chars=50_000,
+                       max_graves=50, grave_min_files=8)
+    d = {p.template: p for p in analysis.prompt_plan(default, analysis.preview(default))}
+    c = {p.template: p for p in analysis.prompt_plan(configured, analysis.preview(configured))}
+    assert c["profile-era.md"].body_chars > d["profile-era.md"].body_chars
+    assert c["graveyard-entry.md"].calls == (0, 50)
+    assert d["graveyard-entry.md"].calls == (0, 6)
+    # There is no --grave-diff-chars flag; GRAVE_DIFF_CHARS is fixed, so only
+    # the call count moves for that prompt.
+    assert c["graveyard-entry.md"].body_chars == d["graveyard-entry.md"].body_chars
+
+
+def test_a_git_history_flag_reaches_both_the_run_and_the_estimate(repo):
+    """The number the estimate prices has to be the number the run sends. Each
+    of these used to be stated in three places: the flag default, init_shared's
+    getattr fallback, and the constant. This checks the value a user actually
+    passes arrives at both ends."""
+    import argparse
+    from crawl.analyses.git_history import add_arguments, init_shared, prompt_plan, preview
+    parser = argparse.ArgumentParser()
+    parser.add_argument("repo_path")
+    add_arguments(parser)
+    args = parser.parse_args([repo, "--profile-diff-chars", "7777",
+                              "--profile-max-commits", "88", "--max-graves", "3"])
+    shared = init_shared(args)
+    assert shared["profile_diff_chars"] == 7777
+    assert shared["profile_max_commits"] == 88
+    assert shared["max_graves"] == 3
+
+    plan = {p.template: p for p in prompt_plan(args, preview(args))}
+    assert plan["profile-era.md"].body_chars >= 5 * 7777, "the estimate ignored the flag"
+    assert plan["graveyard-entry.md"].calls == (0, 3)
+
+
+def test_tour_counts_the_instructions_lens_it_was_given(repo):
+    """--instructions picks a lens whose text fills {instructions} in every
+    chapter prompt. The lenses differ by hundreds of bytes, so an estimate that
+    ignores the flag reports the same number for all of them."""
+    analysis = ANALYSES["tour"]
+    a = _args(repo, instructions="beginner-tutorial")
+    b = _args(repo, instructions="security-audit")
+    pa = [p for p in analysis.prompt_plan(a, analysis.preview(a)) if "write-chapter" in p.template][0]
+    pb = [p for p in analysis.prompt_plan(b, analysis.preview(b)) if "write-chapter" in p.template][0]
+    assert pa.body_chars != pb.body_chars
+
+
+def test_the_interfaces_pick_prompt_says_what_it_cannot_size(repo):
+    """_PICK_PROMPT carries ApiMenu's whole markdown output in {menu}, which is
+    that pass's own answer. The estimate's rule is absent and said, never
+    silently zero."""
+    analysis = ANALYSES["interfaces"]
+    plan = analysis.prompt_plan(_args(repo), analysis.preview(_args(repo)))
+    pick = [p for p in plan if "PICK" in p.template][0]
+    assert pick.note, "the pick prompt drops the feature menu without saying so"

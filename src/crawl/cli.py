@@ -71,9 +71,6 @@ def main():
         # The crawlers print progress in-band with a real run's log. Here stdout
         # is a single formatted report, so their chatter goes to stderr and the
         # report stays pipeable (coderay-pqj).
-        # The crawlers print progress in-band with a real run's log. Here stdout
-        # is a single formatted report, so their chatter goes to stderr and the
-        # report stays pipeable (coderay-pqj).
         with contextlib.redirect_stdout(sys.stderr):
             result = analysis.preview(args)
             plan = None if aborted(result) else analysis.prompt_plan(args, result)

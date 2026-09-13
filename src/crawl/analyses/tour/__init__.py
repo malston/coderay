@@ -104,9 +104,12 @@ def prompt_plan(args, preview):
     from files the model picks, so no pre-flight step can size it: they are
     estimated from the same reader _codebase_preview_text uses, with a note
     saying so (coderay-3le)."""
-    from .nodes import CHAPTER_RANGE, PROMPTS_DIR
+    from .nodes import CHAPTER_RANGE, PROMPTS_DIR, load_instructions
     from .render import _codebase_preview_text
     bundle = len(_codebase_preview_text(args.repo_path, args.codebase_budget))
+    # The lens fills {instructions} in every chapter prompt, and the lenses
+    # differ by hundreds of bytes, so --instructions moves this number.
+    lens = len(load_instructions(args.instructions))
     guess = ("the codebase bundle is built from files the model picks; this sizes it "
              "from every readable file up to the budget, which overstates it "
              "(coderay-3le)")
@@ -127,7 +130,7 @@ def prompt_plan(args, preview):
                shell_chars(PROMPTS_DIR, "write-chapter.md",
                            ("codebase", "instructions", "name", "description",
                             "chapter_num", "total", "prev_chapters", "chapter_list")),
-               bundle, CHAPTER_RANGE,
+               bundle + lens, CHAPTER_RANGE,
                note=f"one call per chapter; identify-abstractions.md asks for "
                     f"{CHAPTER_RANGE[0]} to {CHAPTER_RANGE[1]} abstractions"),
     ]

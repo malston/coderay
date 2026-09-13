@@ -596,15 +596,36 @@ def test_analysis_flags_reach_the_crawl_step_through_the_cli(tmp_path):
 def test_git_history_flags_parse_but_do_not_change_the_crawl(tmp_path):
     """All four size the prompts or filter after the crawl; FetchHistory hardcodes
     its own thresholds. The flags must still parse, so the command line matches a
-    real run, but a user changing one should not expect these counts to move."""
-    repo = _repo(tmp_path)
-    run = lambda *extra: subprocess.run(
-        [sys.executable, "-m", "crawl.cli", "estimate-token-usage", "git-history",
-         str(repo), *extra],
-        capture_output=True, text=True, env=_env(tmp_path), check=True).stdout
+    real run, but a user changing one should not expect these counts to move.
 
-    assert run() == run("--max-graves", "3", "--grave-min-files", "40",
-                        "--profile-max-commits", "9", "--profile-diff-chars", "9")
+    Only the counts. The flags do move the estimate under them, which is the
+    point of reading them there, and the next test covers that."""
+    repo = _repo(tmp_path)
+
+    def counts(*extra):
+        out = subprocess.run(
+            [sys.executable, "-m", "crawl.cli", "estimate-token-usage", "git-history",
+             str(repo), *extra],
+            capture_output=True, text=True, env=_env(tmp_path), check=True).stdout
+        return out.partition("  Model:")[0]
+
+    assert counts() == counts("--max-graves", "3", "--grave-min-files", "40",
+                              "--profile-max-commits", "9", "--profile-diff-chars", "9")
+
+
+def test_git_history_flags_do_change_the_estimate_under_those_counts(tmp_path):
+    """The other half: a run configured with a bigger diff cap sends more text,
+    and an estimate that ignored the flag would price a run nobody asked for."""
+    repo = _repo(tmp_path)
+
+    def estimate(*extra):
+        out = subprocess.run(
+            [sys.executable, "-m", "crawl.cli", "estimate-token-usage", "git-history",
+             str(repo), *extra],
+            capture_output=True, text=True, env=_env(tmp_path), check=True).stdout
+        return out.partition("  Model:")[2]
+
+    assert estimate() != estimate("--profile-diff-chars", "50000", "--max-graves", "50")
 
 
 def test_product_intent_include_reaches_the_crawl_step(tmp_path):

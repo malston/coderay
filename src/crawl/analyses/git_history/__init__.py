@@ -8,8 +8,9 @@ from crawl.core import OverviewNode
 from crawl.core.runner import repo_name_of, require_directory, run_analysis
 from crawl.core.preview import Preview, aborts
 from crawl.core.estimate import Prompt, shell_chars
-from .nodes import (BULK_ADD_FLOOR, BULK_DEL_FLOOR, NO_COMMITS, SHALLOW_WARNING,
-                    FetchHistory, NameEras, ProfileEras, Graveyard)
+from .nodes import (BULK_ADD_FLOOR, BULK_DEL_FLOOR, GRAVE_MIN_FILES, MAX_GRAVES,
+                    NO_COMMITS, PROFILE_DIFF_CHARS, PROFILE_MAX_COMMITS,
+                    SHALLOW_WARNING, FetchHistory, NameEras, ProfileEras, Graveyard)
 from .gitlog import repo_root
 # This analysis builds its page from structured data rather than markdown
 # blobs, so it keeps its own renderer; crawl.core.render defers to these.
@@ -22,17 +23,19 @@ INPUT_KEYS = frozenset({"commits", "commits_asc", "bulk_adds", "bulk_dels"})
 ENV_DEFAULTS = {}
 
 def add_arguments(parser):
-    parser.add_argument("--max-graves", type=int, default=6,
-                        help="how many killed features to dig up (default 6)")
-    parser.add_argument("--grave-min-files", type=int, default=8,
+    # The defaults are the constants in nodes.py, so the number a run sends and
+    # the number an estimate prices cannot drift apart.
+    parser.add_argument("--max-graves", type=int, default=MAX_GRAVES,
+                        help=f"how many killed features to dig up (default {MAX_GRAVES})")
+    parser.add_argument("--grave-min-files", type=int, default=GRAVE_MIN_FILES,
                         help="a deletion counts as a killed feature at this "
-                             "many files (default 8)")
-    parser.add_argument("--profile-max-commits", type=int, default=400,
+                             f"many files (default {GRAVE_MIN_FILES})")
+    parser.add_argument("--profile-max-commits", type=int, default=PROFILE_MAX_COMMITS,
                         help="cap on commits sampled into one era's profile "
-                             "prompt (default 400)")
-    parser.add_argument("--profile-diff-chars", type=int, default=2500,
+                             f"prompt (default {PROFILE_MAX_COMMITS})")
+    parser.add_argument("--profile-diff-chars", type=int, default=PROFILE_DIFF_CHARS,
                         help="cap on characters per landmark diff in a "
-                             "profile prompt (default 2500)")
+                             f"profile prompt (default {PROFILE_DIFF_CHARS})")
 
 def preview(args) -> Preview:
     """What the crawl step found, before any LLM call. There are no file counts
@@ -79,10 +82,10 @@ def sent(shared):
 def init_shared(args):
     return {
         "repo_path": args.repo_path,
-        "max_graves": getattr(args, "max_graves", 6),
-        "grave_min_files": getattr(args, "grave_min_files", 8),
-        "profile_max_commits": getattr(args, "profile_max_commits", 400),
-        "profile_diff_chars": getattr(args, "profile_diff_chars", 2500),
+        "max_graves": getattr(args, "max_graves", MAX_GRAVES),
+        "grave_min_files": getattr(args, "grave_min_files", GRAVE_MIN_FILES),
+        "profile_max_commits": getattr(args, "profile_max_commits", PROFILE_MAX_COMMITS),
+        "profile_diff_chars": getattr(args, "profile_diff_chars", PROFILE_DIFF_CHARS),
     }
 
 def build_flow():
@@ -117,11 +120,19 @@ def prompt_plan(args, preview):
     """Four prompts. This analysis reports no assembled_chars: its crawl returns
     a commit record and the prompt text is built downstream. So the bodies are
     sized from the caps the nodes themselves pass to show_diff, and the survey
-    prompt by calling NameEras.prep, the way tour's preview reuses SmartCrawl's."""
+    prompt by calling NameEras.prep, the way tour's preview reuses SmartCrawl's.
+
+    That second call re-reads the log preview() just read, because the record has
+    no place on a Preview to travel in. Fixing it needs a contract decision;
+    coderay-5fp holds the options."""
     from crawl.core.estimate import overview_prompt
     from . import gitlog as gl
-    from .nodes import (ERA_RANGE, MAX_GRAVES, PROFILE_DIFF_CHARS, PROFILE_MAX_COMMITS,
-                        GRAVE_DIFF_CHARS, PROMPTS_DIR, FetchHistory, NameEras)
+    from .nodes import ERA_RANGE, GRAVE_DIFF_CHARS, PROMPTS_DIR, FetchHistory, NameEras
+    # The flags this command accepts, not the defaults behind them: a run
+    # configured with --profile-diff-chars 50000 sends twenty times the text.
+    max_commits = getattr(args, "profile_max_commits", PROFILE_MAX_COMMITS)
+    diff_chars = getattr(args, "profile_diff_chars", PROFILE_DIFF_CHARS)
+    max_graves = getattr(args, "max_graves", MAX_GRAVES)
     log = FetchHistory().exec(args.repo_path)
     survey_slots = ("heatmap_summary", "pivots_summary",
                     "additions_summary", "deletions_summary")
@@ -132,8 +143,8 @@ def prompt_plan(args, preview):
                  "era_name", "era_start", "era_end", "era_description") + tuple(
         f"{w}_{f}" for w in ("opening", "early", "mid", "late", "closing")
         for f in ("hash", "date", "subject", "diff"))
-    sampled, _ = gl.sample_commits(log["commits_asc"], PROFILE_MAX_COMMITS)
-    era_body = len(gl.commit_stream(sampled)) + 5 * PROFILE_DIFF_CHARS
+    sampled, _ = gl.sample_commits(log["commits_asc"], max_commits)
+    era_body = len(gl.commit_stream(sampled)) + 5 * diff_chars
 
     grave_slots = ("diff", "hash", "subject", "author", "date",
                    "era_name", "era_start", "era_end", "era_description")
@@ -143,13 +154,13 @@ def prompt_plan(args, preview):
                era_body, ERA_RANGE,
                note=f"one call per era; name-eras.md asks for {ERA_RANGE[0]} to "
                     f"{ERA_RANGE[1]}. Each carries a commit stream sampled to "
-                    f"{PROFILE_MAX_COMMITS} plus 5 diffs capped at "
-                    f"{PROFILE_DIFF_CHARS:,}. The stream here sizes one era holding "
-                    "the whole history, so it is an upper bound"),
+                    f"{max_commits} plus 5 diffs capped at {diff_chars:,}. The "
+                    "stream here sizes one era holding the whole history, so it "
+                    "is an upper bound"),
         Prompt("graveyard-entry.md",
                shell_chars(PROMPTS_DIR, "graveyard-entry.md", grave_slots),
-               GRAVE_DIFF_CHARS, (0, MAX_GRAVES),
-               note=f"one call per grave, at most {MAX_GRAVES}; a repo with no bulk "
+               GRAVE_DIFF_CHARS, (0, max_graves),
+               note=f"one call per grave, at most {max_graves}; a repo with no bulk "
                     "deletions buys none"),
         overview_prompt(),
     ]
