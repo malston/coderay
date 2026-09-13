@@ -1,31 +1,19 @@
-"""Rendering, cost estimation, and session-summary formatting for the tour analysis."""
+"""Rendering and session-summary formatting for the tour analysis."""
 import html
 import os
 import re
 from datetime import date
 from typing import NamedTuple
 
-from markdown_it import MarkdownIt
-
-from crawl.core.call_llm import CHARS_PER_TOKEN
 from crawl.core.files import write_text_atomic
-from crawl.core.pricing import input_ceiling
 from crawl.core.render import markdown_parser
 from crawl.core.theme import DARK_TOKENS, HEAD_ASSETS, TOKENS
 
-from crawl.core import (
-    cost_for, fill, list_files, max_output_tokens,
-    read_prompt, safe_read,
-)
+from crawl.core import cost_for, safe_read
 from crawl.analyses.tour.nodes import (
-    CODEBASE_BUDGET,
-    INSTRUCTIONS_DIR,
-    PROMPTS_DIR,
-    PipelineState,
     BLOCK_JOIN,
-    SmartCrawl,
+    INSTRUCTIONS_DIR,
     block_for,
-    load_instructions,
     target_count,
 )
 
@@ -333,10 +321,6 @@ def format_session_summary(usage_records, wall_seconds):
     )
 
 
-# Midpoint of the 5-10 abstractions identify-abstractions.md asks the LLM to find.
-DRY_RUN_CHAPTER_GUESS = 8
-
-
 #: What SmartCrawl.post adds around a file, measured rather than restated,
 #: plus the separator the bundle puts between two of them. Charged to every
 #: block rather than to each gap, so the figure rounds up rather than down.
@@ -421,131 +405,6 @@ def _codebase_preview_text(chars):
     what decides that length, so the content would be read and thrown away.
     """
     return "x" * chars
-
-
-def estimate_dry_run_cost(repo_path, instructions, provider, model, chapter_guess=DRY_RUN_CHAPTER_GUESS,
-                          codebase_budget=CODEBASE_BUDGET):
-    """Estimate the cost of a real run without calling any LLM. Input tokens
-    use a chars/4 heuristic; output tokens assume every call hits the
-    configured max-output cap (a worst-case upper bound, not a typical case)."""
-    max_out = max_output_tokens()
-
-    # Reuses SmartCrawl's own prep() for the file-selection prompt instead of
-    # rebuilding its preview-manifest logic here -- one source of truth for
-    # what that prompt looks like.
-    crawl_state = {"repo_path": repo_path}
-    select_prompt, _files, _root = SmartCrawl().prep(crawl_state)
-
-    sized = estimated_codebase_chars(_files, _root, codebase_budget,
-                                     target=crawl_state.get("target_files_used"))
-    codebase = _codebase_preview_text(sized.likely)
-    analyze_prompt = fill(
-        read_prompt(PROMPTS_DIR, "identify-abstractions.md"),
-        codebase=codebase, selected_files="(estimated -- not yet known)",
-    )
-    relate_prompt = fill(
-        read_prompt(PROMPTS_DIR, "analyze-relationships.md"),
-        abstractions="(estimated -- not yet known)", codebase=codebase,
-    )
-    chapter_prompt = fill(
-        read_prompt(PROMPTS_DIR, "write-chapter.md"),
-        name="(estimated)", description="(estimated)", chapter_num=1, total=chapter_guess,
-        prev_chapters="(estimated)", chapter_list="(estimated)", codebase=codebase,
-        instructions=load_instructions(instructions),
-    )
-
-    prompts = [select_prompt, analyze_prompt, relate_prompt] + [chapter_prompt] * chapter_guess
-    estimated_input_tokens = sum(len(p) // 4 for p in prompts)
-    # Whether a real run would be refused before its first call. Measured with
-    # the guard's own divisor rather than the chars/4 one above, since the
-    # point is to predict that guard's verdict, not to price the run.
-    ceiling = input_ceiling(provider, model)
-    # Sized from the most a run could send, not the likely amount. The cost
-    # line wants the expectation; this wants the ceiling, because a guard that
-    # under-warns is the one that stays quiet on the run it exists to catch.
-    headroom = sized.most - sized.likely
-    largest_prompt_tokens = int((max(len(p) for p in prompts) + headroom) / CHARS_PER_TOKEN)
-    estimated_output_tokens_worst_case = max_out * len(prompts)
-
-    low_usage = {"input_tokens": estimated_input_tokens, "output_tokens": 0,
-                 "cache_read_tokens": 0, "cache_write_tokens": 0}
-    high_usage = {"input_tokens": estimated_input_tokens, "output_tokens": estimated_output_tokens_worst_case,
-                  "cache_read_tokens": 0, "cache_write_tokens": 0}
-
-    return {
-        "provider": provider, "model": model, "chapter_guess": chapter_guess,
-        "codebase_budget": codebase_budget,
-        "estimated_input_tokens": estimated_input_tokens,
-        "estimated_output_tokens_worst_case": estimated_output_tokens_worst_case,
-        "cost_low": cost_for(provider, model, low_usage),
-        "cost_high": cost_for(provider, model, high_usage),
-        "input_ceiling": ceiling,
-        "largest_prompt_tokens": largest_prompt_tokens,
-        "readable_files": sized.readable,
-        "previewed_files": sized.previewed,
-    }
-
-
-def format_dry_run_summary(estimate):
-    if estimate["cost_low"] is None or estimate["cost_high"] is None:
-        cost_line = "unknown (no pricing for this model)"
-    else:
-        cost_line = f"${estimate['cost_low']:.4f} - ${estimate['cost_high']:.4f}"
-    return (
-        "Estimated cost (dry run)\n"
-        f"Assumes ~{estimate['chapter_guess']} chapters (actual count depends on the repo)\n"
-        f"Codebase budget: {estimate['codebase_budget']:,} chars\n"
-        f"Estimated cost:  {cost_line}\n"
-        f"Estimated usage: ~{estimate['estimated_input_tokens']} input tokens, "
-        f"up to ~{estimate['estimated_output_tokens_worst_case']} output tokens\n"
-        "Note: this estimate does not account for prompt caching -- a real run "
-        "reuses the same codebase block across calls, so actual cost is often "
-        "lower than the low end shown here.\n"
-        "The codebase figure models the files a run sends rather than the whole "
-        "repository, but which files the model picks is not knowable in advance. "
-        "Against five recorded runs it landed between 0.7x and 2.3x the real "
-        "bundle."
-        + _dry_run_unreadable_note(estimate)
-        + _dry_run_refusal_note(estimate)
-    )
-
-
-def _dry_run_unreadable_note(estimate):
-    """Whether the codebase block would be empty or nearly so.
-
-    A run is not refused for this: prep's manifest falls back to an empty
-    preview, the model picks indices off it, post skips every file it cannot
-    read, and Analyze, Relate and every chapter call go out against an empty
-    codebase. The user pays the quoted figure for a tour built from nothing,
-    and no other line here says so.
-    """
-    readable = estimate.get("readable_files")
-    previewed = estimate.get("previewed_files")
-    if readable is None or previewed is None or readable == previewed:
-        return ""
-    if readable == 0:
-        return (f"\nNone of the {previewed} source files here could be read, so a "
-                "real run would send an empty codebase to every call and pay for it.")
-    return (f"\nOnly {readable} of {previewed} source files could be read, so the "
-            "figure above rests on that much of the repository.")
-
-
-def _dry_run_refusal_note(estimate):
-    """Whether a real run would be refused before it spent anything. Without
-    this the one command whose job is to say what a run will do stays silent
-    about the run not happening at all (coderay-8vk)."""
-    ceiling = estimate.get("input_ceiling")
-    largest = estimate.get("largest_prompt_tokens", 0)
-    if ceiling is None:
-        return ("\nNo input ceiling is recorded for this model, so a prompt too "
-                "large for it would be refused by the provider rather than "
-                "caught before the call.")
-    if largest > ceiling:
-        return (f"\nThis run would be refused before its first call: its largest "
-                f"prompt is about {largest:,} tokens, over {estimate['model']}'s "
-                f"{ceiling:,}-token input ceiling. Lower --codebase-budget.")
-    return ""
-
 
 def default_output_dir(repo_path, instructions):
     """Keyed on both repo name and lens, so re-running with a different

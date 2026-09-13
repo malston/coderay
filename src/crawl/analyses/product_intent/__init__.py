@@ -6,6 +6,7 @@ from pocketflow import Flow
 from crawl.core.runner import require_directory, run_analysis
 from crawl.core.text import codebase_budget_argument
 from crawl.core.preview import Preview, aborts
+from crawl.core.estimate import Prompt, shell_chars
 from .nodes import (DEFAULT_MAX_CHARS, FetchRepo, PainScene, VariantSentence,
                     CompetitivePositioning, SurprisesAndAbsences, bundle,
                     no_source_reason)
@@ -68,6 +69,18 @@ def build_flow():
     positioning, surprises = CompetitivePositioning(), SurprisesAndAbsences()
     fetch >> pain >> variant >> positioning >> surprises
     return Flow(start=fetch)
+
+
+
+def prompt_plan(args, preview):
+    """Four prompts, each carrying the whole bundle once. No overview node here,
+    and every count is fixed. None of these templates carries the house style
+    slot; each writes its own instructions."""
+    from .nodes import PROMPTS_DIR
+    body = preview.get("assembled_chars") or 0
+    return [Prompt(t, shell_chars(PROMPTS_DIR, t, ("codebase",)), body, (1, 1))
+            for t in ("pain-scene.md", "variant-sentence.md",
+                      "competitive-positioning.md", "surprises-and-absences.md")]
 
 
 def run(args) -> None:

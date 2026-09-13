@@ -12,6 +12,7 @@ from crawl.core.text import codebase_budget_argument
 from .arch_crawl import (DEFAULT_MAX_CHARS, _count_note, build_bundle,
                          manifest_problem_notes)
 from crawl.core.preview import Preview, aborts
+from crawl.core.estimate import Prompt, overview_prompt, shell_chars
 from .nodes import (BuildBundle, Inventory, TechStack, TraceRequest,
                     empty_bundle_reason)
 
@@ -175,6 +176,23 @@ def preview(args) -> Preview:
             "files": {"bundle": stats["files"], "kept out by the budget": stats["dropped_files"]},
             "included": stats["files"], "dropped": stats["dropped_files"],
             "assembled_chars": len(bundle), "notes": notes}
+
+
+
+def prompt_plan(args, preview):
+    """Three prompts, each carrying the whole bundle once, then the overview.
+    tech-stack and trace-request also carry Inventory's node list, which is that
+    pass's LLM output and so is left out of the body rather than guessed at."""
+    from .nodes import PROMPTS_DIR
+    body = preview.get("assembled_chars") or 0
+    plan = [Prompt("inventory.md", shell_chars(PROMPTS_DIR, "inventory.md", ("codebase",)),
+                   body, (1, 1))]
+    for t in ("tech-stack.md", "trace-request.md"):
+        plan.append(Prompt(t, shell_chars(PROMPTS_DIR, t, ("codebase", "inventory")),
+                           body, (1, 1),
+                           note=f"{t} also carries Inventory's node list, which is that "
+                                "pass's own output and is not counted here"))
+    return plan + [overview_prompt()]
 
 
 def run(args) -> None:

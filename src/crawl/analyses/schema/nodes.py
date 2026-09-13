@@ -28,6 +28,13 @@ PROMPTS_DIR = resources.files("crawl.analyses.schema") / "prompts"
 # and produced nothing (coderay-q2r.23).
 MIGRATION_FLOOR = 4
 
+# TableDeepDive sends its prompt once per BATCH tables, and the table list comes
+# from SchemaTour's diagram, which schema-tour.md asks to cover this many. A
+# pre-flight estimate has no table list, so it sizes the batch count from this.
+# tests/test_call_bounds.py pins it to what that prompt still says.
+TABLE_ESTIMATE = 20
+
+
 
 def load_prompt(name):
     return read_prompt(PROMPTS_DIR, name)
@@ -221,6 +228,13 @@ class TableDeepDive(Node):
     def post(self, shared, prep_res, exec_res):
         shared["deepdive_md"] = exec_res
         print(f"  Deep dive: {exec_res.count(chr(35) + '##')} tables reviewed")
+
+
+
+# How many TableDeepDive calls a run makes: TABLE_ESTIMATE tables over its own
+# BATCH. The real count comes from SchemaTour's diagram, which no pre-flight
+# step has, so a plan built from this says so in its note.
+BATCH_ESTIMATE = -(-TABLE_ESTIMATE // TableDeepDive.BATCH)
 
 
 class MigrationActs(Node):

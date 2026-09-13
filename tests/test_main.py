@@ -10,9 +10,7 @@ from crawl.analyses.tour.render import (
     build_mermaid,
     build_related_links,
     default_output_dir,
-    estimate_dry_run_cost,
     estimated_codebase_chars,
-    format_dry_run_summary,
     format_session_summary,
     md_to_html,
     mermaid_label,
@@ -332,51 +330,8 @@ def _make_repo_files(tmp_path, count, size=500):
         (tmp_path / f"file_{i}.py").write_text("x" * size, encoding="utf-8")
 
 
-def test_estimate_dry_run_cost_returns_a_cost_range_for_a_priced_model(tmp_path):
-    _make_repo_files(tmp_path, count=5)
-
-    estimate = estimate_dry_run_cost(str(tmp_path), "beginner-tutorial", "anthropic", "claude-sonnet-5")
-
-    assert estimate["chapter_guess"] == 8
-    assert estimate["estimated_input_tokens"] > 0
-    assert estimate["estimated_output_tokens_worst_case"] > 0
-    assert estimate["cost_low"] is not None
-    assert estimate["cost_high"] is not None
-    assert estimate["cost_low"] <= estimate["cost_high"]
 
 
-def test_estimate_dry_run_cost_is_unpriced_for_an_unknown_model(tmp_path):
-    _make_repo_files(tmp_path, count=3)
-
-    estimate = estimate_dry_run_cost(str(tmp_path), "beginner-tutorial", "openai", "gpt-6-mystery")
-
-    assert estimate["cost_low"] is None
-    assert estimate["cost_high"] is None
-
-
-def test_format_dry_run_summary_shows_the_chapter_assumption_and_cost_range():
-    estimate = {
-        "provider": "anthropic", "model": "claude-sonnet-5", "chapter_guess": 8,
-        "estimated_input_tokens": 1000, "estimated_output_tokens_worst_case": 5000,
-        "cost_low": 0.01, "cost_high": 0.05, "codebase_budget": 1_000_000,
-    }
-    out = format_dry_run_summary(estimate)
-    assert "Estimated cost (dry run)" in out
-    assert "Assumes ~8 chapters" in out
-    assert "$0.0100 - $0.0500" in out
-    assert "~1000 input tokens" in out
-    assert "~5000 output tokens" in out
-    assert "does not account for prompt caching" in out
-
-
-def test_format_dry_run_summary_shows_unknown_for_an_unpriced_model():
-    estimate = {
-        "provider": "openai", "model": "gpt-6-mystery", "chapter_guess": 8,
-        "estimated_input_tokens": 1000, "estimated_output_tokens_worst_case": 5000,
-        "cost_low": None, "cost_high": None, "codebase_budget": 1_000_000,
-    }
-    out = format_dry_run_summary(estimate)
-    assert "unknown" in out
 
 
 def _dry_run_env(tmp_path, **extra):
@@ -396,25 +351,8 @@ def _one_file_repo(tmp_path):
     return repo
 
 
-def test_dry_run_flag_estimates_without_creating_the_output_directory(tmp_path, monkeypatch):
-    repo = _one_file_repo(tmp_path)
-    out_dir = tmp_path / "out"
-    env = _dry_run_env(tmp_path, ANTHROPIC_API_KEY="test-key")
-
-    result = subprocess.run(
-        [sys.executable, "-m", "crawl.cli", "tour", str(repo), "--dry-run", "--out", str(out_dir)],
-        capture_output=True, text=True, env=env, check=True,
-    )
-
-    assert "Estimated cost (dry run)" in result.stdout
-    assert not out_dir.exists()
 
 
-def test_dry_run_flag_works_with_no_llm_key_configured(tmp_path):
-    # The spec requires --dry-run to need no API key at all -- it falls back
-    # to the anthropic default when resolve_provider_and_model() can't find one.
-    repo = _one_file_repo(tmp_path)
-    env = _dry_run_env(tmp_path)
 
     result = subprocess.run(
         [sys.executable, "-m", "crawl.cli", "tour", str(repo), "--dry-run"],
@@ -425,36 +363,7 @@ def test_dry_run_flag_works_with_no_llm_key_configured(tmp_path):
     assert "Estimated cost (dry run)" in result.stdout
 
 
-# coderay-5wu.15: the dry run sizes the codebase with the budget it is handed
-# and reports it, so a user can see what --codebase-budget would change.
-def test_estimate_dry_run_cost_honours_the_codebase_budget(tmp_path):
-    _make_repo_files(tmp_path, count=5, size=500)
-    small = estimate_dry_run_cost(str(tmp_path), "beginner-tutorial", "anthropic", "claude-sonnet-5",
-                                  codebase_budget=100)
-    large = estimate_dry_run_cost(str(tmp_path), "beginner-tutorial", "anthropic", "claude-sonnet-5",
-                                  codebase_budget=100_000)
-    assert small["codebase_budget"] == 100 and large["codebase_budget"] == 100_000
-    assert small["estimated_input_tokens"] < large["estimated_input_tokens"]
 
-
-def test_format_dry_run_summary_reports_the_codebase_budget():
-    estimate = {
-        "provider": "anthropic", "model": "claude-sonnet-5", "chapter_guess": 8,
-        "estimated_input_tokens": 1000, "estimated_output_tokens_worst_case": 5000,
-        "cost_low": 0.01, "cost_high": 0.05, "codebase_budget": 2_000_000,
-    }
-    assert "Codebase budget: 2,000,000 chars" in format_dry_run_summary(estimate)
-
-
-def test_dry_run_flag_reports_the_codebase_budget_it_would_use(tmp_path):
-    repo = _one_file_repo(tmp_path)
-    env = _dry_run_env(tmp_path)
-    result = subprocess.run(
-        [sys.executable, "-m", "crawl.cli", "tour", str(repo), "--dry-run", "--codebase-budget", "2000000"],
-        capture_output=True, text=True, env=env,
-    )
-    assert result.returncode == 0, result.stderr
-    assert "Codebase budget: 2,000,000 chars" in result.stdout
 
 
 # coderay-3le. The dry-run estimator sized the codebase from every readable
@@ -571,23 +480,6 @@ def test_the_ceiling_allows_for_the_block_that_crosses_the_budget(tmp_path):
     assert sized.most > 100_000, f"the ceiling {sized.most:,} cannot be reached past the budget"
 
 
-def test_the_dry_run_prices_the_files_a_run_sends_not_the_repository(tmp_path):
-    """The estimator is only worth having if the number a user reads uses it.
-
-    Every other test here calls estimated_codebase_chars directly, so all of
-    them pass with the function computed and then ignored -- which is the whole
-    defect, reintroduced one layer up.
-    """
-    for i in range(100):
-        (tmp_path / f"mod_{i:03d}.py").write_text("x" * 1000, encoding="utf-8")
-    estimate = estimate_dry_run_cost(str(tmp_path), "beginner-tutorial",
-                                     "anthropic", "claude-sonnet-5")
-    # The codebase block lands in ten of the eleven prompts, priced at chars/4.
-    every_file = 100 * 1000 * 10 // 4
-    assert estimate["estimated_input_tokens"] < every_file, (
-        f"{estimate['estimated_input_tokens']:,} tokens is repository-sized, "
-        f"not run-sized (every file would be about {every_file:,})")
-
 
 def test_the_estimate_matches_the_bundle_smart_crawl_actually_builds(tmp_path):
     """Under the target floor the model picks every file, so the estimate is
@@ -622,28 +514,6 @@ def test_choosing_files_is_what_the_skew_prices(tmp_path):
     assert chooses == pytest.approx(cannot * render_theme.SELECTION_SKEW, rel=0.01)
 
 
-def test_the_dry_run_states_the_band_it_was_measured_at(tmp_path):
-    """The only place a user learns the figure has an error bar."""
-    for i in range(30):
-        (tmp_path / f"m_{i:02d}.py").write_text("x" * 500, encoding="utf-8")
-    out = format_dry_run_summary(
-        estimate_dry_run_cost(str(tmp_path), "beginner-tutorial",
-                              "anthropic", "claude-sonnet-5"))
-    assert "0.7x and 2.3x" in out, "the measured band is not stated to the reader"
-
-
-def test_the_refusal_note_speaks_for_a_run_the_average_would_hide(tmp_path):
-    """A few large files among many small ones: the model picks the large ones,
-    so the real bundle runs well past a mean-based figure. Sizing the refusal
-    check from the expectation rather than the ceiling left this run silent."""
-    for i in range(200):
-        (tmp_path / f"small_{i:03d}.py").write_text("x" * 5_000, encoding="utf-8")
-    for i in range(20):
-        (tmp_path / f"big_{i:02d}.py").write_text("x" * 150_000, encoding="utf-8")
-    out = format_dry_run_summary(
-        estimate_dry_run_cost(str(tmp_path), "beginner-tutorial", "anthropic",
-                              "claude-sonnet-5", codebase_budget=3_000_000))
-    assert "would be refused" in out, "the guard stayed quiet on a run that cannot start"
 
 
 def test_the_population_term_is_a_mean_and_not_the_largest_file(tmp_path):
@@ -665,19 +535,6 @@ def test_the_skew_is_the_value_that_was_measured():
     assert render_theme.SELECTION_SKEW == 2.0
 
 
-def test_the_dry_run_says_when_the_codebase_could_not_be_read(tmp_path):
-    """A run is not refused for this. prep's manifest falls back to an empty
-    preview, post skips every file, and each call goes out against an empty
-    codebase -- so the user pays the quoted figure for a tour built from
-    nothing, and no other line says so."""
-    for i in range(2):
-        (tmp_path / f"bad_{i}.py").write_bytes(b"\xff\xfe\x00\x80 \xc3\x28")
-    out = format_dry_run_summary(
-        estimate_dry_run_cost(str(tmp_path), "beginner-tutorial",
-                              "anthropic", "claude-sonnet-5"))
-    assert "None of the 2 source files" in out
-    assert "empty codebase" in out
-
 
 def test_the_estimate_follows_a_target_files_override(tmp_path):
     """prep honours the key, so an estimate that recomputed the default would
@@ -688,27 +545,6 @@ def test_the_estimate_follows_a_target_files_override(tmp_path):
     assert fewer < default / 4, f"{fewer:,} did not follow the override from {default:,}"
 
 
-def test_the_dry_run_keeps_internal_bookkeeping_out_of_the_terminal(tmp_path):
-    """A bead id resolves to nothing for the person reading the output."""
-    for i in range(30):
-        (tmp_path / f"m_{i:02d}.py").write_text("x" * 500, encoding="utf-8")
-    out = format_dry_run_summary(
-        estimate_dry_run_cost(str(tmp_path), "beginner-tutorial",
-                              "anthropic", "claude-sonnet-5"))
-    assert "coderay-" not in out
-
-
-def test_the_dry_run_says_when_only_part_of_the_codebase_could_be_read(tmp_path):
-    """A figure drawn from two files out of forty reads exactly as confident as
-    one drawn from all of them, so the sample it rests on is worth saying."""
-    for i in range(38):
-        (tmp_path / f"bad_{i:02d}.py").write_bytes(b"\xff\xfe\x00\x80 \xc3\x28")
-    for i in range(2):
-        (tmp_path / f"ok_{i}.py").write_text("x" * 1000, encoding="utf-8")
-    out = format_dry_run_summary(
-        estimate_dry_run_cost(str(tmp_path), "beginner-tutorial",
-                              "anthropic", "claude-sonnet-5"))
-    assert "Only 2 of 40 source files" in out
 
 
 def test_prep_records_the_target_it_settled_on(tmp_path):

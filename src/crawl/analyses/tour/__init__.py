@@ -14,12 +14,11 @@ from crawl.analyses.tour.nodes import (CODEBASE_BUDGET, NO_SOURCE,
                                        PREVIEW_CHARS_PER_FILE, PipelineState,
                                        SmartCrawl)
 from crawl.core.preview import Preview, aborts
+from crawl.core.estimate import Prompt, shell_chars
 from crawl.analyses.tour.render import (
     available_lenses,
     build_mermaid,
     default_output_dir,
-    estimate_dry_run_cost,
-    format_dry_run_summary,
     format_session_summary,
     write_chapter_files,
     write_index_html,
@@ -33,7 +32,6 @@ def build_flow():
 
 def add_arguments(parser) -> None:
     parser.add_argument("--instructions", default="beginner-tutorial", choices=available_lenses())
-    parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--codebase-budget", **codebase_budget_argument(CODEBASE_BUDGET))
 
 # A chapter can run past the 16384-token default on a large abstraction
@@ -99,21 +97,66 @@ def init_shared(args) -> PipelineState:
     return {"repo_path": args.repo_path, "instructions": args.instructions,
             "codebase_budget": args.codebase_budget}
 
+
+def prompt_plan(args, preview):
+    """Five prompts. The file-selection prompt is sized from the manifest the
+    preview measured. The other three carry the codebase bundle, which is built
+    from files the model picks, so no pre-flight step can size it: they are
+    estimated from the same reader _codebase_preview_text uses, with a note
+    saying so (coderay-3le)."""
+    from .nodes import CHAPTER_RANGE, PROMPTS_DIR, load_instructions
+    from .render import SELECTION_SKEW, estimated_codebase_chars
+    # A run bundles the target_files the model picks, not every readable file.
+    # estimated_codebase_chars models that (coderay-3le): `likely` prices the
+    # run and `most` is the ceiling no run can exceed.
+    paths = [os.path.join(args.repo_path, f) for f in preview.get("included", [])]
+    bundle = estimated_codebase_chars(paths, args.repo_path, args.codebase_budget)
+    # The lens fills {instructions} in every chapter prompt, and the lenses
+    # differ by hundreds of bytes, so --instructions moves this number.
+    lens = len(load_instructions(args.instructions))
+    # The bead is coderay-3le. It belongs in this comment, not in the note: a
+    # reader sizing a run has no use for an issue id.
+    guess = ("the codebase figure models the files a run sends rather than the whole "
+             "repository, but which files the model picks is not knowable in advance. "
+             "Against five recorded runs it landed between 0.7x and 2.3x the real "
+             "bundle. The input-ceiling check below uses the most a run could send "
+             "instead, since a guard that predicts a refusal must not read low")
+    # A run is not refused for an unreadable repository: post skips every file
+    # it cannot read, and Analyze, Relate and every chapter call go out against
+    # an empty codebase, paid for at the figure above. Nothing else says so.
+    if bundle.readable != bundle.previewed:
+        guess += (
+            f". None of the {bundle.previewed} source files here could be read, so a "
+            "real run would send an empty codebase to every call and pay for it"
+            if bundle.readable == 0 else
+            f". Only {bundle.readable} of {bundle.previewed} source files could be "
+            "read, so the figure rests on that much of the repository")
+    return [
+        Prompt("select-files.md",
+               shell_chars(PROMPTS_DIR, "select-files.md",
+                           ("manifest", "target_count", "chars_per_file")),
+               preview.get("assembled_chars") or 0, (1, 1)),
+        Prompt("identify-abstractions.md",
+               shell_chars(PROMPTS_DIR, "identify-abstractions.md",
+                           ("codebase", "selected_files")),
+               bundle.likely, (1, 1), note=guess, body_max_chars=bundle.most),
+        Prompt("analyze-relationships.md",
+               shell_chars(PROMPTS_DIR, "analyze-relationships.md",
+                           ("codebase", "abstractions")),
+               bundle.likely, (1, 1), body_max_chars=bundle.most),
+        Prompt("write-chapter.md",
+               shell_chars(PROMPTS_DIR, "write-chapter.md",
+                           ("codebase", "instructions", "name", "description",
+                            "chapter_num", "total", "prev_chapters", "chapter_list")),
+               bundle.likely + lens, CHAPTER_RANGE,
+               body_max_chars=bundle.most + lens,
+               note=f"one call per chapter; identify-abstractions.md asks for "
+                    f"{CHAPTER_RANGE[0]} to {CHAPTER_RANGE[1]} abstractions"),
+    ]
+
+
 def run(args) -> None:
     require_directory(args.repo_path)
-
-    if args.dry_run:
-        try:
-            provider, model = resolve_provider_and_model()
-        except RuntimeError:
-            provider, model = "anthropic", "claude-sonnet-5"
-        # The real run below applies ENV_DEFAULTS for the whole flow, so the
-        # estimate must see the same LLM_MAX_OUTPUT_TOKENS or its worst-case
-        # bound is half of what a real run could actually hit (coderay-5wu.26).
-        with env_defaults(ENV_DEFAULTS):
-            print(format_dry_run_summary(estimate_dry_run_cost(
-                args.repo_path, args.instructions, provider, model, codebase_budget=args.codebase_budget)))
-        return
 
     provider, model = resolve_provider_and_model()
     ensure_priced(provider, model)

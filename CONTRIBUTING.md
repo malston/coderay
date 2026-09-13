@@ -55,6 +55,10 @@ To stop it, `/goal clear` ends the loop after the current turn. Worktrees and op
 
 Epic-specific instructions such as the order to work children in go in the epic's design field (`bd update <epic-id> --design "..."`). The loop reads that first.
 
+## What a prompt receives
+
+`docs/prompt-anatomy.md` explains what crawl sends to the LLM: the vocabulary you need (analysis, node, bundle, slot, house style, preview, budget), how a prompt gets built out of a template file and the crawled text, and a measured table per analysis showing the fixed cost of each template, how much repository text it carries, and how many times it is sent in one run. Read it before you edit a prompt template, add an analysis, or change anything that budgets prompt text.
+
 ## Full architecture writeup
 
 `README.md` covers the pipeline and the CLI (command-line interface) from a user's point of view. `.full-review/*.md` holds a full code review of the whole codebase. The fixes from that review are already on `main`. Read the review before you make a non-trivial change.

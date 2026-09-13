@@ -12,24 +12,6 @@ def test_run_exits_with_message_when_repo_path_is_not_a_directory(tmp_path):
         run(args)
 
 
-def test_dry_run_estimates_worst_case_output_using_the_same_cap_as_the_real_run(tmp_path, monkeypatch, capsys):
-    """coderay-5wu.26. The real run wraps run_flow in env_defaults(ENV_DEFAULTS),
-    raising LLM_MAX_OUTPUT_TOKENS to 32768 for its duration; --dry-run must use
-    that same cap for its worst-case estimate rather than the bare 16384
-    default, or the printed bound is half of what a real run could hit."""
-    monkeypatch.delenv("LLM_MAX_OUTPUT_TOKENS", raising=False)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    (repo / "main.py").write_text("print('hi')\n", encoding="utf-8")
-    args = argparse.Namespace(repo_path=str(repo), out=None, instructions="beginner-tutorial",
-                               dry_run=True, codebase_budget=1_000_000)
-
-    run(args)
-
-    out = capsys.readouterr().out
-    assert "up to ~360448 output tokens" in out   # 32768 * 11 prompts, not 16384 * 11
-
 
 # coderay-5wu.15: the codebase budget is settable from the command line and the
 # environment. Flag over env over the constant.
@@ -190,69 +172,6 @@ def test_run_writes_a_manifest_beside_the_tour(tmp_path, monkeypatch):
     assert manifest["files"] == ["a.py"] and manifest["previewed_files"] == ["a.py", "b.py"]
 
 
-def test_dry_run_says_when_a_run_would_be_refused_before_it_starts():
-    """The command whose job is to say what a run will do should not stay quiet
-    about the run not happening at all (coderay-8vk)."""
-    from crawl.analyses.tour.render import format_dry_run_summary
-
-    summary = format_dry_run_summary({
-        "chapter_guess": 8, "codebase_budget": 3_000_000,
-        "cost_low": 1.0, "cost_high": 2.0, "model": "gpt-5.6-terra",
-        "estimated_input_tokens": 900_000,
-        "estimated_output_tokens_worst_case": 100_000,
-        "input_ceiling": 922_000, "largest_prompt_tokens": 1_200_000,
-    })
-
-    assert "would be refused before its first call" in summary
-    assert "1,200,000" in summary and "922,000" in summary
-    assert "--codebase-budget" in summary
 
 
-def test_dry_run_stays_quiet_when_the_prompts_fit():
-    from crawl.analyses.tour.render import format_dry_run_summary
 
-    summary = format_dry_run_summary({
-        "chapter_guess": 8, "codebase_budget": 650_000,
-        "cost_low": 1.0, "cost_high": 2.0, "model": "claude-sonnet-5",
-        "estimated_input_tokens": 200_000,
-        "estimated_output_tokens_worst_case": 100_000,
-        "input_ceiling": 1_000_000, "largest_prompt_tokens": 260_000,
-    })
-
-    assert "would be refused" not in summary
-
-
-def test_dry_run_says_when_no_ceiling_is_recorded_for_the_model():
-    from crawl.analyses.tour.render import format_dry_run_summary
-
-    summary = format_dry_run_summary({
-        "chapter_guess": 8, "codebase_budget": 650_000,
-        "cost_low": None, "cost_high": None, "model": "claude-made-up",
-        "estimated_input_tokens": 200_000,
-        "estimated_output_tokens_worst_case": 100_000,
-        "input_ceiling": None, "largest_prompt_tokens": 260_000,
-    })
-
-    assert "No input ceiling is recorded" in summary
-
-
-def test_dry_run_sizes_prompts_with_the_guard_s_own_divisor(monkeypatch):
-    """The refusal prediction has to use the divisor the guard will use, not
-    the chars/4 one the cost estimate uses, or it answers a different question
-    than the one it is asked (coderay-8vk)."""
-    from crawl.analyses.tour import render as render_module
-    from crawl.core.call_llm import CHARS_PER_TOKEN
-
-    def estimate():
-        return render_module.estimate_dry_run_cost(
-            "tests/fixtures/toy_repo", "beginner-tutorial", "openai",
-            "gpt-5.6-terra", codebase_budget=50_000)
-
-    base = estimate()["largest_prompt_tokens"]
-    monkeypatch.setattr(render_module, "CHARS_PER_TOKEN", CHARS_PER_TOKEN * 2)
-    doubled_divisor = estimate()["largest_prompt_tokens"]
-
-    assert base > 0
-    assert doubled_divisor == base // 2, (
-        "the prompt size did not track CHARS_PER_TOKEN, so the prediction is "
-        "not measuring what the guard measures")
