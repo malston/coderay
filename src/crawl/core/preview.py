@@ -54,12 +54,25 @@ class Preview(TypedDict):
     assembled_chars: NotRequired[int]
 
 
+ABORT_PREFIX = "A real run stops here: "
+
+
+def aborted(preview: Preview) -> bool:
+    """True when the crawl found nothing to send, so there is no run to estimate.
+
+    A caller needs this to decide whether to size a run at all, and matching the
+    note text at the call site would scatter that string. It is matched here,
+    beside the function that writes it.
+    """
+    return any(n.startswith(ABORT_PREFIX) for n in preview["notes"])
+
+
 def aborts(reason: str) -> str:
     """The note for a crawl that found nothing to send. Reporting zero rather than
     raising is right for a preview -- the user came to find out -- but reporting
     zero without saying the real run stops there leaves them guessing, and the
     crawl already knows why (the nodes raise this same reason, coderay-q2r.50)."""
-    return f"A real run stops here: {reason}"
+    return f"{ABORT_PREFIX}{reason}"
 
 
 def format_preview(name: str, repo_path: str, result: Preview) -> str:

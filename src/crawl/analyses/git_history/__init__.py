@@ -7,6 +7,7 @@ from pocketflow import Flow
 from crawl.core import OverviewNode
 from crawl.core.runner import repo_name_of, require_directory, run_analysis
 from crawl.core.preview import Preview, aborts
+from crawl.core.estimate import Prompt, shell_chars
 from .nodes import (BULK_ADD_FLOOR, BULK_DEL_FLOOR, NO_COMMITS, SHALLOW_WARNING,
                     FetchHistory, NameEras, ProfileEras, Graveyard)
 from .gitlog import repo_root
@@ -109,6 +110,49 @@ def overview_spec(shared):
                   + f"{len(shared.get('graves', []))} killed features in the graveyard. "
                   + f"{len(shared.get('commits', [])):,} commits total."),
     }
+
+
+
+def prompt_plan(args, preview):
+    """Four prompts. This analysis reports no assembled_chars: its crawl returns
+    a commit record and the prompt text is built downstream. So the bodies are
+    sized from the caps the nodes themselves pass to show_diff, and the survey
+    prompt by calling NameEras.prep, the way tour's preview reuses SmartCrawl's."""
+    from crawl.core.estimate import overview_prompt
+    from . import gitlog as gl
+    from .nodes import (ERA_RANGE, MAX_GRAVES, PROFILE_DIFF_CHARS, PROFILE_MAX_COMMITS,
+                        GRAVE_DIFF_CHARS, PROMPTS_DIR, FetchHistory, NameEras)
+    log = FetchHistory().exec(args.repo_path)
+    survey_slots = ("heatmap_summary", "pivots_summary",
+                    "additions_summary", "deletions_summary")
+    survey_shell = shell_chars(PROMPTS_DIR, "name-eras.md", survey_slots)
+    survey_prompt, _listed = NameEras().prep(dict(log, repo_path=args.repo_path))
+
+    era_slots = ("commit_stream", "prior_summaries", "era_index", "total_eras",
+                 "era_name", "era_start", "era_end", "era_description") + tuple(
+        f"{w}_{f}" for w in ("opening", "early", "mid", "late", "closing")
+        for f in ("hash", "date", "subject", "diff"))
+    sampled, _ = gl.sample_commits(log["commits_asc"], PROFILE_MAX_COMMITS)
+    era_body = len(gl.commit_stream(sampled)) + 5 * PROFILE_DIFF_CHARS
+
+    grave_slots = ("diff", "hash", "subject", "author", "date",
+                   "era_name", "era_start", "era_end", "era_description")
+    return [
+        Prompt("name-eras.md", survey_shell, len(survey_prompt) - survey_shell, (1, 1)),
+        Prompt("profile-era.md", shell_chars(PROMPTS_DIR, "profile-era.md", era_slots),
+               era_body, ERA_RANGE,
+               note=f"one call per era; name-eras.md asks for {ERA_RANGE[0]} to "
+                    f"{ERA_RANGE[1]}. Each carries a commit stream sampled to "
+                    f"{PROFILE_MAX_COMMITS} plus 5 diffs capped at "
+                    f"{PROFILE_DIFF_CHARS:,}. The stream here sizes one era holding "
+                    "the whole history, so it is an upper bound"),
+        Prompt("graveyard-entry.md",
+               shell_chars(PROMPTS_DIR, "graveyard-entry.md", grave_slots),
+               GRAVE_DIFF_CHARS, (0, MAX_GRAVES),
+               note=f"one call per grave, at most {MAX_GRAVES}; a repo with no bulk "
+                    "deletions buys none"),
+        overview_prompt(),
+    ]
 
 
 def run(args) -> None:

@@ -37,6 +37,12 @@ INSTRUCTIONS_DIR = resources.files("crawl.analyses.tour") / "instructions"
 
 PREVIEW_CHARS_PER_FILE = 800
 
+# How many chapters a run writes: one per abstraction, and identify-abstractions.md
+# asks the model for this many. WriteChapters sends its prompt once per chapter,
+# so a pre-flight estimate reports the range rather than a single number.
+# tests/test_call_bounds.py pins this to what that prompt still says.
+CHAPTER_RANGE = (5, 10)
+
 NO_SOURCE = ("No source files found. list_files keeps recognised source "
              "extensions outside the skipped directories, under "
              f"{DEFAULT_MAX_FILE_BYTES:,} bytes each; nothing here passed.")

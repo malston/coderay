@@ -9,6 +9,7 @@ from crawl.core.render import Section, Theme, esc
 from crawl.core.runner import repo_name_of, require_directory, run_analysis
 from crawl.core.text import codebase_budget_argument
 from crawl.core.preview import Preview, aborts
+from crawl.core.estimate import Prompt, overview_prompt, shell_chars
 from .backend_crawl import DEFAULT_MAX_CHARS, LAYERS, PER_LAYER_SAMPLE, build_bundle
 from .nodes import BuildBundle, Pipeline, LayerCode, Trace, empty_bundle_reason
 
@@ -125,6 +126,16 @@ def overview_spec(shared):
 
 def add_arguments(parser) -> None:
     parser.add_argument("--codebase-budget", **codebase_budget_argument(DEFAULT_MAX_CHARS))
+
+
+def prompt_plan(args, preview):
+    """Three prompts, each carrying the whole bundle once, then the overview.
+    Every count is fixed: no node here branches on what the model answered."""
+    from .nodes import PROMPTS_DIR
+    body = preview.get("assembled_chars") or 0
+    return [Prompt(t, shell_chars(PROMPTS_DIR, t, ("codebase",)), body, (1, 1))
+            for t in ("pipeline.md", "layer-code.md", "trace.md")] + [overview_prompt()]
+
 
 def run(args) -> None:
     require_directory(args.repo_path)

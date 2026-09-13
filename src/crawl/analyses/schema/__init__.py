@@ -11,6 +11,7 @@ from crawl.core.text import codebase_budget_argument
 from .schema_find import (SCHEMA_BUDGET, TRUNCATION_MARKER, find_migrations,
                           find_schema)
 from crawl.core.preview import Preview, aborts
+from crawl.core.estimate import Prompt, overview_prompt, shell_chars
 from .nodes import (FindSchema, SchemaTour, TraceFlows, TableDeepDive,
                     MigrationActs, MIGRATION_FLOOR, NO_SCHEMA)
 
@@ -165,6 +166,37 @@ def overview_spec(shared):
                   f"{len(shared.get('table_list', []))} core tables, "
                   f"{len(shared.get('migration_names', []))} migrations."),
     }
+
+
+
+def prompt_plan(args, preview):
+    """Four prompts plus the overview. Two counts are not fixed: the deep dive
+    batches the tables SchemaTour names, and the migration pass does not run at
+    all below MIGRATION_FLOOR. The preview already carries the migration count,
+    so that second one is known exactly."""
+    from .nodes import BATCH_ESTIMATE, MIGRATION_FLOOR, PROMPTS_DIR, TABLE_ESTIMATE, TableDeepDive
+    body = preview.get("assembled_chars") or 0
+    migrations = preview["files"].get("migrations", [])
+    acts = 1 if len(migrations) >= MIGRATION_FLOOR else 0
+    return [
+        Prompt("schema-tour.md", shell_chars(PROMPTS_DIR, "schema-tour.md", ("schema",)),
+               body, (1, 1)),
+        Prompt("trace-flows.md",
+               shell_chars(PROMPTS_DIR, "trace-flows.md", ("schema", "table_list")),
+               body, (1, 1)),
+        Prompt("table-deep-dive.md",
+               shell_chars(PROMPTS_DIR, "table-deep-dive.md",
+                           ("schema", "table_list", "product_name", "one_liner")),
+               body, (BATCH_ESTIMATE, BATCH_ESTIMATE),
+               note=f"assumes the {TABLE_ESTIMATE} core tables schema-tour.md asks for, "
+                    f"{TableDeepDive.BATCH} per call; the real count is that pass's answer"),
+        Prompt("migration-acts.md",
+               shell_chars(PROMPTS_DIR, "migration-acts.md", ("migration_names",)),
+               sum(len(m) + 1 for m in migrations), (acts, acts),
+               note="" if acts else
+                    f"{len(migrations)} migrations is below the floor of {MIGRATION_FLOOR}, "
+                    "so this prompt is never built"),
+    ] + [overview_prompt()]
 
 
 def run(args) -> None:

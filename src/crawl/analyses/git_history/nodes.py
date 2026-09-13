@@ -83,6 +83,19 @@ def _excluding_pure_renames(candidates, repo_path, diff_filter):
 BULK_ADD_FLOOR = 10
 BULK_DEL_FLOOR = 5
 
+# ProfileEras sends its prompt once per era, and name-eras.md asks the model for
+# this many; Graveyard sends its prompt once per grave, up to this ceiling. Both
+# bound a count a pre-flight estimate cannot know exactly.
+# tests/test_call_bounds.py pins both to what the code and prompt still say.
+ERA_RANGE = (3, 5)
+MAX_GRAVES = 6
+
+# How much text one era's prompt and one grave's prompt carry. Named so a
+# pre-flight plan reads the same numbers the nodes send.
+PROFILE_MAX_COMMITS = 400
+PROFILE_DIFF_CHARS = 2500
+GRAVE_DIFF_CHARS = 12000
+
 # coderay-q2r.38. Shared with this analysis's preview(), so the pre-flight
 # report and the run warn in the same words.
 SHALLOW_WARNING = ("This is a shallow clone; the log is a fragment of the history "
@@ -189,8 +202,8 @@ class ProfileEras(Node):
             "repo_path": shared["repo_path"],
             "commits_asc": shared["commits_asc"],
             "eras": shared["eras"],
-            "max_commits": shared.get("profile_max_commits", 400),
-            "diff_chars": shared.get("profile_diff_chars", 2500),
+            "max_commits": shared.get("profile_max_commits", PROFILE_MAX_COMMITS),
+            "diff_chars": shared.get("profile_diff_chars", PROFILE_DIFF_CHARS),
             "template": load_prompt("profile-era.md"),
             "profiles": shared["profiles"],
         }
@@ -285,7 +298,7 @@ class Graveyard(Node):
 
     def prep(self, shared):
         min_files = shared.get("grave_min_files", 8)
-        max_graves = shared.get("max_graves", 6)
+        max_graves = shared.get("max_graves", MAX_GRAVES)
         repo_path = shared["repo_path"]
         candidates = sorted(
             (c for c in shared["bulk_dels"]
@@ -335,7 +348,7 @@ class Graveyard(Node):
                 era_name=era.get("name", "unknown"),
                 era_start=era.get("start", ""), era_end=era.get("end", ""),
                 era_description=era.get("description", ""),
-                diff=gl.show_diff(ctx["repo_path"], c["hash"], max_chars=12000, stat=True),
+                diff=gl.show_diff(ctx["repo_path"], c["hash"], max_chars=GRAVE_DIFF_CHARS, stat=True),
             )
             entries.append({"commit": c, "era": era, "entry_md": call_llm(prompt).strip()})
         return entries

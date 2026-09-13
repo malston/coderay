@@ -22,6 +22,10 @@ from . import routes_find as rf
 
 PROMPTS_DIR = resources.files("crawl.analyses.interfaces") / "prompts"
 
+# The most route text EndpointSequence's diagram prompt carries. Named so a
+# pre-flight plan reads the same number the node sends.
+ROUTES_CAP = 60_000
+
 
 def load_prompt(name):
     return read_prompt(PROMPTS_DIR, name)
@@ -230,7 +234,7 @@ class EndpointSequence(Node):
 
         # Step 2 — draw the diagram from the handler source.
         prompt = fill(load_prompt("endpoint-sequence.md"),
-                      routes=ctx["routes"][:60_000], flow=ctx["flow"],
+                      routes=ctx["routes"][:ROUTES_CAP], flow=ctx["flow"],
                       handler_source=handler_source or "(handler source unavailable)")
         md = call_llm(prompt).strip()
         assert "```mermaid" in md or "sequenceDiagram" in md, "no sequence diagram produced"

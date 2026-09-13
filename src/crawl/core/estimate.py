@@ -1,0 +1,111 @@
+"""Size a run's tokens and cost before any of it is paid for.
+
+Each analysis contributes a list of `Prompt` records through its own
+`prompt_plan(args, preview)`; the arithmetic, the input-ceiling check, and the
+pricing happen once, here. See docs/prompt-anatomy.md for what a prompt is made
+of, and docs/superpowers/specs/2026-09-12-token-estimate-design.md for why the
+contract has this shape.
+"""
+from dataclasses import dataclass, field
+
+from .call_llm import CHARS_PER_TOKEN
+from .pricing import cost_for, input_ceiling
+
+# Input tokens for pricing use a plain chars/4 heuristic, the figure tour's
+# dry-run has always reported. The ceiling check below uses call_llm's own
+# CHARS_PER_TOKEN instead: the point there is to predict that guard's verdict,
+# not to price the run, and the guard is deliberately more conservative.
+PRICING_CHARS_PER_TOKEN = 4
+
+
+@dataclass(frozen=True)
+class Prompt:
+    """One prompt an analysis sends, sized without calling an LLM.
+
+    `calls` is a (low, high) pair. The two are equal when the count is fixed.
+    They differ when the model decides it, and then each bound is read from the
+    prompt or flag that sets it rather than guessed (tests/test_call_bounds.py).
+    A low of zero is a real answer for a prompt that may not fire at all.
+
+    `note` carries what the numbers alone would misstate: repository text this
+    prompt carries that no pre-flight step can size, most of all.
+    """
+    template: str
+    shell_chars: int
+    body_chars: int
+    calls: tuple[int, int]
+    note: str = ""
+
+    @property
+    def chars_per_call(self):
+        return self.shell_chars + self.body_chars
+
+
+def shell_chars(prompts_dir, name, slots):
+    """A template's own characters, with its slot placeholders subtracted.
+
+    `read_prompt` has already filled {house_style} for the templates that carry
+    it, so the figure this returns includes that block where it applies. `slots`
+    is the analysis's own list of the slots its node fills at prep time.
+    """
+    from .llm import read_prompt
+    text = read_prompt(prompts_dir, name)
+    return len(text) - sum(len("{%s}" % s) for s in slots)
+
+
+def overview_prompt():
+    """The shared OverviewNode's prompt (crawl/core/overview.py), for the five
+    analyses that end with it.
+
+    It is a string constant rather than a file under a prompts/ directory, and
+    it takes the voice block without the evidence rules, since it is handed
+    counts and gists rather than source. It carries no repository text, so it
+    costs the same on any repo. Each analysis adds a few hundred characters of
+    section titles, gists and facts on top, which are not counted here.
+    """
+    from .llm import house_style
+    from .overview import _PROMPT
+    slots = ("name", "what", "facts", "sections", "headers", "house_style")
+    shell = len(_PROMPT) - sum(len("{%s}" % s) for s in slots)
+    return Prompt("(shared OverviewNode)", shell + len(house_style(with_evidence=False)),
+                  0, (1, 1))
+
+
+def estimate(prompts, provider, model, max_output_tokens):
+    """What a run of these prompts would send, cost, and whether it would be
+    refused before its first call.
+
+    `max_output_tokens` is passed in rather than read here, because four of the
+    seven analyses raise LLM_MAX_OUTPUT_TOKENS through their own ENV_DEFAULTS.
+    Reading the ambient value would report the wrong worst case for those four.
+    """
+    low = sum(p.chars_per_call * p.calls[0] for p in prompts) // PRICING_CHARS_PER_TOKEN
+    high = sum(p.chars_per_call * p.calls[1] for p in prompts) // PRICING_CHARS_PER_TOKEN
+    worst_case_output = max_output_tokens * sum(p.calls[1] for p in prompts)
+
+    ceiling = input_ceiling(provider, model)
+    largest = max((p.chars_per_call for p in prompts), default=0)
+    largest_tokens = int(largest / CHARS_PER_TOKEN)
+
+    return {
+        "provider": provider,
+        "model": model,
+        "input_tokens": (low, high),
+        "output_tokens_worst_case": worst_case_output,
+        "cost": (_cost(provider, model, low, 0),
+                 _cost(provider, model, high, worst_case_output)),
+        "input_ceiling": ceiling,
+        "largest_prompt_tokens": largest_tokens,
+        # None, not False, when no ceiling is recorded: unchecked is not the
+        # same answer as fits, and pricing.input_ceiling sets that rule.
+        "over_ceiling": None if ceiling is None else largest_tokens > ceiling,
+        "notes": [p.note for p in prompts if p.note],
+        "prompts": list(prompts),
+    }
+
+
+def _cost(provider, model, input_tokens, output_tokens):
+    return cost_for(provider, model, {
+        "input_tokens": input_tokens, "output_tokens": output_tokens,
+        "cache_read_tokens": 0, "cache_write_tokens": 0,
+    })

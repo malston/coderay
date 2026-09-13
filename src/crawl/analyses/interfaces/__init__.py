@@ -12,6 +12,7 @@ from crawl.core.runner import repo_name_of, require_directory, run_analysis
 from crawl.core.text import codebase_budget_argument
 from .routes_find import DEFAULT_MAX_CHARS, crawl_routes
 from crawl.core.preview import Preview, aborts
+from crawl.core.estimate import Prompt, overview_prompt, shell_chars
 from .nodes import (FindRoutes, ApiMenu, TraceActions, EndpointSequence,
                     NO_SURFACE)
 
@@ -218,6 +219,30 @@ def preview(args) -> Preview:
     return {"counts": {"surface files found": len(found), "surface files read": len(read)},
             "files": {"found": found, "read": read, "did not reach the bundle": dropped},
             "included": read, "dropped": dropped, "assembled_chars": len(routes), "notes": notes}
+
+
+
+def prompt_plan(args, preview):
+    """Four prompts plus the overview. EndpointSequence sends two: an inline
+    pick, then the diagram. The diagram prompt also carries the source files the
+    pick named, read back off disk, which no pre-flight step can size."""
+    from .nodes import PROMPTS_DIR, ROUTES_CAP, _PICK_PROMPT
+    body = preview.get("assembled_chars") or 0
+    return [
+        Prompt("api-menu.md", shell_chars(PROMPTS_DIR, "api-menu.md", ("routes",)),
+               body, (1, 1)),
+        Prompt("trace-action.md",
+               shell_chars(PROMPTS_DIR, "trace-action.md", ("routes", "groups")),
+               body, (1, 1)),
+        Prompt("_PICK_PROMPT (inline)",
+               len(_PICK_PROMPT) - len("{menu}") - len("{routes}"), body, (1, 1)),
+        Prompt("endpoint-sequence.md",
+               shell_chars(PROMPTS_DIR, "endpoint-sequence.md",
+                           ("routes", "flow", "handler_source")),
+               min(body, ROUTES_CAP), (1, 1),
+               note="endpoint-sequence.md also carries the handler source the pick "
+                    "names, read back off disk; no pre-flight step can size it"),
+    ] + [overview_prompt()]
 
 
 def run(args) -> None:

@@ -14,6 +14,7 @@ from crawl.analyses.tour.nodes import (CODEBASE_BUDGET, NO_SOURCE,
                                        PREVIEW_CHARS_PER_FILE, PipelineState,
                                        SmartCrawl)
 from crawl.core.preview import Preview, aborts
+from crawl.core.estimate import Prompt, shell_chars
 from crawl.analyses.tour.render import (
     available_lenses,
     build_mermaid,
@@ -98,6 +99,42 @@ def preview(args) -> Preview:
 def init_shared(args) -> PipelineState:
     return {"repo_path": args.repo_path, "instructions": args.instructions,
             "codebase_budget": args.codebase_budget}
+
+
+def prompt_plan(args, preview):
+    """Five prompts. The file-selection prompt is sized from the manifest the
+    preview measured. The other three carry the codebase bundle, which is built
+    from files the model picks, so no pre-flight step can size it: they are
+    estimated from the same reader _codebase_preview_text uses, with a note
+    saying so (coderay-3le)."""
+    from .nodes import CHAPTER_RANGE, PROMPTS_DIR
+    from .render import _codebase_preview_text
+    bundle = len(_codebase_preview_text(args.repo_path, args.codebase_budget))
+    guess = ("the codebase bundle is built from files the model picks; this sizes it "
+             "from every readable file up to the budget, which overstates it "
+             "(coderay-3le)")
+    return [
+        Prompt("select-files.md",
+               shell_chars(PROMPTS_DIR, "select-files.md",
+                           ("manifest", "target_count", "chars_per_file")),
+               preview.get("assembled_chars") or 0, (1, 1)),
+        Prompt("identify-abstractions.md",
+               shell_chars(PROMPTS_DIR, "identify-abstractions.md",
+                           ("codebase", "selected_files")),
+               bundle, (1, 1), note=guess),
+        Prompt("analyze-relationships.md",
+               shell_chars(PROMPTS_DIR, "analyze-relationships.md",
+                           ("codebase", "abstractions")),
+               bundle, (1, 1)),
+        Prompt("write-chapter.md",
+               shell_chars(PROMPTS_DIR, "write-chapter.md",
+                           ("codebase", "instructions", "name", "description",
+                            "chapter_num", "total", "prev_chapters", "chapter_list")),
+               bundle, CHAPTER_RANGE,
+               note=f"one call per chapter; identify-abstractions.md asks for "
+                    f"{CHAPTER_RANGE[0]} to {CHAPTER_RANGE[1]} abstractions"),
+    ]
+
 
 def run(args) -> None:
     require_directory(args.repo_path)
