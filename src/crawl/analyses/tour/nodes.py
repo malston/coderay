@@ -36,6 +36,23 @@ PROMPTS_DIR = resources.files("crawl.analyses.tour") / "prompts"
 INSTRUCTIONS_DIR = resources.files("crawl.analyses.tour") / "instructions"
 
 PREVIEW_CHARS_PER_FILE = 800
+# How much of the repository the file-selection prompt may show the model.
+# The dry-run estimator counts from the same population, so it reads the
+# same default rather than repeating the number.
+PREVIEW_BUDGET = 1_000_000
+
+#: The separator between two files in a codebase bundle.
+BLOCK_JOIN = "\n\n"
+
+
+def block_for(rel, text):
+    """One file as it appears in the bundle a run sends."""
+    return f"{'=' * 60}\nFile: {rel}\n{'=' * 60}\n{text}"
+
+
+def target_count(previewed):
+    """How many files the selection prompt asks the model for."""
+    return min(50, max(20, previewed // 20))
 
 NO_SOURCE = ("No source files found. list_files keeps recognised source "
              "extensions outside the skipped directories, under "
@@ -136,7 +153,7 @@ class SmartCrawl(Node):
             # empty manifest reaches the model, and every index it answers with
             # is out of range, so yaml_call burns its retries at full price.
             raise SystemExit(NO_SOURCE)
-        budget = shared.get("preview_budget", 1_000_000)
+        budget = shared.get("preview_budget", PREVIEW_BUDGET)
         chars_per_file = PREVIEW_CHARS_PER_FILE
         max_files = max(1, budget // chars_per_file)
         files = all_files[:max_files]
@@ -149,7 +166,10 @@ class SmartCrawl(Node):
         # The cap is silent, so the files past it are named as well as counted:
         # the model cannot pick a file it never saw (coderay-05w.4).
         shared["preview_dropped_files"] = [os.path.relpath(p, root) for p in all_files[max_files:]]
-        target = shared.get("target_files", min(50, max(20, len(files) // 20)))
+        target = shared.get("target_files", target_count(len(files)))
+        # Recorded so a dry run models the count this prep settled on
+        # rather than recomputing the default and ignoring an override.
+        shared["target_files_used"] = target
 
         manifest_parts = []
         for i, path in enumerate(files):
@@ -191,11 +211,11 @@ class SmartCrawl(Node):
             text = safe_read(p)
             if text is None:
                 continue
-            block = f"{'=' * 60}\nFile: {os.path.relpath(p, root)}\n{'=' * 60}\n{text}"
+            block = block_for(os.path.relpath(p, root), text)
             parts.append(block)
             included.append(p)
             total_chars += len(block)
-        shared["codebase"] = "\n\n".join(parts)
+        shared["codebase"] = BLOCK_JOIN.join(parts)
         shared["selected_files"] = [os.path.relpath(p, root) for p in included]
         shared["selection_reasoning"] = reasoning
         dropped = len(selected) - len(included)

@@ -176,6 +176,9 @@ Estimated usage: ~12345 input tokens, up to ~131072 output tokens
 Note: this estimate does not account for prompt caching -- a real run
 reuses the same codebase block across calls, so actual cost is often
 lower than the low end shown here.
+The codebase figure models the files a run sends rather than the whole
+repository, but which files the model picks is not knowable in advance.
+Against five recorded runs it landed between 0.7x and 2.3x the real bundle.
 ```
 
 The low end of the range assumes zero output tokens; the high end assumes every call hits the configured max-output limit. Treat the high end as a worst case, not a typical cost. If the selected model has no pricing entry, the range shows `unknown (no pricing for this model)` instead of a number.
@@ -210,10 +213,10 @@ tour: /Users/you/code/beads
 
 A tour analyses a small selection of a repository. It arrives at that selection in three steps. The report above shows the first two.
 
-| Step                    | Files | What decides it                                                                                              |
-| ----------------------- | ----- | ------------------------------------------------------------------------------------------------------------ |
-| 1. The walk             | 3,289 | Source extension, not in a skipped directory, under 500 KB                                                     |
-| 2. The preview manifest | 1,250 | The first 800 chars of each file, until a 1,000,000-char budget is spent                                       |
+| Step                    | Files | What decides it                                                                                            |
+| ----------------------- | ----- | ---------------------------------------------------------------------------------------------------------- |
+| 1. The walk             | 3,289 | Source extension, not in a skipped directory, under 500 KB                                                 |
+| 2. The preview manifest | 1,250 | The first 800 chars of each file, until a 1,000,000-char budget is spent                                   |
 | 3. The selection        | ~50   | The LLM picks from the manifest; those files are read whole. Needs a model, so the preview stops before it |
 
 Step 1 counts what the crawler kept. [`list_files`](src/crawl/core/files.py) drops unrecognised extensions, skipped directories (`node_modules`, `.git`, `dist`, vendored trees), and files over 500 KB before it returns. `Source files found` is the count that survives all three filters, so it runs well below the file count of the folder itself.
@@ -234,15 +237,15 @@ Step 3 asks for a number of files and does not enforce it. The prompt requests `
 
 The rows change per analysis, because each one crawls differently:
 
-| Analysis         | Counts                                                                    |
-| ---------------- | ------------------------------------------------------------------------- |
-| `tour`           | source files found, read into the selection pass, dropped                 |
-| `backend`        | files in the bundle, and how many matched each of the six layers          |
-| `architecture`   | config files, env var names, declared dependencies, SDK import lines      |
-| `interfaces`     | surface files found, surface files read                                   |
-| `schema`         | schema files read, migrations found                                       |
-| `product-intent` | files in the bundle, dropped by the budget, unreadable                    |
-| `git-history`    | commits, bulk additions, bulk deletions                                   |
+| Analysis         | Counts                                                               |
+| ---------------- | -------------------------------------------------------------------- |
+| `tour`           | source files found, read into the selection pass, dropped            |
+| `backend`        | files in the bundle, and how many matched each of the six layers     |
+| `architecture`   | config files, env var names, declared dependencies, SDK import lines |
+| `interfaces`     | surface files found, surface files read                              |
+| `schema`         | schema files read, migrations found                                  |
+| `product-intent` | files in the bundle, dropped by the budget, unreadable               |
+| `git-history`    | commits, bulk additions, bulk deletions                              |
 
 `product-intent` is the only crawler that tracks a clean included/dropped/unreadable triple. Printing those three everywhere would report numbers the other crawlers never computed.
 
@@ -259,7 +262,7 @@ CODEBASE_BUDGET=2000000 crawl tour path/to/repo
 
 The budget caps how many whole files reach the model. It never trims a file part way, so a higher budget means more files in the prompt, and a larger prompt on every call that carries the codebase. Run `--dry-run` with the new value first to see the cost.
 
-This budget applies to step 3 above, the files the model already chose. It does not widen the manifest the model chooses *from*; if `estimate-token-usage` reports a large `Dropped before the model saw them`, raising this will not recover those files.
+This budget applies to step 3 above, the files the model already chose. It does not widen the manifest the model chooses _from_; if `estimate-token-usage` reports a large `Dropped before the model saw them`, raising this will not recover those files.
 
 ### Pricing overrides
 
@@ -301,9 +304,16 @@ One real tour, generated end to end against [karpathy/micrograd](https://github.
 | ---------------- | -------------- | -------------- | ------------ | ------------- | -------- |
 | `micrograd-tour` | 3              | 7,784          | 10           | 12            | 10       |
 
-Each tour contains one Markdown and one HTML file per abstraction, plus an `index.html` with the architecture diagram and chapter list. The chapter HTML pages render code blocks, tables, and Mermaid diagrams.
+Each tour contains one Markdown and one HTML file per abstraction, plus an `index.html` with the architecture diagram and chapter list. The chapter HTML pages render code blocks, tables, and Mermaid diagrams, with syntax highlighting and a dark mode that follows the reader's system setting. Every analysis shares that presentation, from [`src/crawl/core/theme.py`](src/crawl/core/theme.py). A diagram the model got wrong is replaced by a short notice rather than dropped, so the heading and caption around it still have something to bracket.
 
 ## Development
+
+```bash
+make install   # uv sync --locked
+make test      # uv run pytest tests/ -q
+```
+
+`make` is a thin wrapper over `uv`, which is what CI runs. Without it:
 
 ```bash
 pip install -e .

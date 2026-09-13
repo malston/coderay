@@ -3,6 +3,7 @@ import html
 import os
 import re
 from datetime import date
+from typing import NamedTuple
 
 from markdown_it import MarkdownIt
 
@@ -21,8 +22,11 @@ from crawl.analyses.tour.nodes import (
     INSTRUCTIONS_DIR,
     PROMPTS_DIR,
     PipelineState,
+    BLOCK_JOIN,
     SmartCrawl,
+    block_for,
     load_instructions,
+    target_count,
 )
 
 # CommonMark parser. Unlike python-markdown's fenced_code extension, this
@@ -333,22 +337,90 @@ def format_session_summary(usage_records, wall_seconds):
 DRY_RUN_CHAPTER_GUESS = 8
 
 
-def _codebase_preview_text(repo_path, budget):
-    """Best-guess codebase text for dry-run sizing: the first files
-    list_files() returns, up to budget chars. Not the same files the real
-    SmartCrawl LLM call would pick, but close enough in total size to
-    estimate prompt length."""
-    parts = []
-    total = 0
-    for p in list_files(repo_path):
-        if total >= budget:
-            break
-        text = safe_read(p)
-        if text is None:
-            continue
-        parts.append(text)
-        total += len(text)
-    return "\n\n".join(parts)
+#: What SmartCrawl.post adds around a file, measured rather than restated,
+#: plus the separator the bundle puts between two of them. Charged to every
+#: block rather than to each gap, so the figure rounds up rather than down.
+_BLOCK_CHROME = len(block_for("", "")) + len(BLOCK_JOIN)
+
+#: How much heavier the model's pick is than a size-blind one of the same
+#: count. Measured on the four recorded runs whose bundle fit under the
+#: budget: 0.8x, 1.8x, 2.1x and 2.4x. Those four rounded up, so it is a
+#: central correction and not a bound: one of them runs below 1.0, and the
+#: estimate reads low on the largest repository measured. Nothing that has to
+#: be safe rests on it -- the refusal prediction takes the ceiling instead.
+#: Re-measure the band quoted in format_dry_run_summary if this moves.
+SELECTION_SKEW = 2.0
+
+
+class CodebaseEstimate(NamedTuple):
+    """What a run would send, and what the figure rests on.
+
+    likely and most differ because two callers want different things: a
+    cost figure should be the expectation, and the refusal prediction has
+    to be the ceiling. readable and previewed travel with them because a
+    number drawn from two files out of two hundred reads exactly as
+    confident as one drawn from all of them.
+    """
+    likely: int
+    most: int
+    readable: int
+    previewed: int
+
+
+def estimated_codebase_chars(previewed, root, budget, target=None):
+    """How many characters of codebase a real run would send.
+
+    A run does not send the repository. SmartCrawl asks the model for
+    target_files of them, and SmartCrawl.post bundles those whole, each inside
+    a header block, until the budget is spent. Sizing every readable file
+    instead put the figure at 1.2x to 5.8x the real bundle across five
+    recorded runs, worst on the mid-size ones and closest on a repository big
+    enough that both figures were clamped at the budget (coderay-3le).
+
+    Returns what a run is likely to send, and the most it could. Two numbers
+    because two callers want different things: a cost figure should be the
+    likely one, and the refusal prediction has to be the ceiling. An average
+    sits under the real bundle whenever the model picks heavier-than-mean
+    files, and a guard whose whole job is to speak before a run is refused
+    must not be the thing that stays quiet (coderay-8vk).
+
+    The ceiling is exact: SmartCrawl.exec only accepts indices into the
+    files previewed here, so no run can send more than all of them. The
+    likely figure is modelled, because which of them the model picks is not
+    knowable without asking it.
+    """
+    sizes = [(len(text), len(os.path.relpath(p, root)))
+             for p, text in ((p, safe_read(p)) for p in previewed) if text is not None]
+    if not sizes:
+        return CodebaseEstimate(0, 0, 0, len(previewed))
+
+    # target_count has a floor of 20, which on a small repository asks for
+    # more files than exist. post skips a file it cannot read, so what reads
+    # successfully is the ceiling on how many blocks a bundle can hold.
+    target = min(target if target is not None else target_count(len(previewed)),
+                 len(sizes))
+    mean_block = sum(n + path for n, path in sizes) / len(sizes) + _BLOCK_CHROME
+    # Skew is what a selection costs. Where the target covers every file there
+    # is no selection to be made, so applying it would inflate the one case
+    # the estimate can otherwise get exactly right.
+    skew = SELECTION_SKEW if target < len(sizes) else 1.0
+    whole = sum(n + path for n, path in sizes) + len(sizes) * _BLOCK_CHROME
+    # post() tests the budget before appending, so the last block can carry
+    # the total past it. The ceiling has to allow for that or it is not one.
+    most = min(whole, budget + max(n + path for n, path in sizes) + _BLOCK_CHROME)
+    likely = min(budget, whole, target * mean_block * skew)
+    return CodebaseEstimate(max(0, int(likely)), max(0, int(most)),
+                            len(sizes), len(previewed))
+
+
+def _codebase_preview_text(chars):
+    """Filler standing in for the codebase inside a prompt being sized.
+
+    Only the length of this reaches anything: estimate_dry_run_cost measures
+    the prompts it lands in and discards them. estimated_codebase_chars is
+    what decides that length, so the content would be read and thrown away.
+    """
+    return "x" * chars
 
 
 def estimate_dry_run_cost(repo_path, instructions, provider, model, chapter_guess=DRY_RUN_CHAPTER_GUESS,
@@ -361,9 +433,12 @@ def estimate_dry_run_cost(repo_path, instructions, provider, model, chapter_gues
     # Reuses SmartCrawl's own prep() for the file-selection prompt instead of
     # rebuilding its preview-manifest logic here -- one source of truth for
     # what that prompt looks like.
-    select_prompt, _files, _root = SmartCrawl().prep({"repo_path": repo_path})
+    crawl_state = {"repo_path": repo_path}
+    select_prompt, _files, _root = SmartCrawl().prep(crawl_state)
 
-    codebase = _codebase_preview_text(repo_path, codebase_budget)
+    sized = estimated_codebase_chars(_files, _root, codebase_budget,
+                                     target=crawl_state.get("target_files_used"))
+    codebase = _codebase_preview_text(sized.likely)
     analyze_prompt = fill(
         read_prompt(PROMPTS_DIR, "identify-abstractions.md"),
         codebase=codebase, selected_files="(estimated -- not yet known)",
@@ -385,7 +460,11 @@ def estimate_dry_run_cost(repo_path, instructions, provider, model, chapter_gues
     # the guard's own divisor rather than the chars/4 one above, since the
     # point is to predict that guard's verdict, not to price the run.
     ceiling = input_ceiling(provider, model)
-    largest_prompt_tokens = int(max(len(p) for p in prompts) / CHARS_PER_TOKEN)
+    # Sized from the most a run could send, not the likely amount. The cost
+    # line wants the expectation; this wants the ceiling, because a guard that
+    # under-warns is the one that stays quiet on the run it exists to catch.
+    headroom = sized.most - sized.likely
+    largest_prompt_tokens = int((max(len(p) for p in prompts) + headroom) / CHARS_PER_TOKEN)
     estimated_output_tokens_worst_case = max_out * len(prompts)
 
     low_usage = {"input_tokens": estimated_input_tokens, "output_tokens": 0,
@@ -402,6 +481,8 @@ def estimate_dry_run_cost(repo_path, instructions, provider, model, chapter_gues
         "cost_high": cost_for(provider, model, high_usage),
         "input_ceiling": ceiling,
         "largest_prompt_tokens": largest_prompt_tokens,
+        "readable_files": sized.readable,
+        "previewed_files": sized.previewed,
     }
 
 
@@ -419,9 +500,34 @@ def format_dry_run_summary(estimate):
         f"up to ~{estimate['estimated_output_tokens_worst_case']} output tokens\n"
         "Note: this estimate does not account for prompt caching -- a real run "
         "reuses the same codebase block across calls, so actual cost is often "
-        "lower than the low end shown here."
+        "lower than the low end shown here.\n"
+        "The codebase figure models the files a run sends rather than the whole "
+        "repository, but which files the model picks is not knowable in advance. "
+        "Against five recorded runs it landed between 0.7x and 2.3x the real "
+        "bundle."
+        + _dry_run_unreadable_note(estimate)
         + _dry_run_refusal_note(estimate)
     )
+
+
+def _dry_run_unreadable_note(estimate):
+    """Whether the codebase block would be empty or nearly so.
+
+    A run is not refused for this: prep's manifest falls back to an empty
+    preview, the model picks indices off it, post skips every file it cannot
+    read, and Analyze, Relate and every chapter call go out against an empty
+    codebase. The user pays the quoted figure for a tour built from nothing,
+    and no other line here says so.
+    """
+    readable = estimate.get("readable_files")
+    previewed = estimate.get("previewed_files")
+    if readable is None or previewed is None or readable == previewed:
+        return ""
+    if readable == 0:
+        return (f"\nNone of the {previewed} source files here could be read, so a "
+                "real run would send an empty codebase to every call and pay for it.")
+    return (f"\nOnly {readable} of {previewed} source files could be read, so the "
+            "figure above rests on that much of the repository.")
 
 
 def _dry_run_refusal_note(estimate):
