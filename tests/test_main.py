@@ -10,8 +10,6 @@ from crawl.analyses.tour.render import (
     build_mermaid,
     build_related_links,
     default_output_dir,
-    estimate_dry_run_cost,
-    format_dry_run_summary,
     format_session_summary,
     md_to_html,
     mermaid_label,
@@ -310,51 +308,8 @@ def _make_repo_files(tmp_path, count, size=500):
         (tmp_path / f"file_{i}.py").write_text("x" * size, encoding="utf-8")
 
 
-def test_estimate_dry_run_cost_returns_a_cost_range_for_a_priced_model(tmp_path):
-    _make_repo_files(tmp_path, count=5)
-
-    estimate = estimate_dry_run_cost(str(tmp_path), "beginner-tutorial", "anthropic", "claude-sonnet-5")
-
-    assert estimate["chapter_guess"] == 8
-    assert estimate["estimated_input_tokens"] > 0
-    assert estimate["estimated_output_tokens_worst_case"] > 0
-    assert estimate["cost_low"] is not None
-    assert estimate["cost_high"] is not None
-    assert estimate["cost_low"] <= estimate["cost_high"]
 
 
-def test_estimate_dry_run_cost_is_unpriced_for_an_unknown_model(tmp_path):
-    _make_repo_files(tmp_path, count=3)
-
-    estimate = estimate_dry_run_cost(str(tmp_path), "beginner-tutorial", "openai", "gpt-6-mystery")
-
-    assert estimate["cost_low"] is None
-    assert estimate["cost_high"] is None
-
-
-def test_format_dry_run_summary_shows_the_chapter_assumption_and_cost_range():
-    estimate = {
-        "provider": "anthropic", "model": "claude-sonnet-5", "chapter_guess": 8,
-        "estimated_input_tokens": 1000, "estimated_output_tokens_worst_case": 5000,
-        "cost_low": 0.01, "cost_high": 0.05, "codebase_budget": 1_000_000,
-    }
-    out = format_dry_run_summary(estimate)
-    assert "Estimated cost (dry run)" in out
-    assert "Assumes ~8 chapters" in out
-    assert "$0.0100 - $0.0500" in out
-    assert "~1000 input tokens" in out
-    assert "~5000 output tokens" in out
-    assert "does not account for prompt caching" in out
-
-
-def test_format_dry_run_summary_shows_unknown_for_an_unpriced_model():
-    estimate = {
-        "provider": "openai", "model": "gpt-6-mystery", "chapter_guess": 8,
-        "estimated_input_tokens": 1000, "estimated_output_tokens_worst_case": 5000,
-        "cost_low": None, "cost_high": None, "codebase_budget": 1_000_000,
-    }
-    out = format_dry_run_summary(estimate)
-    assert "unknown" in out
 
 
 def _dry_run_env(tmp_path, **extra):
@@ -375,25 +330,5 @@ def _one_file_repo(tmp_path):
 
 
 
-
-# coderay-5wu.15: the dry run sizes the codebase with the budget it is handed
-# and reports it, so a user can see what --codebase-budget would change.
-def test_estimate_dry_run_cost_honours_the_codebase_budget(tmp_path):
-    _make_repo_files(tmp_path, count=5, size=500)
-    small = estimate_dry_run_cost(str(tmp_path), "beginner-tutorial", "anthropic", "claude-sonnet-5",
-                                  codebase_budget=100)
-    large = estimate_dry_run_cost(str(tmp_path), "beginner-tutorial", "anthropic", "claude-sonnet-5",
-                                  codebase_budget=100_000)
-    assert small["codebase_budget"] == 100 and large["codebase_budget"] == 100_000
-    assert small["estimated_input_tokens"] < large["estimated_input_tokens"]
-
-
-def test_format_dry_run_summary_reports_the_codebase_budget():
-    estimate = {
-        "provider": "anthropic", "model": "claude-sonnet-5", "chapter_guess": 8,
-        "estimated_input_tokens": 1000, "estimated_output_tokens_worst_case": 5000,
-        "cost_low": 0.01, "cost_high": 0.05, "codebase_budget": 2_000_000,
-    }
-    assert "Codebase budget: 2,000,000 chars" in format_dry_run_summary(estimate)
 
 
