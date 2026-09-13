@@ -162,35 +162,10 @@ crawl tour path/to/repo --instructions onboarding-guide
 ## Estimate cost before you run it
 
 ```bash
-crawl tour path/to/repo --dry-run
-```
-
-`--dry-run` makes no network calls, needs no API key, and writes nothing to disk. It estimates the size of the prompts a real run would send (file selection, abstraction analysis, relationships, and one chapter prompt repeated for an estimated chapter count) and prints a cost range:
-
-```text
-Estimated cost (dry run)
-Assumes ~8 chapters (actual count depends on the repo)
-Codebase budget: 1,000,000 chars
-Estimated cost:  $0.0123 - $0.1456
-Estimated usage: ~12345 input tokens, up to ~131072 output tokens
-Note: this estimate does not account for prompt caching -- a real run
-reuses the same codebase block across calls, so actual cost is often
-lower than the low end shown here.
-```
-
-The low end of the range assumes zero output tokens; the high end assumes every call hits the configured max-output limit. Treat the high end as a worst case, not a typical cost. If the selected model has no pricing entry, the range shows `unknown (no pricing for this model)` instead of a number.
-
-The estimate also can't account for prompt caching, since it never makes a real LLM call. A real run reuses the same codebase text across the Analyze, Relate, and WriteChapters calls, so part of what the estimate treats as full-price input ends up billed as cheaper cache reads. On a repo where caching kicks in heavily, the actual cost reported after a real run can come in below this estimate's low end.
-
-A real run (without `--dry-run`) prints a `Session` summary at the end with the actual token counts and cost, based on the usage each LLM call reported.
-
-### Preview what the crawl will read
-
-```bash
 crawl estimate-token-usage tour path/to/repo
 ```
 
-Runs only an analysis's crawl step, the filesystem walk that decides what a real run would send, and stops there. No network call, no API key, nothing written to disk. It works for every analysis:
+Runs only an analysis's crawl step, the filesystem walk that decides what a real run would send, then sizes the prompts that crawl would fill. No network call, no API key, nothing written to disk. It works for every analysis:
 
 ```text
 tour: /Users/you/code/beads
@@ -203,10 +178,38 @@ tour: /Users/you/code/beads
         it holds 1,250 at 800 chars each. The model cannot pick a file it
         never saw.
 
-  This reports the file crawl only; it does not yet estimate tokens or cost.
+  Model:           anthropic/claude-sonnet-5
+  Codebase budget: 650,000 chars
+  Input tokens:    1,483,080 to 2,357,727
+  Output tokens:   up to 425,984 (worst case: every call hits the cap)
+  Cost:            $2.9662 to $8.9753
+
+  Prompt                          calls     tokens each
+    select-files.md                     1       259,681
+    identify-abstractions.md            1       174,473
+    analyze-relationships.md            1       174,277
+    write-chapter.md              5 to 10       174,929
+
+  NOTE: the codebase bundle is built from files the model picks; this sizes
+        it from every readable file up to the budget, which overstates it
+        (coderay-3le)
+
+  NOTE: one call per chapter; identify-abstractions.md asks for 5 to 10
+        abstractions
+
+  This estimate does not account for prompt caching: a run reuses the same
+  text across calls, so the real cost is often under the low end.
 ```
 
-#### The tour reads your repo in three steps
+The low end of the cost range assumes zero output tokens; the high end assumes every call hits the configured max-output limit. Treat the high end as a worst case rather than a typical cost. If the selected model has no pricing entry, the cost line reads `unknown` instead of a number. With no API key set at all, the command still answers, against an assumed model it names on the `Model` line.
+
+A count the model decides prints as a range. The chapter count, the era count in `git-history`, and the batch count in `schema` are each bounded by the prompt that asks for them, so the range is read out of the repository rather than guessed. `docs/prompt-anatomy.md` shows where every one of these numbers comes from.
+
+The estimate cannot account for prompt caching, since it never makes a real LLM call. A real run reuses the same codebase text across the Analyze, Relate, and WriteChapters calls, so part of what the estimate treats as full-price input ends up billed as cheaper cache reads. On a repo where caching kicks in heavily, the cost reported after a real run can come in below this estimate's low end.
+
+A real run prints a `Session` summary at the end with the actual token counts and cost, based on the usage each LLM call reported.
+
+### What the crawl reads, in three steps
 
 A tour analyses a small selection of a repository. It arrives at that selection in three steps. The report above shows the first two.
 
@@ -257,7 +260,7 @@ crawl tour path/to/repo --codebase-budget 2000000
 CODEBASE_BUDGET=2000000 crawl tour path/to/repo
 ```
 
-The budget caps how many whole files reach the model. It never trims a file part way, so a higher budget means more files in the prompt, and a larger prompt on every call that carries the codebase. Run `--dry-run` with the new value first to see the cost.
+The budget caps how many whole files reach the model. It never trims a file part way, so a higher budget means more files in the prompt, and a larger prompt on every call that carries the codebase. Run `estimate-token-usage` with the new value first to see the cost.
 
 This budget applies to step 3 above, the files the model already chose. It does not widen the manifest the model chooses *from*; if `estimate-token-usage` reports a large `Dropped before the model saw them`, raising this will not recover those files.
 

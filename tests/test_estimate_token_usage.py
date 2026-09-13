@@ -667,8 +667,10 @@ def test_the_two_agent_docs_describe_the_preview_identically():
 # ------------------------------------------------------- the README's claims
 
 def _readme_preview_section():
+    """The README section covering `estimate-token-usage`: its transcribed sample
+    output, the three-step walkthrough under it, and the per-analysis table."""
     readme = pathlib.Path("README.md").read_text(encoding="utf-8")
-    start = readme.index("### Preview what the crawl will read")
+    start = readme.index("## Estimate cost before you run it")
     return readme[start:readme.index("### Send the model more of the code", start)]
 
 

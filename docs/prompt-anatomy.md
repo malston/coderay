@@ -164,8 +164,9 @@ Whether that is a fair stand-in for 20 files is an open question, tracked as
 `coderay-3le`.
 
 The chapter count is the model's answer from `identify-abstractions.md`, whose
-prompt asks for 5 to 10. `DRY_RUN_CHAPTER_GUESS` in `render.py` takes the
-midpoint of that range, 8, as its stand-in.
+prompt asks for 5 to 10. `CHAPTER_RANGE` in `tour/nodes.py` holds that range,
+and `tests/test_call_bounds.py` fails with the constant named if the prompt is
+reworded out from under it.
 
 `write-chapter.md` is the only template in the codebase carrying a cache
 breakpoint. Everything before the marker is the stable prefix the provider
@@ -214,8 +215,8 @@ uses `_PICK_PROMPT`, a string constant in `nodes.py` rather than a file on disk.
 | `endpoint-sequence.md` | 6,155 | yes | 2,837 plus handler source | 8,992 plus | 1 |
 | shared overview | 3,351 | voice only | 0 | 3,351 | 1 |
 
-`endpoint-sequence.md` carries the route text as `{routes}`, truncated to 60,000
-characters in this one prompt, plus `{handler_source}`, which holds whatever
+`endpoint-sequence.md` carries the route text as `{routes}`, truncated to `ROUTES_CAP`,
+which is 60,000, in this one prompt, plus `{handler_source}`, which holds whatever
 files the pick named, read back off disk, or the fallback file when none of them
 could be read. That second part cannot be sized before the run, the same way
 tour's bundle cannot.
@@ -266,16 +267,15 @@ dropped before summarising, so this figure comes from calling `NameEras.prep`
 rather than rebuilding its logic.
 
 `profile-era.md` is the largest single prompt in the codebase. Each call carries
-one era's commit stream, sampled down to `profile_max_commits`, which defaults
-to 400, plus five landmark diffs, each capped at `profile_diff_chars`, which
-defaults to 2,500. The 47,982 above is an upper bound: it sizes a single era
+one era's commit stream, sampled down to `PROFILE_MAX_COMMITS`, which is 400,
+plus five landmark diffs, each capped at `PROFILE_DIFF_CHARS`, which is 2,500. The 47,982 above is an upper bound: it sizes a single era
 holding the entire 347-commit history, and a real era holds a slice of it. The
 number of eras is the previous node's LLM answer, so neither the era count nor
 any single era's true size can be known before the run.
 
-`graveyard-entry.md` carries one diff with `--stat`, capped at 12,000
-characters, and fires once per grave up to `max_graves`, which defaults to 6. A
-repository with no bulk deletions buys nothing here.
+`graveyard-entry.md` carries one diff with `--stat`, capped at
+`GRAVE_DIFF_CHARS`, which is 12,000, and fires once per grave up to
+`MAX_GRAVES`, which is 6. A repository with no bulk deletions buys nothing here.
 
 ## product-intent
 
@@ -374,8 +374,19 @@ command is:
 uv run python -m crawl.cli estimate-token-usage <analysis> <repo_path>
 ```
 
+## What consumes these numbers
+
+`crawl estimate-token-usage <analysis> <repo>` reports them as tokens and
+dollars. Each analysis builds its own list of prompts in a `prompt_plan(args,
+preview)` beside its `preview(args)`, and `crawl/core/estimate.py` does the
+arithmetic once for all seven. Every count the model decides is held as a
+constant beside its analysis, pinned by `tests/test_call_bounds.py` to the
+prompt or flag that sets it.
+
 ## Where to look next
 
+* `src/crawl/core/estimate.py` -- the `Prompt` record and what the estimate
+  reports.
 * `src/crawl/core/llm.py` -- `read_prompt` and `fill`, twenty lines that explain
   most of this document.
 * `src/crawl/core/preview.py` -- the `Preview` shape and what each key promises.
