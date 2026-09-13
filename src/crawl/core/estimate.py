@@ -30,16 +30,30 @@ class Prompt:
 
     `note` carries what the numbers alone would misstate: repository text this
     prompt carries that no pre-flight step can size, most of all.
+
+    `body_max_chars` is the most this prompt could carry where that differs
+    from what it likely will. The cost figure wants the expectation and the
+    refusal prediction wants the ceiling, so a guard whose whole job is to
+    speak before a run is refused is not the thing that stays quiet
+    (coderay-8vk, coderay-3le). Leave it None where a crawler knows exactly
+    what it sends, and the two coincide.
     """
     template: str
     shell_chars: int
     body_chars: int
     calls: tuple[int, int]
     note: str = ""
+    body_max_chars: int | None = None
 
     @property
     def chars_per_call(self):
         return self.shell_chars + self.body_chars
+
+    @property
+    def ceiling_chars(self):
+        """The most this prompt could be, for the input-ceiling check."""
+        return self.shell_chars + (self.body_chars if self.body_max_chars is None
+                                   else self.body_max_chars)
 
 
 def shell_chars(prompts_dir, name, slots):
@@ -100,7 +114,7 @@ def estimate(prompts, provider, model, max_output_tokens, assumed=False):
     worst_case_output = max_output_tokens * sum(p.calls[1] for p in prompts)
 
     ceiling = input_ceiling(provider, model)
-    largest = max((p.chars_per_call for p in prompts), default=0)
+    largest = max((p.ceiling_chars for p in prompts), default=0)
     largest_tokens = int(largest / CHARS_PER_TOKEN)
 
     return {

@@ -197,7 +197,8 @@ PAGE = """<!doctype html>
 {head_assets}
 <style>
 {tokens}
-  :root {{ --accent: {accent}; --accent-soft: {accent_soft}; --accent-ink: {accent_ink}; }}
+  :root {{ --accent: {accent}; --accent-soft: {accent_soft}; --accent-ink: {accent_ink};
+    --card-top: {card_top_from}; }}
   body {{ font-family: var(--font); font-size: 13.5px; line-height: 1.5;
     background: var(--bg); color: var(--text); margin: 0; -webkit-font-smoothing: antialiased; }}
   main {{ max-width: 1280px; margin: 0 auto; padding: 0 24px 56px; }}
@@ -264,7 +265,7 @@ PAGE = """<!doctype html>
     border-radius: var(--radius); box-shadow: var(--shadow); border-top: 3px solid var(--accent);
     display: flex; flex-direction: column; overflow: hidden; max-height: 72vh; }}
   .card-top {{ flex-shrink: 0; padding: 14px 18px 12px; border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, {card_top_from}, var(--surface)); font-weight: 700; font-size: .96rem; line-height: 1.35; }}
+    background: linear-gradient(180deg, var(--card-top), var(--surface)); font-weight: 700; font-size: .96rem; line-height: 1.35; }}
   .card-top code {{ font-size: .82em; }}
   .card-body {{ padding: 13px 18px 16px; font-size: .84rem; }}
   .card-body p {{ margin: .5em 0; color: var(--body-text); line-height: 1.6; }}

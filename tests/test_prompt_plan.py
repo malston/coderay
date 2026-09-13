@@ -194,3 +194,54 @@ def test_the_interfaces_pick_prompt_says_what_it_cannot_size(repo):
     plan = analysis.prompt_plan(_args(repo), analysis.preview(_args(repo)))
     pick = [p for p in plan if "PICK" in p.template][0]
     assert pick.note, "the pick prompt drops the feature menu without saying so"
+
+
+def test_tour_sizes_its_bundle_from_what_a_run_sends_not_the_repository(repo):
+    """coderay-3le, fixed on main in PR #115. A run bundles the target_files the
+    model picks, not every readable file. The plan reads
+    estimated_codebase_chars, so the two agree."""
+    from crawl.analyses.tour.render import estimated_codebase_chars
+    from crawl.analyses.tour.nodes import target_count
+    analysis = ANALYSES["tour"]
+    args = _args(repo)
+    preview = analysis.preview(args)
+    plan = {p.template: p for p in analysis.prompt_plan(args, preview)}
+
+    paths = [os.path.join(repo, f) for f in preview["included"]]
+    expected = estimated_codebase_chars(paths, repo, args.codebase_budget)
+    assert plan["identify-abstractions.md"].body_chars == expected.likely
+
+
+def test_tour_measures_the_ceiling_against_the_most_a_run_could_send(repo):
+    """The cost figure should be the expectation and the refusal prediction has
+    to be the ceiling, or the guard whose job is to speak before a run is
+    refused is the thing that stays quiet (coderay-8vk)."""
+    analysis = ANALYSES["tour"]
+    args = _args(repo)
+    plan = {p.template: p for p in analysis.prompt_plan(args, analysis.preview(args))}
+    p = plan["identify-abstractions.md"]
+    assert p.ceiling_chars >= p.chars_per_call, (
+        "the ceiling figure must not sit under the likely one")
+
+
+def test_a_prompt_with_no_separate_ceiling_uses_its_own_size(repo):
+    """Six analyses know exactly what they send, so likely and most coincide."""
+    analysis = ANALYSES["schema"]
+    args = _args(repo)
+    for p in analysis.prompt_plan(args, analysis.preview(args)):
+        assert p.ceiling_chars == p.chars_per_call
+
+
+def test_tour_says_when_its_figure_rests_on_few_readable_files(tmp_path):
+    """Ported from _dry_run_unreadable_note (PR #115). A run is not refused for
+    this: post skips every file it cannot read and every call goes out against
+    an empty codebase, paid for at the quoted figure. No other line says so."""
+    import subprocess
+    (tmp_path / "a.py").write_bytes(b"\xff\xfe\x00bad")
+    (tmp_path / "b.py").write_bytes(b"\xff\xfe\x00bad")
+    analysis = ANALYSES["tour"]
+    args = _args(str(tmp_path))
+    plan = analysis.prompt_plan(args, analysis.preview(args))
+    notes = " ".join(p.note for p in plan)
+    assert "could be read" in notes, (
+        "a figure resting on unreadable files should say so")

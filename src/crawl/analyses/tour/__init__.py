@@ -105,14 +105,32 @@ def prompt_plan(args, preview):
     estimated from the same reader _codebase_preview_text uses, with a note
     saying so (coderay-3le)."""
     from .nodes import CHAPTER_RANGE, PROMPTS_DIR, load_instructions
-    from .render import _codebase_preview_text
-    bundle = len(_codebase_preview_text(args.repo_path, args.codebase_budget))
+    from .render import SELECTION_SKEW, estimated_codebase_chars
+    # A run bundles the target_files the model picks, not every readable file.
+    # estimated_codebase_chars models that (coderay-3le): `likely` prices the
+    # run and `most` is the ceiling no run can exceed.
+    paths = [os.path.join(args.repo_path, f) for f in preview.get("included", [])]
+    bundle = estimated_codebase_chars(paths, args.repo_path, args.codebase_budget)
     # The lens fills {instructions} in every chapter prompt, and the lenses
     # differ by hundreds of bytes, so --instructions moves this number.
     lens = len(load_instructions(args.instructions))
-    guess = ("the codebase bundle is built from files the model picks; this sizes it "
-             "from every readable file up to the budget, which overstates it "
-             "(coderay-3le)")
+    # The bead is coderay-3le. It belongs in this comment, not in the note: a
+    # reader sizing a run has no use for an issue id.
+    guess = ("the codebase figure models the files a run sends rather than the whole "
+             "repository, but which files the model picks is not knowable in advance. "
+             "Against five recorded runs it landed between 0.7x and 2.3x the real "
+             "bundle. The input-ceiling check below uses the most a run could send "
+             "instead, since a guard that predicts a refusal must not read low")
+    # A run is not refused for an unreadable repository: post skips every file
+    # it cannot read, and Analyze, Relate and every chapter call go out against
+    # an empty codebase, paid for at the figure above. Nothing else says so.
+    if bundle.readable != bundle.previewed:
+        guess += (
+            f". None of the {bundle.previewed} source files here could be read, so a "
+            "real run would send an empty codebase to every call and pay for it"
+            if bundle.readable == 0 else
+            f". Only {bundle.readable} of {bundle.previewed} source files could be "
+            "read, so the figure rests on that much of the repository")
     return [
         Prompt("select-files.md",
                shell_chars(PROMPTS_DIR, "select-files.md",
@@ -121,16 +139,17 @@ def prompt_plan(args, preview):
         Prompt("identify-abstractions.md",
                shell_chars(PROMPTS_DIR, "identify-abstractions.md",
                            ("codebase", "selected_files")),
-               bundle, (1, 1), note=guess),
+               bundle.likely, (1, 1), note=guess, body_max_chars=bundle.most),
         Prompt("analyze-relationships.md",
                shell_chars(PROMPTS_DIR, "analyze-relationships.md",
                            ("codebase", "abstractions")),
-               bundle, (1, 1)),
+               bundle.likely, (1, 1), body_max_chars=bundle.most),
         Prompt("write-chapter.md",
                shell_chars(PROMPTS_DIR, "write-chapter.md",
                            ("codebase", "instructions", "name", "description",
                             "chapter_num", "total", "prev_chapters", "chapter_list")),
-               bundle + lens, CHAPTER_RANGE,
+               bundle.likely + lens, CHAPTER_RANGE,
+               body_max_chars=bundle.most + lens,
                note=f"one call per chapter; identify-abstractions.md asks for "
                     f"{CHAPTER_RANGE[0]} to {CHAPTER_RANGE[1]} abstractions"),
     ]

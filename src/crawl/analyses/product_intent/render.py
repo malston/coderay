@@ -205,7 +205,7 @@ HTML_TEMPLATE = """<!doctype html>
     text-transform: uppercase;
   }}
   table.matrix td.row-head {{
-    background: var(--stone-bg); font-weight: 700; color: var(--text);
+    background: var(--surface); font-weight: 700; color: var(--text);
     white-space: nowrap; font-size: .95rem;
   }}
   table.matrix td .verdict {{

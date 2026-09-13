@@ -72,16 +72,33 @@
     --font: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     --mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
     --code-bg: #0f172a; --code-fg: #e2e8f0; --thumb: #cbd2dc;
+    /* The top edge of a card, tinted in light and flat in dark. */
+    --card-top: #fbfcfe;
   }
   * { box-sizing: border-box; }
   code, .mono { font-family: var(--mono); }
   pre { background: var(--code-bg); color: var(--code-fg); border-radius: 8px; overflow-x: auto; }
+  /* Until highlight.js runs, a code block carries no .hljs class and falls
+     to the `code` rule below, whose chip background lands on top of the
+     dark pre. A blocked CDN or a failed hash leaves it that way. */
+  pre code { background: transparent; color: inherit; }
   /* let highlight.js color the tokens, but keep our own dark pre background */
   pre code.hljs { background: transparent; padding: 0; color: var(--code-fg); }
-  code { font-family: var(--mono); background: var(--stone-bg); color: var(--text); border-radius: 4px; }
+  code { background: var(--stone-bg); color: var(--text); border-radius: 4px; }
   table { border-collapse: collapse; width: 100%; }
   th, td { border: 1px solid var(--rule); text-align: left; vertical-align: top; }
   th { background: var(--stone-bg); color: var(--muted); }
+  /* A diagram block holds its own source until mermaid replaces it with an
+     SVG. If mermaid never loads -- a blocked CDN, a failed hash, no network --
+     it is never replaced, and the source is what the reader gets. Without this
+     the block keeps --code-fg from the `pre` rule above, which is near-white
+     and meant for the dark code background, so on a light surface the source
+     lands at 1.23:1 and the reader sees an empty box. `inherit` is not the
+     answer: a diagram inside a hero band would inherit white. The background
+     has to come off in the same rule: page ink on --code-bg is 1.01:1, the
+     same defect turned around. transparent takes whichever token surface the
+     block sits on, which is right in both schemes. */
+  pre.mermaid { background: transparent; color: var(--text); }
   /* Stands in for a diagram the model got wrong (coderay-2l9). Quiet enough
      not to read as an error in a report someone forwards, present enough that
      the reader knows something is missing rather than absent. */
@@ -101,7 +118,8 @@
     :root { --accent-ink: color-mix(in srgb, var(--accent) 60%, var(--text)); }
   }
 
-  :root { --accent: #4f46e5; --accent-soft: #eef2ff; --accent-ink: #363499; }
+  :root { --accent: #4f46e5; --accent-soft: #eef2ff; --accent-ink: #363499;
+    --card-top: #fafaff; }
   body { font-family: var(--font); font-size: 13.5px; line-height: 1.5;
     background: var(--bg); color: var(--text); margin: 0; -webkit-font-smoothing: antialiased; }
   main { max-width: 1280px; margin: 0 auto; padding: 0 24px 56px; }
@@ -170,7 +188,7 @@
     border-radius: var(--radius); box-shadow: var(--shadow); border-top: 3px solid var(--accent);
     display: flex; flex-direction: column; overflow: hidden; max-height: 72vh; }
   .card-top { flex-shrink: 0; padding: 14px 18px 12px; border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, #fafaff, var(--surface)); font-weight: 700; font-size: .96rem; line-height: 1.35; }
+    background: linear-gradient(180deg, var(--card-top), var(--surface)); font-weight: 700; font-size: .96rem; line-height: 1.35; }
   .card-top code { font-size: .82em; }
   .card-body { padding: 13px 18px 16px; font-size: .84rem; }
   .card-body p { margin: .5em 0; color: var(--body-text); line-height: 1.6; }
@@ -203,7 +221,7 @@
       --body-text: #c3c9d5; --body-soft: #a6aebd; --thumb: #2a3346;
       /* A step lighter than the page, so a code block still reads as raised. */
       --code-bg: #161d2c;
-      --accent-soft: #1d2a44;
+      --accent-soft: #1d2a44; --card-top: var(--surface);
     }
     /* Derived where the browser can, so the tint follows whichever renderer set
        --accent. The @supports guard is what preserves the flat value above: a
@@ -215,7 +233,6 @@
     @supports (color: color-mix(in srgb, red 50%, blue)) {
       :root { --accent-soft: color-mix(in srgb, var(--accent) 22%, var(--surface)); }
     }
-    .card-top { background: var(--surface); }
   }
 </style>
 </head>

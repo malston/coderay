@@ -120,7 +120,7 @@ HTML_TEMPLATE = """<!doctype html>
 <style>
 {tokens}
   :root {{ --accent: #3b82f6; --accent-soft: #eff6ff; --accent-ink: #2a58a4;
-    --shadow-lg: 0 8px 26px rgba(16,24,40,.10); }}
+    --card-top: #fbfcfe; --shadow-lg: 0 8px 26px rgba(16,24,40,.10); }}
   html {{ -webkit-text-size-adjust: 100%; }}
   body {{ font-family: var(--font); font-size: 13.5px; line-height: 1.5;
     background: var(--bg); color: var(--text); margin: 0; -webkit-font-smoothing: antialiased; }}
@@ -188,7 +188,7 @@ HTML_TEMPLATE = """<!doctype html>
     border-radius: var(--radius); box-shadow: var(--shadow);
     display: flex; flex-direction: column; overflow: hidden; }}
   .card-top {{ flex-shrink: 0; padding: 15px 20px 13px; border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, #fbfcfe, var(--surface)); }}
+    background: linear-gradient(180deg, var(--card-top), var(--surface)); }}
   .card-num {{ font-family: 'JetBrains Mono', monospace; font-size: .64rem; font-weight: 700;
     letter-spacing: .12em; color: var(--accent-ink); }}
   .card-name {{ font-size: 1.12rem; font-weight: 800; letter-spacing: -.01em; margin: 3px 0 7px; }}
@@ -243,7 +243,7 @@ HTML_TEMPLATE = """<!doctype html>
   /* Code + Mermaid inside cards */
   pre {{ padding: 11px 13px; margin: 11px 0; }}
   pre code {{ padding: 0; font-size: .74rem; line-height: 1.55; }}
-  pre.mermaid {{ background: var(--stone-bg); color: inherit; text-align: center; padding: 12px; }}
+  pre.mermaid {{ background: var(--stone-bg); color: var(--text); text-align: center; padding: 12px; }}
   pre.mermaid svg {{ max-width: 100%; height: auto; }}
   code {{ font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: .84em;
     background: var(--stone-bg); color: var(--text); padding: 1px 5px; border-radius: 4px; }}

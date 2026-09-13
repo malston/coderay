@@ -55,11 +55,11 @@ def test_a_call_range_is_reported_as_a_range(tmp_path):
 
 
 def test_notes_from_the_plan_reach_the_reader(tmp_path):
-    """tour's bundle figure overstates, and the plan says so. A note nobody
-    prints is a note nobody reads."""
+    """tour's bundle figure is modelled rather than measured, and the plan says
+    so. A note nobody prints is a note nobody reads."""
     (tmp_path / "app.py").write_text("def main():\n    return 1\n", encoding="utf-8")
     out = _run(tmp_path, "tour", str(tmp_path)).stdout
-    assert "coderay-3le" in out or "overstates" in out
+    assert "models the files a run sends" in out
 
 
 def test_an_aborted_crawl_reports_no_estimate(tmp_path):
@@ -172,3 +172,38 @@ def test_tour_worst_case_output_uses_the_cap_its_own_env_defaults_set(tmp_path, 
     calls = sum(p.calls[1] for p in plan)
     assert cap == 32768
     assert e["output_tokens_worst_case"] == 32768 * calls
+
+
+# ---- ported from the dry-run tests PR #115 added, which this command replaces ----
+
+def test_no_issue_id_reaches_the_terminal(tmp_path):
+    """Ported from test_the_dry_run_keeps_internal_bookkeeping_out_of_the_terminal.
+    A bead id explains a decision to the next maintainer, not to the user
+    sizing a run."""
+    for i in range(30):
+        (tmp_path / f"m_{i:02d}.py").write_text("x" * 500, encoding="utf-8")
+    for analysis in ("tour", "schema", "backend", "interfaces", "product-intent"):
+        out = _run(tmp_path, analysis, str(tmp_path)).stdout
+        assert "coderay-" not in out, f"{analysis} printed an issue id"
+
+
+def test_the_tour_states_the_band_its_codebase_figure_was_measured_at(tmp_path):
+    """Ported from test_the_dry_run_states_the_band_it_was_measured_at. The
+    figure is modelled, and a reader cannot judge it without the spread."""
+    for i in range(30):
+        (tmp_path / f"m_{i:02d}.py").write_text("x" * 500, encoding="utf-8")
+    out = _run(tmp_path, "tour", str(tmp_path)).stdout
+    assert "0.7x and 2.3x" in out, "the measured band is not stated to the reader"
+
+
+def test_the_refusal_note_speaks_for_a_run_the_average_would_hide(tmp_path):
+    """Ported from the test of the same name. A few large files among many
+    small ones: the model picks the large ones, so the real bundle runs well
+    past a mean-based figure. Sizing the refusal check from the expectation
+    rather than the ceiling leaves this run silent."""
+    for i in range(200):
+        (tmp_path / f"small_{i:03d}.py").write_text("x" * 5_000, encoding="utf-8")
+    for i in range(20):
+        (tmp_path / f"big_{i:02d}.py").write_text("x" * 150_000, encoding="utf-8")
+    out = _run(tmp_path, "tour", str(tmp_path), "--codebase-budget", "3000000").stdout
+    assert "would be refused" in out, "the guard stayed quiet on a run that cannot start"
