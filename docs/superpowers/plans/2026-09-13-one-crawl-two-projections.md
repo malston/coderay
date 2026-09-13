@@ -116,10 +116,22 @@ For each:
       unchanged.
 - [ ] `prompt_plan` reads `shared["previewed_files"]` rather than
       `preview["included"]`, which is the same list under a different name.
-- [ ] `estimated_codebase_chars` still reads file bodies, and that read is
-      genuinely new work rather than a repeat: the preview read 800 characters
-      per file and this needs whole ones. Say so in a comment where the next
-      reader meets it, and do not try to remove it.
+- [ ] `estimated_codebase_chars` still reads every previewed file, and that
+      read stays. It is not a repeat of the preview's. What it keeps is each
+      file's character count and whether the file decodes at all; reading is
+      how it learns both, and it discards the text. The preview's
+      `safe_read(path, max_chars=800)` calls `f.read(800)`, which stops early,
+      so the preview never had a length to hand over.
+- [ ] Do not swap it for `os.path.getsize`. Measured on 1,250 files from a
+      real repository: the byte size differs from the character count for 761
+      of them, worst gap 1,054 characters, and a `stat` cannot tell you a file
+      fails to decode. PR #115 reports that unreadable count on purpose, so a
+      figure resting on two readable files out of forty says so. The read it
+      would replace costs 2.4 ms more than the preview's own read over the
+      same files.
+- [ ] Say both of those in a comment where the next reader meets the call.
+      The first draft of this plan said the estimator "needs whole files",
+      which reads like duplicated work and is the wrong thing to leave behind.
 
 ### 5. The CLI crawls once
 
